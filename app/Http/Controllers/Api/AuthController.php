@@ -1,0 +1,258 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
+use Tymon\JWTAuth\Facades\JWTAuth;
+use App\Http\Resources\UserResource;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Redirect;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+
+class AuthController extends Controller
+{
+    /**
+     * Register a new user
+     */
+    public function register(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'account_type' => 'required|string|in:provider,customer,user',
+            'company_name' => 'required|string|max:255|unique:companies,name',
+            'username' => 'required|string|max:255|unique:users,username',
+            'name' => 'nullable|string|max:255',
+            'region' => 'required|exists:regions,id',
+            'country' => 'required|exists:countries,id',
+            'city' => 'required|exists:cities,id',
+            'birthday' => 'nullable|date|before:today',
+            'email' => 'nullable|email|max:255',
+            'password' => 'required|string|min:8|confirmed', // password_confirmation required
+            'mobile' => 'nullable|string|max:20',
+            'terms_accepted' => 'accepted',
+        ], [
+            // custom messages
+            'account_type.in' => 'Account type must be provider, customer or user.',
+            'company_name.unique' => 'This company name is already registered.',
+            'username.unique' => 'This username is already taken.',
+            'email.unique' => 'This email is already in use.',
+            'terms_accepted.accepted' => 'You must accept the terms to register.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            \DB::beginTransaction();
+
+            //Create company
+            $company = \App\Models\Company::create([
+                'name' => $request->company_name,
+                'region_id' => $request->region,
+                'country_id' => $request->country,
+                'city_id' => $request->city,
+            ]);
+
+            //Create user
+            $user = User::create([
+                'account_type' => $request->account_type,
+                'username' => $request->username,
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+                'company_id' => $company->id,
+                'role' => $company->users()->count() === 0 ? 'admin' : 'user',
+            ]);
+
+            //Create profile
+            $user->profile()->create([
+                'full_name' => $request->name ?? $request->username,
+                'birthday' => $request->birthday,
+                'email' => $request->email,
+                'mobile' => $request->mobile,
+            ]);
+
+            \DB::commit();
+            try {
+                //$user->sendEmailVerificationNotification();
+                $company_details = \App\Models\Company::where('id', $company->id)->first();
+                $token = Str::random(30);
+                $data_user = User::where('id', $user->id)->first();
+                $data_user->token = $token;
+                $data_user->save();
+                $data = array('email' => $request->email);
+
+                Mail::send('emails.verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
+                    $message->to($data['email']);
+                    $message->subject('Email Verification Mail');
+                });
+                Mail::send('emails.newRegistration', [
+                    'company_name' => $request->company_name,
+                    'username' => $request->username,
+                    'region_id' => $company_details->getregion->name,
+                    'country_id' => $company_details->getcountry->name,
+                    'city_id' => $company_details->getcity->name,
+                    'mobile' => $request->mobile,
+                    'email' => $request->email
+                ], function ($message) use ($data) {
+                    $message->to($data['email']);
+                    $message->subject('New registration');
+                });
+                Log::info('Email verification notification sent successfully', [
+                    'user_id' => $user->id,
+                    'user_email' => $request->email,
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send email verification notification', [
+                    'user_id' => $user->id,
+                    'user_email' => $request->email,
+                    'error' => $e->getMessage(),
+                ]);
+                // Don't fail the registration if email fails
+            }
+
+            Log::info('User registration committed');
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'User registered successfully',
+            ], 201);
+
+        } catch (\Exception $e) {
+            \DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Registration failed',
+                'error' => 'Internal server error, please try again later.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Login user and return token
+     */
+    public function login(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'username' => 'required|string',
+                'password' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $credentials = $request->only('username', 'password');
+            $token = JWTAuth::attempt($credentials);
+
+            if (!$token) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Invalid username or password',
+                ], 401);
+            }
+
+            $user = JWTAuth::user();
+
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unable to retrieve user information',
+                ], 500);
+            }
+
+            if ($user->is_blocked) {
+                auth()->logout();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Your account has been blocked. Contact support.',
+                ], 403);
+            }
+
+            if (!$user->email_verified) {
+                auth()->logout();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Please verify your email before logging in.',
+                ], 403);
+            }
+
+            // Eager-load profile and company
+            $user->load(['profile', 'company']);
+
+            /*--return response()->json([
+                'token' => $token,
+                'message' => 'Login successful',
+                'user_id' => $user->id,
+                'user' => $user,
+            ]);--*/
+
+            return response()->json([
+                'token' => $token,
+                'message' => 'Login successful',
+                'user_id' => $user->id,
+                'user' => new UserResource($user),
+                'expires_in' => JWTAuth::factory()->getTTL() * 60,
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Login error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Something went wrong. Please try again later.',
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Get logged-in user profile
+     */
+    public function profile()
+    {
+        return response()->json([
+            'status' => 'success',
+            'user' => auth()->user()
+        ]);
+    }
+
+    /**
+     * Logout user
+     */
+    public function logout()
+    {
+        auth()->logout();
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Successfully logged out',
+        ]);
+    }
+
+    public function refresh()
+    {
+        return response()->json([
+            'token' => auth()->refresh()
+        ]);
+    }
+
+}
+

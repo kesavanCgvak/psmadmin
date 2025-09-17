@@ -1,0 +1,982 @@
+{
+	"info": {
+		"_postman_id": "3cb67f1f-4979-4f0f-92a9-f5f0f80675aa",
+		"name": "psmadmin",
+		"schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json",
+		"_exporter_id": "3671839"
+	},
+	"item": [
+		{
+			"name": "Register",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"account_type\": \"user\",\r\n  \"company_name\": \"Rental\",\r\n  \"username\": \"Rental_User\",\r\n  \"name\": \"Stefan\",\r\n  \"region\": \"5\",\r\n  \"country\": \"97\",\r\n  \"city\": \"282\",\r\n  \"birthday\": \"1990-01-01\",\r\n  \"email\": \"k7.cgvak+98@gmail.com\",\r\n  \"password\": \"password123\",\r\n   \"password_confirmation\": \"password123\",\r\n  \"mobile\": \"+01234567998\",\r\n  \"terms_accepted\": true\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}{/api/register"
+			},
+			"response": []
+		},
+		{
+			"name": "Create Product From Item Not Found",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3MTEwMjEsImV4cCI6MTc1NzcxNDYyMSwibmJmIjoxNzU3NzExMDIxLCJqdGkiOiJDUTdKclBicG5rSktOcUNRIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.D5sGtrrm1blyS54FVkD72beNGjMnYJmtsfg8DXKNn7Q"
+					}
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"category\": {\r\n    \"is_new\": true,\r\n    \"name\": \"New Category Example\"\r\n  },\r\n  \"sub_category\": {\r\n    \"is_new\": true,\r\n    \"name\": \"New SubCategory Example\"\r\n  },\r\n  \"brand\": {\r\n    \"is_new\": true,\r\n    \"name\": \"New Brand Example\"\r\n  },\r\n  \"name\": \"Custom Light Model 500\",\r\n  \"psm_code\": \"PSM67890\",\r\n  \"quantity\": 20,\r\n  \"price\": 1500.00,\r\n  \"rental_software_code\": \"RSW-LIGHT-NEW-01\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "http://psmadmin.test/api/products/create-or-attach"
+			},
+			"response": []
+		},
+		{
+			"name": "Create Product From Item Not Found - Payload2",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3MTEwMjEsImV4cCI6MTc1NzcxNDYyMSwibmJmIjoxNzU3NzExMDIxLCJqdGkiOiJDUTdKclBicG5rSktOcUNRIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.D5sGtrrm1blyS54FVkD72beNGjMnYJmtsfg8DXKNn7Q"
+					}
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"category_id\": 2,\r\n  \"sub_category_id\": 5,\r\n  \"brand_id\": 103,\r\n  \"name\": \"XYZ Mixer Model 200\",\r\n  \"psm_code\": \"PSM12345\",\r\n  \"quantity\": 10,\r\n  \"price\": 500.00,\r\n  \"rental_software_code\": \"RSW-XYZ-001\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "http://psmadmin.test/api/products/create-or-attach"
+			},
+			"response": []
+		},
+		{
+			"name": "Login",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "\r\n{\r\n    \"username\": \"Rental_User\",\r\n    \"password\": \"password123\"\r\n}\r\n\r\n// {\r\n//     \"username\": \"Sony_User\",\r\n//     \"password\": \"password123\"\r\n// }",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/login"
+			},
+			"response": []
+		},
+		{
+			"name": "Search Product",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{Localhost}}/api/products/search?search=jelly",
+					"host": [
+						"{{Localhost}}"
+					],
+					"path": [
+						"api",
+						"products",
+						"search"
+					],
+					"query": [
+						{
+							"key": "search",
+							"value": "jelly"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get All Countries",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/countries"
+			},
+			"response": []
+		},
+		{
+			"name": "Get All Regions",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": "http://psmadmin.test/api/regions"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Country by Region",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": "http://psmadmin.test/api/regions/5/countries"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Cities By Country",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/countries/97/cities"
+			},
+			"response": []
+		},
+		{
+			"name": "Get All Brands",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3MTEwMjEsImV4cCI6MTc1NzcxNDYyMSwibmJmIjoxNzU3NzExMDIxLCJqdGkiOiJDUTdKclBicG5rSktOcUNRIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.D5sGtrrm1blyS54FVkD72beNGjMnYJmtsfg8DXKNn7Q"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "http://psmadmin.test/api/brands"
+			},
+			"response": []
+		},
+		{
+			"name": "Get All Categories",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3MTEwMjEsImV4cCI6MTc1NzcxNDYyMSwibmJmIjoxNzU3NzExMDIxLCJqdGkiOiJDUTdKclBicG5rSktOcUNRIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.D5sGtrrm1blyS54FVkD72beNGjMnYJmtsfg8DXKNn7Q"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "http://psmadmin.test/api/categories"
+			},
+			"response": []
+		},
+		{
+			"name": "Get All Sub Categories",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3MTEwMjEsImV4cCI6MTc1NzcxNDYyMSwibmJmIjoxNzU3NzExMDIxLCJqdGkiOiJDUTdKclBicG5rSktOcUNRIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.D5sGtrrm1blyS54FVkD72beNGjMnYJmtsfg8DXKNn7Q"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "http://psmadmin.test/api/sub-categories"
+			},
+			"response": []
+		},
+		{
+			"name": "Get All Sub Categories By Category",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3MTEwMjEsImV4cCI6MTc1NzcxNDYyMSwibmJmIjoxNzU3NzExMDIxLCJqdGkiOiJDUTdKclBicG5rSktOcUNRIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.D5sGtrrm1blyS54FVkD72beNGjMnYJmtsfg8DXKNn7Q"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "http://psmadmin.test/api/categories/14/sub-categories"
+			},
+			"response": []
+		},
+		{
+			"name": "Get All Rental Software",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/rental-softwares"
+			},
+			"response": []
+		},
+		{
+			"name": "Get All Currencies",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3NDE5NDgsImV4cCI6MTc1Nzc0NTU0OCwibmJmIjoxNzU3NzQxOTQ4LCJqdGkiOiJ4VEM5WndnRktjZDg4U3VLIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.FqjfNEQIvTSyKvjDwXTiyYbOnhb-E5JqDehiU0J9J44"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "http://psmadmin.test/api/currencies"
+			},
+			"response": []
+		},
+		{
+			"name": "Get User Profile",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/user/profile"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Company info",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/company/info"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Company Preference",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/company/preferences"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Company's Default Contact",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/company/default-contact"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Company Images",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/company/images"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Company Delivery Address",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/company/address"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Company Search Priority",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/company/search-priority"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Company Users List",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/company/users"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Company Equipments",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "GET",
+				"header": [],
+				"url": "{{Localhost}}/api/equipments"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Users Full Name",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3NDU2NDEsImV4cCI6MTc1Nzc0OTI0MSwibmJmIjoxNzU3NzQ1NjQxLCJqdGkiOiJOYkhzSGVvZVVSZDdHVEFZIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.ZHG1nUOKV41SG6pyFL4vvd0JJKbIr3qUY7tZmZOzdw0"
+					}
+				},
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"name\": \"Johnathan Doe\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "http://psmadmin.test/api/profile/update-name"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Users  Email Address",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3NDU2NDEsImV4cCI6MTc1Nzc0OTI0MSwibmJmIjoxNzU3NzQ1NjQxLCJqdGkiOiJOYkhzSGVvZVVSZDdHVEFZIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.ZHG1nUOKV41SG6pyFL4vvd0JJKbIr3qUY7tZmZOzdw0"
+					}
+				},
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"email\": \"newemail@example.com\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "http://psmadmin.test/api/profile/update-email"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Users  Mobile Number",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3NDU2NDEsImV4cCI6MTc1Nzc0OTI0MSwibmJmIjoxNzU3NzQ1NjQxLCJqdGkiOiJOYkhzSGVvZVVSZDdHVEFZIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.ZHG1nUOKV41SG6pyFL4vvd0JJKbIr3qUY7tZmZOzdw0"
+					}
+				},
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"mobile\": \"+1987654321\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "http://psmadmin.test/api/profile/update-mobile"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Company Delivery Address",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"region\": 5,\r\n  \"country\": 97,\r\n  \"city\": 283,\r\n  \"address_line_1\": \"Suite 5B, west st\",\r\n  \"address_line_2\": \"123 Main St\",\r\n  \"postal_code\": \"80331\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/company/address"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Company Search Priority",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"search_priority\": 283\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/company/search-priority"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Company Preference",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"currency_id\": 6,\r\n  \"date_format\": \"DD/MM/YYYY\",\r\n  \"pricing_scheme\": \"4-day Week\",\r\n  \"rental_software\": 2\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/company/preferences"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Company info",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3NDk4MjAsImV4cCI6MTc1Nzc1MzQyMCwibmJmIjoxNzU3NzQ5ODIwLCJqdGkiOiJHWEdqNVU2N056V2RPNHFXIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.PddC1ykEKiKm2-tEHptOO8KXbvhTcIBUmQOrRcBVX8w"
+					}
+				},
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"name\": \"New Company Name\",\r\n  \"description\": \"Leading supplier of rental equipment\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "http://psmadmin.test/api/company/info/update"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Company User Details",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"name\": \"John Doe Updated\",\r\n  \"mobile\": \"+111222333\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/company/users/589"
+			},
+			"response": []
+		},
+		{
+			"name": "Make Company User as Admin",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"is_admin\": false\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/company/users/590/make-admin"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Equipment Quantity",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{ \"quantity\": 10 }\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/equipments/3/quantity"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Equipment Price",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{ \"price\": 300.50 }\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/equipments/3/price"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Equipment Software Code",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{ \"software_code\": \"EQ-2025-B\" }\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/equipments/3/software-code"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Equipment Description",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{ \"description\": \"Updated description for Sony A7 III\" }\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/equipments/3/description"
+			},
+			"response": []
+		},
+		{
+			"name": "Change Password",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3NDU2NDEsImV4cCI6MTc1Nzc0OTI0MSwibmJmIjoxNzU3NzQ1NjQxLCJqdGkiOiJOYkhzSGVvZVVSZDdHVEFZIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.ZHG1nUOKV41SG6pyFL4vvd0JJKbIr3qUY7tZmZOzdw0"
+					}
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"current_password\": \"password123\",\r\n  \"new_password\": \"newPassword456\",\r\n  \"new_password_confirmation\": \"newPassword456\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "http://psmadmin.test/api/profile/change-password"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Profile Picture",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vcHNtYWRtaW4udGVzdC9hcGkvbG9naW4iLCJpYXQiOjE3NTc3NDU2NDEsImV4cCI6MTc1Nzc0OTI0MSwibmJmIjoxNzU3NzQ1NjQxLCJqdGkiOiJOYkhzSGVvZVVSZDdHVEFZIiwic3ViIjoiNTg5IiwicHJ2IjoiMjNiZDVjODk0OWY2MDBhZGIzOWU3MDFjNDAwODcyZGI3YTU5NzZmNyJ9.ZHG1nUOKV41SG6pyFL4vvd0JJKbIr3qUY7tZmZOzdw0"
+					}
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "profile_picture",
+							"type": "file",
+							"src": "/C:/Users/CG-vak/Pictures/pics/download (2).jpg"
+						}
+					]
+				},
+				"url": "http://psmadmin.test/api/profile/upload-picture"
+			},
+			"response": []
+		},
+		{
+			"name": "Upload Company Imgaes",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "image",
+							"type": "file",
+							"src": "/C:/Users/CG-vak/Pictures/pics/20.jpg"
+						},
+						{
+							"key": "type",
+							"value": "image3",
+							"type": "text"
+						}
+					]
+				},
+				"url": "{{Localhost}}/api/company/images"
+			},
+			"response": []
+		},
+		{
+			"name": "Create Company User",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"account_type\": \"user\",\r\n  \"username\": \"tony_stark\",\r\n  \"email\": \"tony_stark@example.com\",\r\n  \"name\": \"Tony Stark\",\r\n  \"mobile\": \"+1234567890\",\r\n  \"password\": \"securePass123\",\r\n  \"role\": \"user\",\r\n  \"company_id\": 485,\r\n  \"is_admin\": false\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/company/users"
+			},
+			"response": []
+		},
+		{
+			"name": "Create Company Equipment",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"product_id\": 3,\r\n  \"quantity\": 5,\r\n  \"price\": 250.00,\r\n  \"software_code\": \"EQ-202sd5-A\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/equipments"
+			},
+			"response": []
+		},
+		{
+			"name": "Upload Equipment Images",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "images[]",
+							"type": "file",
+							"src": "/C:/Users/CG-vak/Pictures/pics/7.jpg"
+						},
+						{
+							"key": "images[]",
+							"type": "file",
+							"src": "/C:/Users/CG-vak/Pictures/pics/6.jpg"
+						}
+					]
+				},
+				"url": "{{Localhost}}/api/equipments/5/images"
+			},
+			"response": []
+		},
+		{
+			"name": "Rental Request",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"name\": \"New RR for mail\",\r\n    \"from_date\": \"2025-09-10\",\r\n    \"to_date\": \"2025-09-16\",\r\n    \"delivery_address\": \"123 Main BLock, UNit 2\",\r\n    \"offer_requirements\": null,\r\n    \"global_message\": \"THis is GLobal message for all the suppliers(sony and Yamaha )\",\r\n    \"company_products\": [\r\n        {\r\n            \"company_id\": 484,\r\n            \"private_message\": \"This is a private message for Sony India\",\r\n            \"initial_offer\": 88,\r\n            \"products\": [\r\n                {\r\n                    \"product_id\": 9776,\r\n                    \"requested_quantity\": 1\r\n                }\r\n            ]\r\n        }\r\n    ]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/rental-requests"
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Company Images",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "DELETE",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"type\": \"image1\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{Localhost}}/api/company/images"
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Equipment Images",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "DELETE",
+				"header": [],
+				"url": "{{Localhost}}/api/equipments/images/5"
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Equipment",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "DELETE",
+				"header": [],
+				"url": "{{Localhost}}/api/equipments/4"
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Company User",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": {
+						"token": "{{localToken}}"
+					}
+				},
+				"method": "DELETE",
+				"header": [],
+				"url": "{{Localhost}}/api/company/users/591"
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "Localhost",
+			"value": ""
+		},
+		{
+			"key": "localToken",
+			"value": ""
+		},
+		{
+			"key": "Staging",
+			"value": ""
+		},
+		{
+			"key": "StagingToken",
+			"value": ""
+		}
+	]
+}
