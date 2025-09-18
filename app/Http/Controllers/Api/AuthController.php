@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\User;
+use App\Models\City;
+use App\Models\Company;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -14,6 +16,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+
 
 class AuthController extends Controller
 {
@@ -55,24 +58,45 @@ class AuthController extends Controller
         try {
             \DB::beginTransaction();
 
+            // Fetch latitude and longitude from the cities table
+            $city = City::find($request->city);
+            if ($city) {
+                $latitude = $city->latitude;
+                $longitude = $city->longitude;
+            } else {
+                // If city is not found, throw an error
+                throw new \Exception("City not found");
+            }
+
             //Create company
-            $company = \App\Models\Company::create([
+            $company = Company::create([
                 'name' => $request->company_name,
                 'region_id' => $request->region,
                 'country_id' => $request->country,
                 'city_id' => $request->city,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+                'currency_id' => 1, // Default currency ID
+                'date_format' => 'MM/DD/YYYY',
+                'pricing_scheme' => 'Day Price',
             ]);
 
             //Create user
             $user = User::create([
                 'account_type' => $request->account_type,
                 'username' => $request->username,
-                'name' => $request->name,
+                // 'name' => $request->name,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
                 'company_id' => $company->id,
                 'role' => $company->users()->count() === 0 ? 'admin' : 'user',
             ]);
+
+            //Set default contact in company
+            if ($company->users()->count() === 1) {
+                $company->default_contact_id = $user->id;
+                $company->save();
+            }
 
             //Create profile
             $user->profile()->create([
@@ -85,17 +109,23 @@ class AuthController extends Controller
             \DB::commit();
             try {
                 //$user->sendEmailVerificationNotification();
-                $company_details = \App\Models\Company::where('id', $company->id)->first();
+                $company_details = Company::where('id', $company->id)->first();
                 $token = Str::random(30);
                 $data_user = User::where('id', $user->id)->first();
                 $data_user->token = $token;
                 $data_user->save();
                 $data = array('email' => $request->email);
 
+                // Mail::send('emails.verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
+                //     $message->to($data['email']);
+                //     $message->subject('Email Verification Mail');
+                // });
                 Mail::send('emails.verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
                     $message->to($data['email']);
                     $message->subject('Email Verification Mail');
+                    $message->from(config('mail.from.address'), config('mail.from.name')); // <-- set from here
                 });
+
                 Mail::send('emails.newRegistration', [
                     'company_name' => $request->company_name,
                     'username' => $request->username,
@@ -107,7 +137,9 @@ class AuthController extends Controller
                 ], function ($message) use ($data) {
                     $message->to($data['email']);
                     $message->subject('New registration');
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
                 });
+
                 Log::info('Email verification notification sent successfully', [
                     'user_id' => $user->id,
                     'user_email' => $request->email,
@@ -252,6 +284,76 @@ class AuthController extends Controller
         return response()->json([
             'token' => auth()->refresh()
         ]);
+    }
+
+
+    public function verifyAccount_from_bakcend($token)
+    {
+        try {
+            $user = User::where('token', $token)->first();
+
+            if (!$user) {
+                Log::warning('Account verification failed: Invalid token.', [
+                    'token' => $token
+                ]);
+
+                return Redirect::to(env('APP_FRONTEND_URL') . '/verification?status=failed&message=Invalid%20verification%20link');
+            }
+
+            if ($user->email_verified) {
+                return Redirect::to(env('APP_FRONTEND_URL') . '/verification?status=success&message=Email%20already%20verified');
+            }
+
+            $user->email_verified = 1;
+            $user->token = null; // clear token after verification
+            $user->save();
+
+            Log::info('User account verified successfully.', [
+                'user_id' => $user->id,
+                'email' => $user->email ?? null
+            ]);
+
+            return Redirect::to(env('APP_FRONTEND_URL') . '/verification?status=success&message=Email%20verified%20successfully');
+        } catch (\Throwable $e) {
+            Log::error('Account verification error.', [
+                'token' => $token,
+                'error' => $e->getMessage()
+            ]);
+
+            return Redirect::to(env('APP_FRONTEND_URL') . '/verification?status=failed&message=Something%20went%20wrong');
+        }
+    }
+
+    public function verifyAccount(Request $request)
+    {
+        $request->validate([
+            'token' => 'required|string'
+        ]);
+
+        $user = User::where('token', $request->token)->first();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired verification link.'
+            ], 400);
+        }
+
+        if ($user->email_verified) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Email already verified.'
+            ], 400);
+        }
+
+        $user->email_verified = 1;
+        $user->token = null; // clear token
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Your email has been successfully verified. You can now login.'
+        ], 200);
     }
 
 }

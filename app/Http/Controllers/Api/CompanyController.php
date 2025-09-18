@@ -15,6 +15,7 @@ use App\Models\Company;
 use App\Models\User;
 use Illuminate\Support\Facades\Storage;
 
+
 class CompanyController extends Controller
 {
     /**
@@ -583,35 +584,124 @@ class CompanyController extends Controller
     /**
      * Search companies with filters
      */
-    public function searchCompaniesWithFilters(Request $request)
+    public function searchCompanies(Request $request)
     {
         try {
-            $filters = $request->only(['name', 'location', 'industry', 'priority']);
+            $user = auth()->user();
 
-            $query = Company::query();
-
-            if (isset($filters['name'])) {
-                $query->where('name', 'like', '%' . $filters['name'] . '%');
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            if (isset($filters['location'])) {
-                $query->where('address', 'like', '%' . $filters['location'] . '%');
+            //Validate input
+            $request->validate([
+                'product_id' => 'required',
+                'city_id' => 'required|integer|exists:cities,id',
+                'country' => 'nullable|integer|exists:countries,id',
+                'distance' => 'nullable|numeric|min:1',
+            ]);
+
+            //Get city lat/long from DB
+            $city = DB::table('cities')->where('id', $request->city_id)->first();
+            if (!$city || !$city->latitude || !$city->longitude) {
+                return response()->json(['error' => 'City latitude and longitude are required'], 400);
             }
 
-            if (isset($filters['industry'])) {
-                $query->where('industry', $filters['industry']);
+            $city_lat = $city->latitude;
+            $city_lng = $city->longitude;
+
+            // Support multiple product IDs
+            $productIds = explode(',', $request->product_id);
+
+            // Query without JSON aggregation
+            $query = Company::with(['defaultContactProfile'])
+                ->join('equipments', function ($join) use ($productIds) {
+                    $join->on('companies.id', '=', 'equipments.company_id')
+                        ->whereIn('equipments.product_id', $productIds);
+                })
+                ->join('products', 'products.id', '=', 'equipments.product_id')
+                ->select(
+                    'companies.id as company_id',
+                    'companies.name as company_name',
+                    'companies.latitude as company_lat',
+                    'companies.longitude as company_lng',
+                    'equipments.product_id',
+                    'products.model as product_name',
+                    'equipments.price',
+                    'equipments.software_code'
+                );
+
+            // Optional filters
+            if ($request->filled('country')) {
+                $query->where('companies.country_id', $request->country);
             }
 
-            if (isset($filters['priority'])) {
-                $query->where('search_priority', $filters['priority']);
+            $results = $query->get();
+
+            if ($results->isEmpty()) {
+                return response()->json(['message' => 'No companies found matching your filters.'], 200);
             }
 
-            $companies = $query->get();
+            // Group results by company
+            $companies = $results->groupBy('company_id')->map(function ($items) use ($city_lat, $city_lng, $request) {
+                $first = $items->first();
 
-            return response()->json(['success' => true, 'companies' => $companies], 200);
+                // Calculate distance
+                $distance = 0;
+                if ($first->company_lat && $first->company_lng) {
+                    $distance = $this->calculateDistance($city_lat, $city_lng, $first->company_lat, $first->company_lng);
+                }
+
+                // Apply distance filter
+                if ($request->filled('distance') && $distance > $request->distance) {
+                    return null;
+                }
+
+                return [
+                    'id' => $first->company_id,
+                    'name' => $first->company_name,
+                    'products' => $items->map(function ($item) {
+                        return [
+                            'product_id' => $item->product_id,
+                            'product_name' => $item->product_name,
+                            'price' => number_format($item->price, 2, '.', ''),
+                            'software_code' => $item->software_code,
+                        ];
+                    })->values(),
+                    'distance' => $distance,
+                    'default_contact_profile' => $first->default_contact_profile ?? null,
+                ];
+            })->filter()->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $companies
+            ], 200);
+
         } catch (\Exception $e) {
-            Log::error('Error searching companies', ['error' => $e->getMessage()]);
-            return response()->json(['success' => false, 'message' => 'Unable to search companies'], 500);
+            Log::error('Error searching companies for product: ' . $e->getMessage(), [
+                'error' => $e->getTraceAsString()
+            ]);
+            return response()->json(['message' => 'Something went wrong. Please try again later.'], 500);
         }
     }
+
+    // Haversine Distance Formula
+    private function calculateDistance($lat1, $lon1, $lat2, $lon2)
+    {
+        $earthRadius = 6371; // km
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLon = deg2rad($lon2 - $lon1);
+
+        $a = sin($dLat / 2) * sin($dLat / 2) +
+            cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+            sin($dLon / 2) * sin($dLon / 2);
+
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return round($earthRadius * $c, 2);
+    }
+
+
+
 }
