@@ -89,6 +89,8 @@ class AuthController extends Controller
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
                 'company_id' => $company->id,
+                'is_admin' => 1,
+                'is_company_default_contact' => 1,
                 'role' => $company->users()->count() === 0 ? 'admin' : 'user',
             ]);
 
@@ -281,11 +283,21 @@ class AuthController extends Controller
 
     public function refresh()
     {
-        return response()->json([
-            'token' => auth()->refresh()
-        ]);
-    }
+        try {
+            $newToken = JWTAuth::parseToken()->refresh();
 
+            return response()->json([
+                'access_token' => $newToken,
+                'token_type' => 'bearer',
+                'expires_in' => auth('api')->factory()->getTTL() * 60
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Token refresh failed. Please log in again.'
+            ], 401);
+        }
+    }
 
     public function verifyAccount_from_bakcend($token)
     {

@@ -10,6 +10,9 @@ use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Redirect;
 
 class CompanyUserController extends Controller
 {
@@ -27,7 +30,6 @@ class CompanyUserController extends Controller
             }
 
             $validator = Validator::make($request->all(), [
-                'account_type' => 'required|in:user,provider',
                 'username' => 'required|string|unique:users,username|min:3|max:20|regex:/^[a-zA-Z0-9_]+$/',
                 'email' => 'required|email',
                 'name' => 'required|string',
@@ -45,7 +47,7 @@ class CompanyUserController extends Controller
             DB::beginTransaction();
 
             $user = User::create([
-                'account_type' => $request->account_type,
+                'account_type' => $authUser->account_type,
                 'username' => $request->username,
                 'password' => Hash::make($request->password),
                 'company_id' => $request->company_id,
@@ -61,11 +63,30 @@ class CompanyUserController extends Controller
 
             DB::commit();
 
-            // try {
-            //     $user->sendEmailVerificationNotification();
-            // } catch (\Exception $e) {
-            //     Log::error('Email verification failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
-            // }
+            try {
+                $token = Str::random(30);
+                $data_user = User::where('id', $user->id)->first();
+                $data_user->token = $token;
+                $data_user->save();
+                $data = array('email' => $request->email);
+
+                Mail::send('emails.verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
+                    $message->to($data['email']);
+                    $message->subject('Email Verification Mail');
+                    $message->from(config('mail.from.address'), config('mail.from.name')); // <-- set from here
+                });
+
+                Log::info('Email verification notification sent successfully', [
+                    'user_id' => $user->id,
+                    'user_email' => $request->email,
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send email verification notification', [
+                    'user_id' => $user->id,
+                    'user_email' => $request->email,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'success' => true,

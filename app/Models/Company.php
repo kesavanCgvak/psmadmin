@@ -26,7 +26,7 @@ class Company extends Model
         'postal_code',
         'latitude',
         'longitude',
-		
+
     ];
 
     public function users()
@@ -72,7 +72,7 @@ class Company extends Model
     public function region()
     {
         return $this->belongsTo(Region::class);
-		
+
     }
 
     public function country()
@@ -95,7 +95,7 @@ class Company extends Model
     {
         return $this->hasMany(SupplyJob::class, 'provider_id');
     }
-	
+
 	 public function getcountry() {
         return $this->belongsTo('App\Models\Country', 'country_id', 'id');
     }
@@ -111,7 +111,7 @@ class Company extends Model
     public function getDefaultcontact() {
         return $this->belongsTo('App\Models\UserProfile', 'default_contact_id', 'user_id');
     }
-		
+
 
 
 }

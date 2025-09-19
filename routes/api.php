@@ -44,6 +44,7 @@ Route::get('/countries/{country_id}/cities', [GeoController::class, 'getCitiesBy
 // 📦 Brands, Categories & Subcategories (Auth Required)
 // ------------------------------
 Route::middleware('jwt.verify')->group(function () {
+    Route::post('/auth/refresh', [AuthController::class, 'refresh']);
     Route::get('/brands', [BrandController::class, 'index']);
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/sub-categories', [SubCategoryController::class, 'index']);
@@ -80,6 +81,7 @@ Route::middleware('jwt.verify')->group(function () {
     Route::get('/company/info', [CompanyController::class, 'getInfo']);
     Route::put('/company/info/update', [CompanyController::class, 'updateCompanyInfo']);
     Route::get('/company/default-contact', [CompanyController::class, 'getDefaultContact']);
+    Route::put('/company/default-contact', [CompanyController::class, 'updateDefaultContact']);
 
     // Route::put('/company/info', [CompanyController::class, 'updateInfo']);
     Route::get('/company/preferences', [CompanyController::class, 'getPreferences']);

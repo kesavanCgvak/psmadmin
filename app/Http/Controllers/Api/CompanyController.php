@@ -228,15 +228,32 @@ class CompanyController extends Controller
                 return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
             }
 
+            //Update default contact id in companies table
             $company->default_contact_id = $request->contact_id;
             $company->save();
 
-            return response()->json(['success' => true, 'message' => 'Default contact updated successfully'], 200);
+            //Reset all company users' default flag to 0
+            User::where('company_id', $company->id)
+                ->update(['is_company_default_contact' => 0]);
+
+            //Set the chosen user as default contact
+            User::where('id', $request->contact_id)
+                ->update(['is_company_default_contact' => 1]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Default contact updated successfully'
+            ], 200);
+
         } catch (\Exception $e) {
             Log::error('Error updating default contact', ['error' => $e->getMessage()]);
-            return response()->json(['success' => false, 'message' => 'Unable to update default contact'], 500);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to update default contact'
+            ], 500);
         }
     }
+
 
     /**
      * Get default contact
@@ -247,7 +264,7 @@ class CompanyController extends Controller
             $user = JWTAuth::parseToken()->authenticate();
             $company = $user->company;
 
-            $contact = $company->defaultContact ?? null;
+            $contact = $company->defaultContactProfile ?? null;
 
             if (!$contact) {
                 return response()->json([
@@ -257,7 +274,7 @@ class CompanyController extends Controller
             }
 
             $contactData = [
-                'name' => $contact->name,
+                'name' => $contact->full_name,
                 'email' => $contact->email,
                 'mobile' => $contact->mobile,
             ];
@@ -297,6 +314,65 @@ class CompanyController extends Controller
         }
     }
 
+    /**
+     * Upload company image (logo or image1/image2/image3)
+     * Auto-deletes old image if exists
+     */
+    public function uploadImage(Request $request)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+            $company = $user->company;
+
+            $request->validate([
+                'type' => 'required|in:logo,image1,image2,image3',
+                'image' => 'required|image|mimes:jpeg,png,jpg|max:2048'
+            ]);
+
+            // Define upload folder
+            $uploadPath = public_path('images/company_images');
+
+            // Ensure folder exists
+            if (!file_exists($uploadPath)) {
+                mkdir($uploadPath, 0777, true);
+            }
+
+            // Delete old image if exists
+            if ($company->{$request->type}) {
+                $oldImage = public_path($company->{$request->type});
+                if (file_exists($oldImage)) {
+                    unlink($oldImage);
+                }
+            }
+
+            // Generate unique filename
+            $filename = time() . '_' . uniqid() . '.' . $request->file('image')->getClientOriginalExtension();
+
+            // Move uploaded file
+            $request->file('image')->move($uploadPath, $filename);
+
+            // Save relative path in DB
+            $relativePath = 'images/company_images/' . $filename;
+
+            $company->update([
+                $request->type => $relativePath
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => ucfirst($request->type) . ' uploaded successfully',
+                'path' => $relativePath,
+                'url' => url($relativePath)
+            ], 201);
+
+        } catch (\Exception $e) {
+            Log::error('Error uploading company image', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to upload company image'
+            ], 500);
+        }
+    }
 
     /**
      * Get company images (logo + 3 images)
@@ -308,10 +384,22 @@ class CompanyController extends Controller
             $company = $user->company;
 
             $images = [
-                'logo' => $company->logo,
-                'image1' => $company->image1,
-                'image2' => $company->image2,
-                'image3' => $company->image3,
+                'logo' => $company->logo ? [
+                    'path' => $company->logo,
+                    'url' => url($company->logo)
+                ] : null,
+                'image1' => $company->image1 ? [
+                    'path' => $company->image1,
+                    'url' => url($company->image1)
+                ] : null,
+                'image2' => $company->image2 ? [
+                    'path' => $company->image2,
+                    'url' => url($company->image2)
+                ] : null,
+                'image3' => $company->image3 ? [
+                    'path' => $company->image3,
+                    'url' => url($company->image3)
+                ] : null,
             ];
 
             return response()->json([
@@ -329,50 +417,8 @@ class CompanyController extends Controller
     }
 
     /**
-     * Upload company image (logo or image1/image2/image3)
-     * Auto-deletes old image if exists
-     */
-    public function uploadImage(Request $request)
-    {
-        try {
-            $user = JWTAuth::parseToken()->authenticate();
-            $company = $user->company;
-
-            $request->validate([
-                'type' => 'required|in:logo,image1,image2,image3',
-                'image' => 'required|image|mimes:jpeg,png,jpg|max:2048'
-            ]);
-
-            // Delete old image if exists
-            if ($company->{$request->type} && Storage::disk('public')->exists($company->{$request->type})) {
-                Storage::disk('public')->delete($company->{$request->type});
-            }
-
-            // Upload new image
-            $path = $request->file('image')->store('company_images', 'public');
-
-            $company->update([
-                $request->type => $path
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => ucfirst($request->type) . ' uploaded successfully',
-                'path' => $path
-            ], 201);
-
-        } catch (\Exception $e) {
-            Log::error('Error uploading company image', ['error' => $e->getMessage()]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Unable to upload company image'
-            ], 500);
-        }
-    }
-
-    /**
      * Delete company image (logo or image1/image2/image3)
-     * Auto-deletes file from storage
+     * Auto-deletes file from public/images/company_images
      */
     public function deleteImage(Request $request)
     {
@@ -387,9 +433,11 @@ class CompanyController extends Controller
             $type = $request->type;
 
             if ($company->{$type}) {
-                // Delete file from storage
-                if (Storage::disk('public')->exists($company->{$type})) {
-                    Storage::disk('public')->delete($company->{$type});
+                $filePath = public_path($company->{$type});
+
+                // Delete file if exists
+                if (file_exists($filePath)) {
+                    unlink($filePath);
                 }
 
                 // Remove reference from DB
@@ -409,6 +457,7 @@ class CompanyController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * Get company address
@@ -625,6 +674,8 @@ class CompanyController extends Controller
                     'companies.name as company_name',
                     'companies.latitude as company_lat',
                     'companies.longitude as company_lng',
+                    'companies.rating as company_rating',
+                    'companies.default_contact_id',
                     'equipments.product_id',
                     'products.model as product_name',
                     'equipments.price',
@@ -660,6 +711,7 @@ class CompanyController extends Controller
                 return [
                     'id' => $first->company_id,
                     'name' => $first->company_name,
+                    'rating' => $first->company_rating,
                     'products' => $items->map(function ($item) {
                         return [
                             'product_id' => $item->product_id,
@@ -669,7 +721,13 @@ class CompanyController extends Controller
                         ];
                     })->values(),
                     'distance' => $distance,
-                    'default_contact_profile' => $first->default_contact_profile ?? null,
+                    'default_contact_profile' => $first->defaultContactProfile
+                        ? [
+                            'name' => $first->defaultContactProfile->full_name,
+                            'email' => $first->defaultContactProfile->email,
+                            'mobile' => $first->defaultContactProfile->mobile,
+                        ]
+                        : null,
                 ];
             })->filter()->values();
 
