@@ -9,7 +9,7 @@ class Country extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'region_id'];
+    protected $fillable = ['region_id', 'name', 'iso_code', 'numeric_code', 'phone_code'];
 
     /**
      * A country belongs to a region.
@@ -17,6 +17,14 @@ class Country extends Model
     public function region()
     {
         return $this->belongsTo(Region::class);
+    }
+
+    /**
+     * A country has many states/provinces.
+     */
+    public function states()
+    {
+        return $this->hasMany(StateProvince::class);
     }
 
     /**

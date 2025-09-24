@@ -26,7 +26,7 @@ class GeoController extends Controller
     public function getCountries()
     {
         try {
-            $countries = Country::select('id', 'name')->orderBy('name')->get();
+            $countries = Country::select('id', 'name','iso_code')->orderBy('name')->get();
 
             if ($countries->isEmpty()) {
                 return response()->json(['success' => false, 'message' => 'No countries found'], 404);
@@ -48,7 +48,7 @@ class GeoController extends Controller
                 return response()->json(['success' => false, 'message' => 'Region not found'], 404);
             }
 
-            $Countries = $region->Countries()->select('id', 'name')->get();
+            $Countries = $region->Countries()->select('id', 'name', 'iso_code')->get();
             return response()->json(['success' => true, 'data' => $Countries]);
         } catch (\Exception $e) {
             Log::error("Error fetching Countries for region ID $regionId: " . $e->getMessage());

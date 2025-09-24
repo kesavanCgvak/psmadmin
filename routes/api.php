@@ -20,6 +20,10 @@ use App\Http\Controllers\Api\SupplyJobActionsController;
 use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\UserOfferController;
 use App\Http\Controllers\Api\ForgotPasswordController;
+use App\Http\Controllers\Api\StateController;
+use App\Http\Controllers\Api\CityController;
+use App\Http\Controllers\Api\LocationController;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
 Route::post('register', [AuthController::class, 'register']);
@@ -38,7 +42,13 @@ Route::post('/reset-password/{token}', [ForgotPasswordController::class, 'reset'
 Route::get('/regions', [GeoController::class, 'getRegions']);
 Route::get('/countries', [GeoController::class, 'getCountries']);
 Route::get('/regions/{region_id}/countries', [GeoController::class, 'getCountriesByRegion']);
-Route::get('/countries/{country_id}/cities', [GeoController::class, 'getCitiesByCountry']);
+// Route::get('/countries/{country_id}/cities', [GeoController::class, 'getCitiesByCountry']);
+
+Route::get('countries/{country}/states', [StateController::class, 'index']);
+Route::get('states/{state}', [StateController::class, 'show']);
+Route::get('states/{state}/cities', [CityController::class, 'indexByState']);
+Route::get('countries/{country}/cities', [CityController::class, 'indexByCountry']);
+// Route::get('locations/hierarchy', [LocationController::class, 'hierarchy']);
 
 // ------------------------------
 // 📦 Brands, Categories & Subcategories (Auth Required)

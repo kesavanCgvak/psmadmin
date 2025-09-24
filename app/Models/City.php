@@ -9,13 +9,15 @@ class City extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'latitude', 'longitude', 'country_id'];
+    protected $fillable = ['state_id', 'country_id', 'name', 'latitude', 'longitude'];
 
-    /**
-     * A city belongs to a country.
-     */
     public function country()
     {
         return $this->belongsTo(Country::class);
+    }
+
+    public function state()
+    {
+        return $this->belongsTo(StateProvince::class, 'state_id');
     }
 }

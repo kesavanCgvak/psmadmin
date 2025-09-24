@@ -26,12 +26,13 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'account_type' => 'required|string|in:provider,customer,user',
+            'account_type' => 'required|string|in:provider,user',
             'company_name' => 'required|string|max:255|unique:companies,name',
             'username' => 'required|string|max:255|unique:users,username',
             'name' => 'nullable|string|max:255',
             'region' => 'required|exists:regions,id',
-            'country' => 'required|exists:countries,id',
+            'country_id' => 'required|exists:countries,id',
+            'state_id' => 'required|exists:states_provinces,id',
             'city' => 'required|exists:cities,id',
             'birthday' => 'nullable|date|before:today',
             'email' => 'nullable|email|max:255',
@@ -46,7 +47,11 @@ class AuthController extends Controller
             'email.unique' => 'This email is already in use.',
             'terms_accepted.accepted' => 'You must accept the terms to register.',
         ]);
-
+        Log::info('User account verified successfully.', [
+            'name' => $request->company_name,
+            'region_id' => $request->region,
+            'country_id' => $request->country_id,
+        ]);
         if ($validator->fails()) {
             return response()->json([
                 'status' => 'error',
@@ -72,7 +77,7 @@ class AuthController extends Controller
             $company = Company::create([
                 'name' => $request->company_name,
                 'region_id' => $request->region,
-                'country_id' => $request->country,
+                'country_id' => $request->country_id,
                 'city_id' => $request->city,
                 'latitude' => $latitude,
                 'longitude' => $longitude,
