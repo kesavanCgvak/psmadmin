@@ -19,7 +19,53 @@ use Illuminate\Validation\ValidationException;
 
 class ProductController extends Controller
 {
+
     public function search(Request $request)
+    {
+        $request->validate([
+            'search' => 'required|string|min:2'
+        ]);
+
+        $keywords = explode(' ', $request->query('search')); // split into words
+
+        $products = DB::table('products as p')
+            ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
+            ->leftJoin('categories as c', 'p.category_id', '=', 'c.id')
+            ->leftJoin('sub_categories as sc', 'p.sub_category_id', '=', 'sc.id')
+            ->select(
+                'p.id as product_id',
+                DB::raw("CONCAT(b.name, ' ', p.model) as product_name"),
+                'p.model as model_name',
+                'p.psm_code',
+                'b.id as brand_id',
+                'b.name as brand_name',
+                'c.id as category_id',
+                'c.name as category_name',
+                'sc.id as sub_category_id',
+                'sc.name as sub_category_name'
+            )
+            ->where(function ($query) use ($keywords) {
+                foreach ($keywords as $word) {
+                    $like = "%$word%";
+                    $query->where(function ($q) use ($like) {
+                        $q->where('p.model', 'LIKE', $like)
+                            ->orWhere('b.name', 'LIKE', $like)
+                            ->orWhere('c.name', 'LIKE', $like)
+                            ->orWhere('sc.name', 'LIKE', $like)
+                            ->orWhere(DB::raw("CONCAT(b.name, ' ', p.model)"), 'LIKE', $like);
+                    });
+                }
+            })
+            ->limit(50)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $products
+        ]);
+    }
+
+    public function searchOld(Request $request)
     {
         $request->validate([
             'search' => 'required|string|min:2'
@@ -43,11 +89,18 @@ class ProductController extends Controller
                 'sc.id as sub_category_id',
                 'sc.name as sub_category_name'
             )
+            // ->where(function ($query) use ($search) {
+            //     $query->Where('p.model', 'LIKE', $search)
+            //         ->orWhere('b.name', 'LIKE', $search)
+            //         ->orWhere('c.name', 'LIKE', $search)
+            //         ->orWhere('sc.name', 'LIKE', $search);
+            // })
             ->where(function ($query) use ($search) {
-                $query->Where('p.model', 'LIKE', $search)
+                $query->where('p.model', 'LIKE', $search)
                     ->orWhere('b.name', 'LIKE', $search)
                     ->orWhere('c.name', 'LIKE', $search)
-                    ->orWhere('sc.name', 'LIKE', $search);
+                    ->orWhere('sc.name', 'LIKE', $search)
+                    ->orWhere(DB::raw("CONCAT(b.name, ' ', p.model)"), 'LIKE', $search);
             })
             ->limit(50)
             ->get();

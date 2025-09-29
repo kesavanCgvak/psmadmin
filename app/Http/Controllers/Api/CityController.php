@@ -17,7 +17,7 @@ class CityController extends Controller
 
     public function indexByCountry(Country $country)
     { // legacy
-        $cities = $country->cities()->whereNull('state_id')->orderBy('name')->get();
+        $cities = $country->cities()->orderBy('name')->get();
         return response()->json(['success' => true, 'data' => CityResource::collection($cities)]);
     }
 }

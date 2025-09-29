@@ -9,6 +9,7 @@ use App\Models\RentalJobOffer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class SupplyJobActionsController extends Controller
 {
@@ -32,14 +33,35 @@ class SupplyJobActionsController extends Controller
      */
     public function updateMilestoneDates(Request $request, int $id)
     {
-       $user = auth('api')->user();
+        $user = auth('api')->user();
 
-        $data = $request->validate([
-            'packing_date'    => 'nullable|date',
-            'delivery_date' => 'nullable|date',
-            'return_date'  => 'nullable|date',
-            'unpacking_date'  => 'nullable|date',
+        // Validation: require at least one of these fields
+        $validator = Validator::make($request->all(), [
+            'packing_date' => 'nullable|date|required_without_all:delivery_date,return_date,unpacking_date',
+            'delivery_date' => 'nullable|date|required_without_all:packing_date,return_date,unpacking_date',
+            'return_date' => 'nullable|date|required_without_all:packing_date,delivery_date,unpacking_date',
+            'unpacking_date' => 'nullable|date|required_without_all:packing_date,delivery_date,return_date',
         ]);
+
+        // If validation fails, return proper JSON error
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid payload.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Disallow unknown fields (anything other than the 4 expected keys)
+        $allowedKeys = ['packing_date', 'delivery_date', 'return_date', 'unpacking_date'];
+        $extraKeys = collect(array_keys($request->all()))->diff($allowedKeys);
+
+        if ($extraKeys->isNotEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unexpected fields in request: ' . $extraKeys->implode(', ')
+            ], 422);
+        }
 
         try {
             $sj = SupplyJob::findOrFail($id);
@@ -48,16 +70,26 @@ class SupplyJobActionsController extends Controller
                 return $resp;
             }
 
-            $sj->fill($data)->save();
+            $sj->fill($validator->validated())->save();
 
-            return response()->json(['success' => true, 'message' => 'Dates updated.']);
+            return response()->json([
+                'success' => true,
+                'message' => 'Dates updated successfully.'
+            ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json(['success' => false, 'message' => 'Supply job not found.'], 404);
+            return response()->json([
+                'success' => false,
+                'message' => 'Supply job not found.'
+            ], 404);
         } catch (\Throwable $e) {
             report($e);
-            return response()->json(['success' => false, 'message' => 'Failed to update dates.'], 500);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update dates.'
+            ], 500);
         }
     }
+
 
     /**
      * Update supplier product lines: can_supply, price_per_unit.
@@ -65,12 +97,12 @@ class SupplyJobActionsController extends Controller
      */
     public function updateSupplyQuantities(Request $request, int $id)
     {
-       $user = auth('api')->user();
+        $user = auth('api')->user();
 
         $validated = $request->validate([
             'items' => 'required|array|min:1',
-            'items.*.product_id'     => 'required|integer|distinct',
-            'items.*.can_supply'     => 'required|integer|min:0',
+            'items.*.product_id' => 'required|integer|distinct',
+            'items.*.can_supply' => 'required|integer|min:0',
             'items.*.price_per_unit' => 'nullable|numeric|min:0',
         ]);
 
@@ -117,7 +149,7 @@ class SupplyJobActionsController extends Controller
      */
     public function sendNewOffer(Request $request, int $id)
     {
-       $user = auth('api')->user();
+        $user = auth('api')->user();
 
         $data = $request->validate([
             'amount' => 'required|integer|min:0',
@@ -134,15 +166,15 @@ class SupplyJobActionsController extends Controller
 
             $offer = new RentalJobOffer();
             $offer->supply_job_id = $sj->id;
-            $offer->version       = $nextVersion;
-            $offer->total_price   = $data['amount']; // integer as per requirement
-            $offer->status        = 'pending';
+            $offer->version = $nextVersion;
+            $offer->total_price = $data['amount']; // integer as per requirement
+            $offer->status = 'pending';
             $offer->save();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Offer sent.',
-                'data'    => [
+                'data' => [
                     'id' => $offer->id,
                     'version' => $offer->version,
                     'total_price' => $offer->total_price,
@@ -162,7 +194,7 @@ class SupplyJobActionsController extends Controller
      */
     public function handshake(Request $request, int $id)
     {
-       $user = auth('api')->user();
+        $user = auth('api')->user();
 
         try {
             $sj = SupplyJob::with('rentalJob')->findOrFail($id);
@@ -196,7 +228,7 @@ class SupplyJobActionsController extends Controller
      */
     public function cancelNegotiation(Request $request, int $id)
     {
-       $user = auth('api')->user();
+        $user = auth('api')->user();
 
         try {
             $sj = SupplyJob::findOrFail($id);

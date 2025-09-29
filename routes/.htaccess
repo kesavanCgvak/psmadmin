@@ -1,0 +1,53 @@
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # ----------------------------------------------------------------------
+    # Block WordPress scanning bots (wlwmanifest.xml, wp-includes, wp-admin)
+    # ----------------------------------------------------------------------
+    RedirectMatch 403 ^.*wp-includes/.*$
+    RedirectMatch 403 ^.*wp-admin/.*$
+    RedirectMatch 403 ^.*wlwmanifest\.xml$
+
+    # ----------------------------------------------------------------------
+    # Basic Auth protection for Filament Admin (/psm_admin)
+    # ----------------------------------------------------------------------
+    RewriteCond %{REQUEST_URI} ^/psm_admin
+    RewriteRule .* - [E=PROTECT_ADMIN:1]
+
+    <IfModule mod_setenvif.c>
+        SetEnvIf PROTECT_ADMIN 1 require_auth
+    </IfModule>
+</IfModule>
+
+<IfModule mod_authn_file.c>
+    AuthType Basic
+    AuthName "Restricted Admin Area"
+    AuthUserFile /home/prosubmarket/.htpasswd
+    Require valid-user
+</IfModule>
+
+# ----------------------------------------------------------------------
+# Existing Laravel rules
+# ----------------------------------------------------------------------
+
+# Handle Authorization Header
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Handle X-XSRF-Token Header
+RewriteCond %{HTTP:x-xsrf-token} .
+RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
+
+# Redirect Trailing Slashes If Not A Folder...
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} (.+)/$
+RewriteRule ^ %1 [L,R=301]
+
+# Send Requests To Front Controller...
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [L]

@@ -20,6 +20,8 @@ class Company extends Model
         'region_id',
         'country_id',
         'city_id',
+        'state_id',
+        'default_contact_id',
         'address_line_1',
         'address_line_2',
         'search_priority',
@@ -108,6 +110,9 @@ class Company extends Model
         return $this->belongsTo('App\Models\Region', 'region_id', 'id');
     }
 
+    public function getState() {
+        return $this->belongsTo('App\Models\StateProvince', 'state_id', 'id');
+    }
     public function getDefaultcontact() {
         return $this->belongsTo('App\Models\UserProfile', 'default_contact_id', 'user_id');
     }

@@ -110,7 +110,7 @@ class EquipmentController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Company equipments fetched successfully',
-                'total'   => $equipments->count(),
+                'total' => $equipments->count(),
                 'data' => $formatted
             ], 200);
 
@@ -216,32 +216,53 @@ class EquipmentController extends Controller
         return response()->json(['success' => true, 'message' => 'Description updated', 'data' => $equipment]);
     }
 
-    /**
-     * Add images
-     */
     public function addImages(Request $request, Equipment $equipment)
     {
         $user = $this->getAuthenticatedUser();
-        if (!$user)
+        if (!$user) {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
 
         if ($equipment->user_id !== $user->id) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
         $validator = Validator::make($request->all(), ['images.*' => 'required|image|max:2048']);
-        if ($validator->fails())
+        if ($validator->fails()) {
             return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        if (!$request->hasFile('images')) {
+            return response()->json(['success' => false, 'message' => 'No images uploaded'], 422);
+        }
 
         $uploaded = [];
         foreach ($request->file('images') as $file) {
-            $path = $file->store('equipment_images', 'public');
-            $img = EquipmentImage::create(['equipment_id' => $equipment->id, 'image_path' => $path]);
-            $uploaded[] = $img;
+            // Generate a unique filename
+            $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+
+            // Move file directly to public/equipment_image
+            $file->move(public_path('equipment_image'), $filename);
+
+            // Save path in database
+            $img = EquipmentImage::create([
+                'equipment_id' => $equipment->id,
+                'image_path' => 'equipment_image/' . $filename
+            ]);
+
+            $uploaded[] = [
+                'id' => $img->id,
+                'url' => asset('equipment_image/' . $filename)
+            ];
         }
 
-        return response()->json(['success' => true, 'message' => 'Images added', 'data' => $uploaded]);
+        return response()->json([
+            'success' => true,
+            'message' => 'Images added',
+            'data' => $uploaded
+        ]);
     }
+
 
     /**
      * Delete image

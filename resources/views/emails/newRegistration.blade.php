@@ -3,9 +3,8 @@
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>verify your email</title>
+  <title>New Registration</title>
   <style type="text/css">
-    /* Basic styling for email clients */
     body {
       margin: 0;
       padding: 0;
@@ -14,48 +13,68 @@
     }
     table {
       border-collapse: collapse;
+      width: 100%;
     }
-    td {
-      padding: 0px;
-     
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+    }
+    .header {
+      background-color: #ffffff;
+      padding: 20px;
+      text-align: center;
+      border-bottom: 1px solid #eeeeee;
+    }
+    .header h1 {
+      color: #333333;
+      font-size: 24px;
+      margin: 15px 0 0 0;
+    }
+    .content {
+      padding: 30px;
+      color: #555555;
+      font-size: 16px;
+      line-height: 24px;
+    }
+    .content p {
+      margin: 8px 0;
+    }
+    .footer {
+      background-color: #ee4c50;
+      color: #ffffff;
+      font-size: 14px;
+      text-align: center;
+      padding: 20px;
     }
   </style>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f6f6f6; font-family: Arial, sans-serif;">
-  <table align="center" border="0" cellpadding="0" cellspacing="0" width="600" style="border-collapse: collapse;">
+<body>
+  <table class="container" cellpadding="0" cellspacing="0" border="0">
     <tr>
-      <td align="center" bgcolor="#ffffff">
-        <img src="" />
-        <h1 style="color: #333333;">New registration</h1>
+      <td class="header">
+        <img src="https://via.placeholder.com/150x50?text=Logo" alt="Pro Subrental Marketplace" style="max-width:150px;" />
+        <h1>New Registration</h1>
       </td>
     </tr>
     <tr>
-      <td bgcolor="#ffffff" style="padding: 20px 30px 40px 30px;  text-align: left;">
-        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-          <tr>
-            <td style="color: #555555; font-size: 16px; line-height: 24px;">
-            <p><b> Company Name:</b> {{ $company_name }}</p>
-            <p><b> User Name:</b>  {{ $username }}</p>
-            <p><b> User Email:</b>  {{ $email }}</p>
-            <p><b> Region:</b>  {{ $region_id }}</p>
-            <p><b> Country:</b> {{ $country_id }}</p>
-            <p><b> City:</b>  {{ $city_id }}</p>
-            <p><b> Contact Phone:</b>  {{ $mobile }}</p>
-            <p>Best regards,<br>Pro Sub market</p>
-            </td>
-          </tr>
-        </table>
+      <td class="content">
+        <p><b>Company Name:</b> {{ $company_name }}</p>
+        <p><b>User Name:</b> {{ $username }}</p>
+        <p><b>User Email:</b> {{ $email }}</p>
+        <p><b>Region:</b> {{ $region_name }}</p>
+        <p><b>Country:</b> {{ $country_name }}</p>
+        <p><b>State/Province:</b> {{ $state_name ?? 'N/A' }}</p>
+        <p><b>City:</b> {{ $city_name }}</p>
+        <p><b>Contact Phone:</b> {{ $mobile }}</p>
+
+        <p style="margin-top:20px;">Best regards,<br>
+        <strong>Pro Subrental Marketplace Team</strong></p>
       </td>
     </tr>
     <tr>
-      <td bgcolor="#ee4c50" style="padding: 30px 30px 30px 30px;">
-        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-          <tr>
-            <td align="center" style="color: #ffffff; font-size: 14px;">
-              &copy; 2025 Your Company. All rights reserved.
-            </td>
-          </tr>
-        </table>
+      <td class="footer">
+        &copy; 2025 Pro Subrental Marketplace. All rights reserved.
       </td>
     </tr>
   </table>

@@ -79,6 +79,7 @@ class AuthController extends Controller
                 'region_id' => $request->region,
                 'country_id' => $request->country_id,
                 'city_id' => $request->city,
+                'state_id' => $request->state_id,
                 'latitude' => $latitude,
                 'longitude' => $longitude,
                 'currency_id' => 1, // Default currency ID
@@ -117,6 +118,11 @@ class AuthController extends Controller
             try {
                 //$user->sendEmailVerificationNotification();
                 $company_details = Company::where('id', $company->id)->first();
+                log::info('User account verified successfully.', [
+                    'company' => $company_details,
+                    'region_id' => $request->region,
+                    'country_id' => $request->country_id,
+                ]);
                 $token = Str::random(30);
                 $data_user = User::where('id', $user->id)->first();
                 $data_user->token = $token;
@@ -133,12 +139,19 @@ class AuthController extends Controller
                     $message->from(config('mail.from.address'), config('mail.from.name')); // <-- set from here
                 });
 
+                Log::info('state', ['state_name' => $company_details->getState->name,]);
+                Log::info('Email verification notification sent successfully', [
+                    'user_id' => $user->id,
+                    'user_email' => $request->email,
+                ]);
+
                 Mail::send('emails.newRegistration', [
                     'company_name' => $request->company_name,
                     'username' => $request->username,
-                    'region_id' => $company_details->getregion->name,
-                    'country_id' => $company_details->getcountry->name,
-                    'city_id' => $company_details->getcity->name,
+                    'region_name' => $company_details->getregion->name,
+                    'country_name' => $company_details->getcountry->name,
+                    'city_name' => $company_details->getcity->name,
+                    'state_name' => $company_details->getState->name,
                     'mobile' => $request->mobile,
                     'email' => $request->email
                 ], function ($message) use ($data) {
@@ -147,7 +160,7 @@ class AuthController extends Controller
                     $message->from(config('mail.from.address'), config('mail.from.name'));
                 });
 
-                Log::info('Email verification notification sent successfully', [
+                Log::info('New Registration mail sent successfully', [
                     'user_id' => $user->id,
                     'user_email' => $request->email,
                 ]);
