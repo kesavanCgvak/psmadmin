@@ -16,7 +16,7 @@ class Company extends Model
         'currency_id',
         'date_format',
         'pricing_scheme',
-        'rental_software',
+        'rental_software_id',
         'region_id',
         'country_id',
         'city_id',

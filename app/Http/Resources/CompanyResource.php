@@ -17,7 +17,7 @@ class CompanyResource extends JsonResource
             'image1' => $this->image1,
             'image2' => $this->image2,
             'image3' => $this->image3,
-            'rental_software' => $this->rental_software,
+            'rental_software' => $this->rental_software_id,
         ];
     }
 }

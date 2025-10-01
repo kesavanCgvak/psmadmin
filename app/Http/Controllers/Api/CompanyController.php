@@ -106,12 +106,11 @@ class CompanyController extends Controller
                     'message' => 'Company not found',
                 ], 404);
             }
-
             $preferences = [
                 'currency_id' => $company->currency_id,
                 'date_format' => $company->date_format,
                 'pricing_scheme' => $company->pricing_scheme,
-                'rental_software' => $company->rental_software,
+                'rental_software_id' => $company->rental_software_id,
             ];
 
             return response()->json([
@@ -166,7 +165,7 @@ class CompanyController extends Controller
                 'currency_id' => 'nullable|integer|exists:currencies,id',
                 'date_format' => 'nullable|string|max:20',
                 'pricing_scheme' => 'nullable|string|max:50',
-                'rental_software' => 'nullable|integer|exists:rental_softwares,id',
+                'rental_software_id' => 'nullable|integer|exists:rental_softwares,id',
             ]);
 
             // Update only provided fields
@@ -176,7 +175,7 @@ class CompanyController extends Controller
                 'currency_id' => $company->currency_id,
                 'date_format' => $company->date_format,
                 'pricing_scheme' => $company->pricing_scheme,
-                'rental_software' => $company->rental_software,
+                'rental_software_id' => $company->rental_software_id,
             ];
 
             return response()->json([
@@ -631,7 +630,7 @@ class CompanyController extends Controller
 
 
     /**
-     * Search companies with filters
+     * Search companies with filters and distance radius
      */
     public function searchCompanies(Request $request)
     {
@@ -642,7 +641,7 @@ class CompanyController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            //Validate input
+            // Validate input
             $request->validate([
                 'product_id' => 'required',
                 'city_id' => 'required|integer|exists:cities,id',
@@ -650,7 +649,7 @@ class CompanyController extends Controller
                 'distance' => 'nullable|numeric|min:1',
             ]);
 
-            //Get city lat/long from DB
+            // Get city lat/long from DB
             $city = DB::table('cities')->where('id', $request->city_id)->first();
             if (!$city || !$city->latitude || !$city->longitude) {
                 return response()->json(['error' => 'City latitude and longitude are required'], 400);
@@ -658,11 +657,12 @@ class CompanyController extends Controller
 
             $city_lat = $city->latitude;
             $city_lng = $city->longitude;
+            $radius = $request->distance ?? 50; // default to 50 km if not given
 
             // Support multiple product IDs
             $productIds = explode(',', $request->product_id);
 
-            // Query without JSON aggregation
+            // Main query with SQL-based distance calculation
             $query = Company::with(['defaultContactProfile'])
                 ->join('equipments', function ($join) use ($productIds) {
                     $join->on('companies.id', '=', 'equipments.company_id')
@@ -679,10 +679,20 @@ class CompanyController extends Controller
                     'equipments.product_id',
                     'products.model as product_name',
                     'equipments.price',
-                    'equipments.software_code'
-                );
+                    'equipments.software_code',
+                    DB::raw("(
+                    6371 * acos(
+                        cos(radians($city_lat))
+                        * cos(radians(companies.latitude))
+                        * cos(radians(companies.longitude) - radians($city_lng))
+                        + sin(radians($city_lat))
+                        * sin(radians(companies.latitude))
+                    )
+                ) as distance")
+                )
+                ->having('distance', '<=', $radius)
+                ->orderBy('distance');
 
-            // Optional filters
             if ($request->filled('country')) {
                 $query->where('companies.country_id', $request->country);
             }
@@ -694,19 +704,8 @@ class CompanyController extends Controller
             }
 
             // Group results by company
-            $companies = $results->groupBy('company_id')->map(function ($items) use ($city_lat, $city_lng, $request) {
+            $companies = $results->groupBy('company_id')->map(function ($items) {
                 $first = $items->first();
-
-                // Calculate distance
-                $distance = 0;
-                if ($first->company_lat && $first->company_lng) {
-                    $distance = $this->calculateDistance($city_lat, $city_lng, $first->company_lat, $first->company_lng);
-                }
-
-                // Apply distance filter
-                if ($request->filled('distance') && $distance > $request->distance) {
-                    return null;
-                }
 
                 return [
                     'id' => $first->company_id,
@@ -720,7 +719,7 @@ class CompanyController extends Controller
                             'software_code' => $item->software_code,
                         ];
                     })->values(),
-                    'distance' => $distance,
+                    'distance' => round($first->distance, 2), // from SQL
                     'default_contact_profile' => $first->defaultContactProfile
                         ? [
                             'name' => $first->defaultContactProfile->full_name,
@@ -729,7 +728,7 @@ class CompanyController extends Controller
                         ]
                         : null,
                 ];
-            })->filter()->values();
+            })->values();
 
             return response()->json([
                 'success' => true,
@@ -743,6 +742,7 @@ class CompanyController extends Controller
             return response()->json(['message' => 'Something went wrong. Please try again later.'], 500);
         }
     }
+
 
     // Haversine Distance Formula
     private function calculateDistance($lat1, $lon1, $lat2, $lon2)
