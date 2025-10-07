@@ -13,7 +13,9 @@ use Tymon\JWTAuth\Exceptions\TokenExpiredException;
 use Tymon\JWTAuth\Exceptions\TokenInvalidException;
 use App\Models\Company;
 use App\Models\User;
-use Illuminate\Support\Facades\Storage;
+use App\Models\CompanyRating;
+use App\Models\CompanyBlock;
+
 
 
 class CompanyController extends Controller
@@ -628,11 +630,136 @@ class CompanyController extends Controller
         }
     }
 
+    public function searchCompanies(Request $request)
+    {
+        try {
+            $user = auth()->user();
+
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
+            // Validate input
+            $request->validate([
+                'product_id' => 'required',
+                'city_id' => 'required|integer|exists:cities,id',
+                'country' => 'nullable|integer|exists:countries,id',
+                'distance' => 'nullable|numeric|min:1',
+            ]);
+
+            // Get city lat/long from DB
+            $city = DB::table('cities')->where('id', $request->city_id)->first();
+            if (!$city || !$city->latitude || !$city->longitude) {
+                return response()->json(['error' => 'City latitude and longitude are required'], 400);
+            }
+
+            $city_lat = $city->latitude;
+            $city_lng = $city->longitude;
+            $radius = $request->distance ?? 50; // default to 50 km if not given
+
+            // Support multiple product IDs
+            $productIds = explode(',', $request->product_id);
+
+            // Get blocked company IDs for logged-in user
+            $blockedCompanyIds = DB::table('company_blocks')
+                ->where('user_id', $user->id)
+                ->pluck('company_id')
+                ->toArray();
+
+            // Main query with SQL-based distance calculation
+            $query = Company::with(['defaultContactProfile'])
+                ->join('equipments', function ($join) use ($productIds) {
+                    $join->on('companies.id', '=', 'equipments.company_id')
+                        ->whereIn('equipments.product_id', $productIds);
+                })
+                ->join('products', 'products.id', '=', 'equipments.product_id')
+                ->select(
+                    'companies.id as company_id',
+                    'companies.name as company_name',
+                    'companies.latitude as company_lat',
+                    'companies.longitude as company_lng',
+                    'companies.rating as company_rating',
+                    'companies.default_contact_id',
+                    'equipments.product_id',
+                    'products.model as product_name',
+                    'equipments.price',
+                    'equipments.software_code',
+                    DB::raw("(
+                    6371 * acos(
+                        cos(radians($city_lat))
+                        * cos(radians(companies.latitude))
+                        * cos(radians(companies.longitude) - radians($city_lng))
+                        + sin(radians($city_lat))
+                        * sin(radians(companies.latitude))
+                    )
+                ) as distance")
+                )
+                ->having('distance', '<=', $radius)
+                ->orderBy('distance');
+
+            // Exclude own company
+            $query->where('companies.id', '!=', $user->company_id);
+
+            // Exclude blocked companies
+            if (!empty($blockedCompanyIds)) {
+                $query->whereNotIn('companies.id', $blockedCompanyIds);
+            }
+
+            if ($request->filled('country')) {
+                $query->where('companies.country_id', $request->country);
+            }
+
+            $results = $query->get();
+
+            if ($results->isEmpty()) {
+                return response()->json(['message' => 'No companies found matching your filters.'], 200);
+            }
+
+            // Group results by company
+            $companies = $results->groupBy('company_id')->map(function ($items) {
+                $first = $items->first();
+
+                return [
+                    'id' => $first->company_id,
+                    'name' => $first->company_name,
+                    'rating' => $first->company_rating,
+                    'products' => $items->map(function ($item) {
+                        return [
+                            'product_id' => $item->product_id,
+                            'product_name' => $item->product_name,
+                            'price' => number_format($item->price, 2, '.', ''),
+                            'software_code' => $item->software_code,
+                        ];
+                    })->values(),
+                    'distance' => round($first->distance, 2),
+                    'default_contact_profile' => $first->defaultContactProfile
+                        ? [
+                            'name' => $first->defaultContactProfile->full_name,
+                            'email' => $first->defaultContactProfile->email,
+                            'mobile' => $first->defaultContactProfile->mobile,
+                        ]
+                        : null,
+                ];
+            })->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $companies
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error searching companies for product: ' . $e->getMessage(), [
+                'error' => $e->getTraceAsString()
+            ]);
+            return response()->json(['message' => 'Something went wrong. Please try again later.'], 500);
+        }
+    }
+
 
     /**
      * Search companies with filters and distance radius
      */
-    public function searchCompanies(Request $request)
+    public function searchCompaniesOld(Request $request)
     {
         try {
             $user = auth()->user();
@@ -760,6 +887,180 @@ class CompanyController extends Controller
         return round($earthRadius * $c, 2);
     }
 
+    /**
+     * List all companies except logged-in user's company.
+     */
+    public function listCompanies()
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
 
+            $companies = Company::with('country')
+                ->withAvg('ratings', 'rating')
+                ->where('id', '!=', $user->company_id)
+                ->get()
+                ->map(function ($company) use ($user) {
+                    return [
+                        'id' => $company->id,
+                        'name' => $company->name,
+                        'country' => $company->country?->name ?? null,
+                        'average_rating' => round($company->ratings_avg_rating, 1),
+                        'user_rating' => CompanyRating::where('company_id', $company->id)
+                            ->where('user_id', $user->id)
+                            ->value('rating'),
+                        'is_blocked' => CompanyBlock::where('company_id', $company->id)
+                            ->where('user_id', $user->id)
+                            ->exists(),
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'companies' => $companies
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching companies list', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to fetch companies'
+            ], 500);
+        }
+    }
+
+    /**
+     * Add or update rating for a company.
+     */
+    public function rateCompany(Request $request, $companyId)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+
+            if ($user->company_id == $companyId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You cannot rate your own company'
+                ], 403);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'rating' => 'required|integer|min:1|max:5'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            CompanyRating::updateOrCreate(
+                ['company_id' => $companyId, 'user_id' => $user->id],
+                ['rating' => $request->rating]
+            );
+
+            // Update consolidated rating in companies table
+            $avgRating = CompanyRating::where('company_id', $companyId)->avg('rating');
+            Company::where('id', $companyId)->update(['rating' => $avgRating]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rating updated successfully',
+                'average_rating' => round($avgRating, 1)
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error rating company', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to update rating'
+            ], 500);
+        }
+    }
+
+    /**
+     * Block a company for the logged-in user.
+     */
+    public function blockCompany(Request $request, $companyId)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+
+            if ($user->company_id == $companyId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You cannot block your own company'
+                ], 403);
+            }
+
+            $block = $request->input('block', true); // default true if not passed
+
+            if ($block) {
+                // Block company
+                CompanyBlock::firstOrCreate([
+                    'company_id' => $companyId,
+                    'user_id' => $user->id,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Company blocked successfully',
+                    'data' => [
+                        'company_id' => $companyId,
+                        'is_blocked' => true
+                    ]
+                ], 200);
+
+            } else {
+                // Unblock company
+                CompanyBlock::where('company_id', $companyId)
+                    ->where('user_id', $user->id)
+                    ->delete();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Company unblocked successfully',
+                    'data' => [
+                        'company_id' => $companyId,
+                        'is_blocked' => false
+                    ]
+                ], 200);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error blocking/unblocking company', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to update block status'
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Unblock a company for the logged-in user.
+     */
+    public function unblockCompany($companyId)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+
+            CompanyBlock::where('company_id', $companyId)
+                ->where('user_id', $user->id)
+                ->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Company unblocked successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error unblocking company', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to unblock company'
+            ], 500);
+        }
+    }
 
 }

@@ -98,25 +98,55 @@ class Company extends Model
         return $this->hasMany(SupplyJob::class, 'provider_id');
     }
 
-	 public function getcountry() {
+    public function getcountry()
+    {
         return $this->belongsTo('App\Models\Country', 'country_id', 'id');
     }
 
-     public function getcity() {
+    public function getcity()
+    {
         return $this->belongsTo('App\Models\City', 'city_id', 'id');
     }
 
-     public function getregion() {
+    public function getregion()
+    {
         return $this->belongsTo('App\Models\Region', 'region_id', 'id');
     }
 
-    public function getState() {
+    public function getState()
+    {
         return $this->belongsTo('App\Models\StateProvince', 'state_id', 'id');
     }
-    public function getDefaultcontact() {
+    public function getDefaultcontact()
+    {
         return $this->belongsTo('App\Models\UserProfile', 'default_contact_id', 'user_id');
     }
 
+    public function ratings()
+    {
+        return $this->hasMany(CompanyRating::class);
+    }
+
+    public function blocks()
+    {
+        return $this->hasMany(CompanyBlock::class);
+    }
+
+    /**
+     * Average rating accessor (calculated from related ratings).
+     */
+    public function getAverageRatingAttribute()
+    {
+        return $this->ratings()->avg('rating') ?? 0;
+    }
+
+    /**
+     * Check if a given user has blocked this company.
+     */
+    public function isBlockedByUser($userId)
+    {
+        return $this->blocks()->where('user_id', $userId)->exists();
+    }
 
 
 }

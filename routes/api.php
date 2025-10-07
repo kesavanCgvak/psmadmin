@@ -111,6 +111,16 @@ Route::middleware('jwt.verify')->group(function () {
 Route::middleware('jwt.verify')->group(function () {
     Route::post('/companies/search', [CompanyController::class, 'searchCompanies']);
     Route::post('/company/search-priority', [CompanyController::class, 'searchPriority']);
+    // Company listing
+    Route::get('/companies', [CompanyController::class, 'listCompanies']);
+
+    // Add/Update rating
+    Route::post('/companies/{company}/rate', [CompanyController::class, 'rateCompany']);
+
+    // Block/Unblock company
+    Route::post('/companies/{company}/block', [CompanyController::class, 'blockCompany']);
+    Route::post('/companies/{company}/unblock', [CompanyController::class, 'unblockCompany']);
+
 });
 
 
