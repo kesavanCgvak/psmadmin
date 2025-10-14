@@ -1,28 +1,30 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\ProductController;
-use App\Http\Controllers\Api\GeoController;
-use App\Http\Controllers\Api\BrandController;
+// Duplicate import removed during formatting cleanup
 use App\Http\Controllers\Api\CategoryController;
-use App\Http\Controllers\Api\SubCategoryController;
-use App\Http\Controllers\Api\UserProfileController;
-use App\Http\Controllers\Api\RentalSoftwareController;
-use App\Http\Controllers\Api\CurrencyController;
+use App\Http\Controllers\Api\CityController;
+use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\CompanyUserController;
-use App\Http\Controllers\Api\EquipmentController;
-use App\Http\Controllers\Api\RentalRequestController;
-use App\Http\Controllers\Api\RentalJobController;
-use App\Http\Controllers\Api\RentalJobActionsController;
-use App\Http\Controllers\Api\SupplyJobController;
-use App\Http\Controllers\Api\SupplyJobActionsController;
-use App\Http\Controllers\Api\CommentController;
-use App\Http\Controllers\Api\UserOfferController;
+use App\Http\Controllers\Api\CurrencyController;
 use App\Http\Controllers\Api\ForgotPasswordController;
-use App\Http\Controllers\Api\StateController;
-use App\Http\Controllers\Api\CityController;
+use App\Http\Controllers\Api\GeoController;
 use App\Http\Controllers\Api\LocationController;
+use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\RegistrationCheckController;
+use App\Http\Controllers\Api\RentalJobActionsController;
+use App\Http\Controllers\Api\RentalJobController;
+use App\Http\Controllers\Api\RentalRequestController;
+use App\Http\Controllers\Api\RentalSoftwareController;
+use App\Http\Controllers\Api\StateController;
+use App\Http\Controllers\Api\BrandController;
+use App\Http\Controllers\Api\SubCategoryController;
+use App\Http\Controllers\Api\SupplyJobActionsController;
+use App\Http\Controllers\Api\SupplyJobController;
+use App\Http\Controllers\Api\UserProfileController;
+use App\Http\Controllers\Api\EquipmentController;
+use App\Http\Controllers\Api\UserOfferController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
@@ -33,6 +35,9 @@ Route::post('/auth/verify-account', [AuthController::class, 'verifyAccount']);
 Route::post('/password/forgot', [ForgotPasswordController::class, 'sendResetLink']);
 Route::post('/reset-password/{token}', [ForgotPasswordController::class, 'reset']);
 Route::post('/auth/refresh', [AuthController::class, 'refresh']);
+
+// Registration availability checks (public, JSON body)
+Route::post('/registration/availability', [RegistrationCheckController::class, 'checkAvailability']);
 
 
 

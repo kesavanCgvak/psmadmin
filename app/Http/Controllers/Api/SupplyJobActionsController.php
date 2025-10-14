@@ -13,6 +13,7 @@ use App\Models\RentalJob;
 use App\Models\User;
 use App\Models\Company;
 use Illuminate\Support\Facades\Mail;
+use Log;
 
 
 class SupplyJobActionsController extends Controller
@@ -182,6 +183,12 @@ class SupplyJobActionsController extends Controller
         try {
             $supplyJob = SupplyJob::with('rentalJob')->findOrFail($id);
 
+            Log::info("Attempting to send new offer", [
+                'supply_job_id' => $id,
+                'company_id' => $user->company_id,
+                'user_id' => $user->id,
+            ]);
+
             if ($resp = $this->authorizeCompany($supplyJob, $user)) {
                 return $resp;
             }
@@ -189,6 +196,14 @@ class SupplyJobActionsController extends Controller
             $rentalJob = $supplyJob->rentalJob;
             if (!$rentalJob) {
                 return response()->json(['success' => false, 'message' => 'Associated rental job not found.'], 404);
+            }
+
+            // 🚫 Check for already accepted / finalized status
+            if (in_array($supplyJob->status, ['accepted', 'completed', 'closed'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This supply job has already been accepted and cannot receive new offers.'
+                ], 400);
             }
 
             // Determine next version
@@ -230,7 +245,7 @@ class SupplyJobActionsController extends Controller
             // Prepare mail content
             $mailContent = [
                 'provider_name' => $user->company ? $user->company->name : 'A Supplier',
-                'rental_job_id' => $rentalJob->id,
+                'rental_job_name' => $rentalJob->name,
                 'amount' => number_format($data['amount'], 2),
                 'version' => $nextVersion,
                 'sent_at' => now()->format('d M Y, h:i A'),

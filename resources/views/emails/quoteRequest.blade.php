@@ -6,11 +6,11 @@
 </head>
 <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; color: #333;">
   <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: auto; background-color: #ffffff; border-radius: 6px; overflow: hidden; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
-    
+
     <!-- Header with Logo -->
     <tr style="background-color: #000000;">
       <td style="text-align: center; padding: 20px;">
-        <img src="{{asset('images/logo.png')}}" alt="secondwarehouse.com" style="max-width: 200px;">
+        <img src="{{asset('images/logo-white.png')}}" alt="prosubmarket.com" style="max-width: 200px;">
       </td>
     </tr>
 

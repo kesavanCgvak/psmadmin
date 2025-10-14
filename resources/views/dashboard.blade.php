@@ -40,7 +40,7 @@
             <!-- Small box -->
             <div class="small-box bg-warning">
                 <div class="inner">
-                    <h3>{{ \App\Models\User::count() }}</h3>
+                    <h3>{{ \App\Models\User::where('role', '!=', 'super_admin')->count() }}</h3>
                     <p>Total Users</p>
                 </div>
                 <div class="icon">
@@ -79,7 +79,7 @@
                     <div class="row">
                         <div class="col-md-6">
                             <div class="info-box bg-gradient-info">
-                                <span class="info-box-icon"><i class="fas fa-cubes"></i></span>
+                                <span class="info-box-icon"><i class="fas fa-handshake"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">Active Rental Jobs</span>
                                     <span class="info-box-number">{{ \App\Models\RentalJob::where('status', 'open')->count() }}</span>
@@ -88,7 +88,7 @@
                         </div>
                         <div class="col-md-6">
                             <div class="info-box bg-gradient-success">
-                                <span class="info-box-icon"><i class="fas fa-building"></i></span>
+                                <span class="info-box-icon"><i class="fas fa-copyright"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">Brands</span>
                                     <span class="info-box-number">{{ \App\Models\Brand::count() }}</span>
@@ -100,7 +100,7 @@
                     <div class="row">
                         <div class="col-md-6">
                             <div class="info-box bg-gradient-warning">
-                                <span class="info-box-icon"><i class="fas fa-users"></i></span>
+                                <span class="info-box-icon"><i class="fas fa-th-large"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">Categories</span>
                                     <span class="info-box-number">{{ \App\Models\Category::count() }}</span>
@@ -109,7 +109,7 @@
                         </div>
                         <div class="col-md-6">
                             <div class="info-box bg-gradient-danger">
-                                <span class="info-box-icon"><i class="fas fa-boxes"></i></span>
+                                <span class="info-box-icon"><i class="fas fa-th"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">Sub Categories</span>
                                     <span class="info-box-number">{{ \App\Models\SubCategory::count() }}</span>

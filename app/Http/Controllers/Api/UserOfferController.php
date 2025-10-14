@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\RentalJob;
 use App\Models\SupplyJob;
 use App\Models\RentalJobOffer;
+use App\Models\Company;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -77,14 +79,45 @@ class UserOfferController extends Controller
                 ]);
             }
 
+            /**
+             * ==============================
+             * Email Notification Section
+             * ==============================
+             */
+            $email = '';
+            $company = Company::with('defaultContact.profile')->find($data['provider_company_id']);
+
+            if ($company && $company->defaultContact && $company->defaultContact->profile) {
+                $defaultEmail = $company->defaultContact->profile->email;
+                if ($defaultEmail) {
+                    $email = $defaultEmail;
+                }
+            }
+
+            // $emails = array_unique(array_filter($emails));
+
+            if (!empty($email)) {
+                $mailContent = [
+                    'user_name' => $user->company ? $user->company->name : 'A Rental User',
+                    'job_name' => $job->name,
+                    'amount' => number_format($data['amount'], 2),
+                    'sent_at' => now()->format('d M Y, h:i A'),
+                ];
+
+                Mail::send('emails.rentalJobOffer', $mailContent, function ($message) use ($email) {
+                    $message->to($email)
+                        ->subject('New Offer Received from Pro Subrental Marketplace')
+                        ->from('acctracking001@gmail.com', 'Pro Subrental Marketplace');
+                });
+            }
+
             return response()->json([
                 'success' => true,
-                'message' => 'Offer sent to provider.',
+                'message' => 'Offer sent successfully and notification emails delivered.',
                 'data' => [
                     'id' => $offer->id,
                     'job_id' => $job->id,
                     'provider_company_id' => $data['provider_company_id'],
-                    'version' => $offer->version,
                     'amount' => $offer->total_price,
                     'status' => $offer->status,
                 ]

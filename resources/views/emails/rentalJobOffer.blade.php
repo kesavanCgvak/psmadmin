@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>New Offer from {{ $provider_name }}</title>
+    <title>New Offer from {{ $user_name }}</title>
 </head>
 
 <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; color: #333;">
@@ -21,7 +21,7 @@
                 <h2 style="margin: 0 0 12px 0; color:#2d3748; font-weight: 600; font-size: 20px;">New Offer Received</h2>
 
                 <p style="margin: 0 0 10px 0;">Hello,</p>
-                <p style="margin: 0 0 16px 0; line-height: 1.5;">You’ve received a new offer from <strong>{{ $provider_name }}</strong> for your rental request <strong>{{ $rental_job_name }}</strong>.</p>
+                <p style="margin: 0 0 16px 0; line-height: 1.5;">You’ve received a new offer from <strong>{{ $user_name }}</strong> for rental request <strong>{{ $job_name }}</strong>.</p>
 
                 <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin: 12px 0 18px 0;">
                     <tr>
