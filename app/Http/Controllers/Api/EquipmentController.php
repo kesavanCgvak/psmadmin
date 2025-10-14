@@ -94,23 +94,48 @@ class EquipmentController extends Controller
             $equipments = $query->get();
 
             // Format only needed values
+            // $formatted = $equipments->map(function ($equipment) {
+            //     return [
+            //         'id' => $equipment->id,
+            //         'product_label' => $equipment->product->brand->name . ' - ' . $equipment->product->model,
+            //         'psm_code' => $equipment->product->psm_code,
+            //         'software_code' => $equipment->software_code,
+            //         'quantity' => $equipment->quantity,
+            //         'price' => $equipment->price,
+            //         'description' => $equipment->description,
+            //         'images' => $equipment->images->pluck('image_path')
+            //     ];
+            // });
+
             $formatted = $equipments->map(function ($equipment) {
+                $brandName = $equipment->product->brand->name ?? null;
+                $modelName = $equipment->product->model ?? 'Unknown Model';
+
                 return [
                     'id' => $equipment->id,
-                    'product_label' => $equipment->product->brand->name . ' - ' . $equipment->product->model,
+                    'product_label' => $brandName
+                        ? "{$brandName} - {$modelName}"
+                        : $modelName, // show only model if brand is missing
                     'psm_code' => $equipment->product->psm_code,
                     'software_code' => $equipment->software_code,
                     'quantity' => $equipment->quantity,
                     'price' => $equipment->price,
                     'description' => $equipment->description,
-                    'images' => $equipment->images->pluck('image_path')
+                    'images' => $equipment->images->map(function ($img) {
+                        return [
+                            'id' => $img->id,
+                            // 'path' => $img->image_path,
+                            'url' => asset($img->image_path)
+                        ];
+                    })
                 ];
             });
+
 
             return response()->json([
                 'success' => true,
                 'message' => 'Company equipments fetched successfully',
-                'total'   => $equipments->count(),
+                'total' => $equipments->count(),
                 'data' => $formatted
             ], 200);
 
@@ -126,7 +151,6 @@ class EquipmentController extends Controller
             ], 500);
         }
     }
-
 
     /**
      * Update quantity
@@ -216,31 +240,85 @@ class EquipmentController extends Controller
         return response()->json(['success' => true, 'message' => 'Description updated', 'data' => $equipment]);
     }
 
-    /**
-     * Add images
-     */
     public function addImages(Request $request, Equipment $equipment)
     {
         $user = $this->getAuthenticatedUser();
-        if (!$user)
+        if (!$user) {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
 
         if ($equipment->user_id !== $user->id) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
-        $validator = Validator::make($request->all(), ['images.*' => 'required|image|max:2048']);
-        if ($validator->fails())
-            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        $validator = Validator::make($request->all(), [
+            'images.*' => 'required|image|max:2048',
+            'image_ids.*' => 'nullable|integer|exists:equipment_images,id', // for replacement
+        ]);
 
-        $uploaded = [];
-        foreach ($request->file('images') as $file) {
-            $path = $file->store('equipment_images', 'public');
-            $img = EquipmentImage::create(['equipment_id' => $equipment->id, 'image_path' => $path]);
-            $uploaded[] = $img;
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
         }
 
-        return response()->json(['success' => true, 'message' => 'Images added', 'data' => $uploaded]);
+        if (!$request->hasFile('images')) {
+            return response()->json(['success' => false, 'message' => 'No images uploaded'], 422);
+        }
+
+        $destinationPath = public_path('images/equipment_image');
+        if (!file_exists($destinationPath)) {
+            mkdir($destinationPath, 0755, true);
+        }
+
+        $uploaded = [];
+        $imageFiles = $request->file('images');
+        $imageIds = $request->input('image_ids', []); // optional replacement IDs
+
+        foreach ($imageFiles as $index => $file) {
+            $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+            $file->move($destinationPath, $filename);
+            $relativePath = 'images/equipment_image/' . $filename;
+
+            // Check if updating an existing image
+            $existingImageId = $imageIds[$index] ?? null;
+            if ($existingImageId) {
+                $existingImage = EquipmentImage::find($existingImageId);
+                if ($existingImage && $existingImage->equipment_id === $equipment->id) {
+                    // Delete old image file if exists
+                    $oldFilePath = public_path($existingImage->image_path);
+                    if (file_exists($oldFilePath)) {
+                        unlink($oldFilePath);
+                    }
+
+                    // Update DB record
+                    $existingImage->update(['image_path' => $relativePath]);
+
+                    $uploaded[] = [
+                        'id' => $existingImage->id,
+                        'url' => asset($relativePath),
+                        'message' => 'Image updated successfully',
+                    ];
+                    continue;
+                }
+            }
+
+            // Create new image record
+            $img = EquipmentImage::create([
+                'equipment_id' => $equipment->id,
+                'image_path' => $relativePath,
+            ]);
+
+            $uploaded[] = [
+                'id' => $img->id,
+                'url' => asset($relativePath),
+                'message' => 'Image uploaded successfully',
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Images processed successfully',
+            'data' => $uploaded
+        ]);
     }
 
     /**
@@ -249,21 +327,27 @@ class EquipmentController extends Controller
     public function deleteImage($id)
     {
         $user = $this->getAuthenticatedUser();
-        if (!$user)
+        if (!$user) {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
 
         $image = EquipmentImage::find($id);
-        if (!$image)
+        if (!$image) {
             return response()->json(['success' => false, 'message' => 'Image not found'], 404);
+        }
 
         if ($image->equipment->user_id !== $user->id) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
-        Storage::disk('public')->delete($image->image_path);
+        $filePath = public_path($image->image_path);
+        if (file_exists($filePath)) {
+            unlink($filePath);
+        }
+
         $image->delete();
 
-        return response()->json(['success' => true, 'message' => 'Image deleted']);
+        return response()->json(['success' => true, 'message' => 'Image deleted successfully']);
     }
 
     /**

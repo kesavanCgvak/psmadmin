@@ -11,4 +11,12 @@ class Currency extends Model
         'name',     // The currency name (e.g., United States Dollar)
         'symbol',   // The currency symbol (e.g., $, €, ₹)
     ];
+
+    /**
+     * A currency has many companies.
+     */
+    public function companies()
+    {
+        return $this->hasMany(Company::class);
+    }
 }

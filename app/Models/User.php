@@ -14,6 +14,9 @@ use App\Models\UserProfile;
 use App\Models\Company;
 use Filament\Panel;
 use Illuminate\Support\Facades\Log;
+use App\Models\RentalJob;
+use App\Models\SupplyJob;
+use App\Models\RentalJobComment;
 
 
 
@@ -30,14 +33,16 @@ class User extends Authenticatable implements JWTSubject
     protected $fillable = [
         'account_type',
         'username',
+        'email',
         'password',
         'role',
         'company_id',
         'is_company_default_contact',
         'is_admin',
+        'email_verified',
+        'email_verified_at',
         'is_blocked',
-        'token',
-        'email_verified'
+        'token'
     ];
 
 
