@@ -246,7 +246,12 @@ class AuthController extends Controller
             }
 
             // Eager-load profile and company
-            $user->load(['profile', 'company']);
+            $user->load([
+                'profile',
+                'company',
+                'company.currency',
+                'company.rentalSoftware',
+            ]);
 
             /*--return response()->json([
                 'token' => $token,

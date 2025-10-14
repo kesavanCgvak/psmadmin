@@ -45,5 +45,11 @@ class RentalJob extends Model
     {
         return $this->hasMany(RentalJobComment::class);
     }
+
+    public function supplyOffers()
+    {
+        return $this->hasMany(SupplyJobOffer::class, 'rental_job_id');
+    }
+
 }
 

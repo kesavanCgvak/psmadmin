@@ -630,49 +630,57 @@ class CompanyController extends Controller
         }
     }
 
+    /**
+     * Search for companies offering specific products near a city.
+     * Supports multiple products, includes distance, available quantity, and currency.
+     */
     public function searchCompanies(Request $request)
     {
         try {
             $user = auth()->user();
-
             if (!$user) {
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            // Validate input
-            $request->validate([
-                'product_id' => 'required',
+            // ✅ Validate request
+            $validated = $request->validate([
+                'products' => 'required|array|min:1',
+                'products.*.product_id' => 'required|integer|exists:products,id',
+                'products.*.quantity' => 'required|numeric|min:1',
                 'city_id' => 'required|integer|exists:cities,id',
                 'country' => 'nullable|integer|exists:countries,id',
                 'distance' => 'nullable|numeric|min:1',
             ]);
 
-            // Get city lat/long from DB
-            $city = DB::table('cities')->where('id', $request->city_id)->first();
+            // ✅ Get city coordinates
+            $city = DB::table('cities')->where('id', $validated['city_id'])->first();
             if (!$city || !$city->latitude || !$city->longitude) {
                 return response()->json(['error' => 'City latitude and longitude are required'], 400);
             }
 
-            $city_lat = $city->latitude;
-            $city_lng = $city->longitude;
-            $radius = $request->distance ?? 50; // default to 50 km if not given
+            $cityLat = $city->latitude;
+            $cityLng = $city->longitude;
+            $radius = $validated['distance'] ?? 50; // default 50 km
 
-            // Support multiple product IDs
-            $productIds = explode(',', $request->product_id);
+            // ✅ Extract product IDs & quantities
+            $productData = collect($validated['products']);
+            $productIds = $productData->pluck('product_id')->toArray();
+            $requestedQuantities = $productData->pluck('quantity', 'product_id')->toArray();
 
-            // Get blocked company IDs for logged-in user
+            // ✅ Blocked companies for the current user
             $blockedCompanyIds = DB::table('company_blocks')
                 ->where('user_id', $user->id)
                 ->pluck('company_id')
                 ->toArray();
 
-            // Main query with SQL-based distance calculation
+            // ✅ Main query with SQL distance calculation
             $query = Company::with(['defaultContactProfile'])
                 ->join('equipments', function ($join) use ($productIds) {
                     $join->on('companies.id', '=', 'equipments.company_id')
                         ->whereIn('equipments.product_id', $productIds);
                 })
                 ->join('products', 'products.id', '=', 'equipments.product_id')
+                ->join('currencies', 'currencies.id', '=', 'companies.currency_id')
                 ->select(
                     'companies.id as company_id',
                     'companies.name as company_name',
@@ -680,34 +688,46 @@ class CompanyController extends Controller
                     'companies.longitude as company_lng',
                     'companies.rating as company_rating',
                     'companies.default_contact_id',
+                    'companies.city_id',
                     'equipments.product_id',
+                    'equipments.quantity',
                     'products.model as product_name',
                     'equipments.price',
                     'equipments.software_code',
+                    'currencies.id as currency_id',
+                    'currencies.name as currency_name',
+                    'currencies.code as currency_code',
+                    'currencies.symbol as currency_symbol',
                     DB::raw("(
-                    6371 * acos(
-                        cos(radians($city_lat))
-                        * cos(radians(companies.latitude))
-                        * cos(radians(companies.longitude) - radians($city_lng))
-                        + sin(radians($city_lat))
-                        * sin(radians(companies.latitude))
+                    COALESCE(
+                        6371 * acos(
+                            LEAST(
+                                1.0,
+                                cos(radians($cityLat))
+                                * cos(radians(companies.latitude))
+                                * cos(radians(companies.longitude) - radians($cityLng))
+                                + sin(radians($cityLat))
+                                * sin(radians(companies.latitude))
+                            )
+                        ), 0
                     )
                 ) as distance")
                 )
-                ->having('distance', '<=', $radius)
-                ->orderBy('distance');
+                ->where('companies.id', '!=', $user->company_id);
 
-            // Exclude own company
-            $query->where('companies.id', '!=', $user->company_id);
-
-            // Exclude blocked companies
+            // ✅ Exclude blocked companies
             if (!empty($blockedCompanyIds)) {
                 $query->whereNotIn('companies.id', $blockedCompanyIds);
             }
 
-            if ($request->filled('country')) {
-                $query->where('companies.country_id', $request->country);
+            // ✅ Country filter
+            if (!empty($validated['country'])) {
+                $query->where('companies.country_id', $validated['country']);
             }
+
+            // ✅ Distance or same-city fallback
+            $query->havingRaw('distance <= ? OR companies.city_id = ?', [$radius, $validated['city_id']])
+                ->orderBy('distance');
 
             $results = $query->get();
 
@@ -715,23 +735,34 @@ class CompanyController extends Controller
                 return response()->json(['message' => 'No companies found matching your filters.'], 200);
             }
 
-            // Group results by company
-            $companies = $results->groupBy('company_id')->map(function ($items) {
+            // ✅ Group results by company
+            $companies = $results->groupBy('company_id')->map(function ($items) use ($requestedQuantities) {
                 $first = $items->first();
 
                 return [
                     'id' => $first->company_id,
                     'name' => $first->company_name,
                     'rating' => $first->company_rating,
-                    'products' => $items->map(function ($item) {
+                    'distance' => round($first->distance, 2),
+                    'currency' => [
+                        'id' => $first->currency_id,
+                        'name' => $first->currency_name,
+                        'code' => $first->currency_code,
+                        'symbol' => $first->currency_symbol,
+                    ],
+                    'products' => $items->map(function ($item) use ($requestedQuantities) {
+                        $requestedQty = $requestedQuantities[$item->product_id] ?? 0;
+                        $availableQty = $item->quantity ?? 0;
+
                         return [
                             'product_id' => $item->product_id,
                             'product_name' => $item->product_name,
+                            'requested_quantity' => (int) $requestedQty,
+                            'available_quantity' => (int) $availableQty,
                             'price' => number_format($item->price, 2, '.', ''),
                             'software_code' => $item->software_code,
                         ];
                     })->values(),
-                    'distance' => round($first->distance, 2),
                     'default_contact_profile' => $first->defaultContactProfile
                         ? [
                             'name' => $first->defaultContactProfile->full_name,
@@ -748,13 +779,15 @@ class CompanyController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Error searching companies for product: ' . $e->getMessage(), [
-                'error' => $e->getTraceAsString()
+            Log::error('Error searching companies: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
             ]);
-            return response()->json(['message' => 'Something went wrong. Please try again later.'], 500);
+
+            return response()->json([
+                'message' => 'Something went wrong. Please try again later.',
+            ], 500);
         }
     }
-
 
     /**
      * Search companies with filters and distance radius

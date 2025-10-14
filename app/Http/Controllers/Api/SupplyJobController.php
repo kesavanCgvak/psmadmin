@@ -10,19 +10,29 @@ use Illuminate\Support\Facades\Auth;
 
 class SupplyJobController extends Controller
 {
+
     /**
-     * List supply jobs for a company (lightweight).
+     * List supply jobs for a company (lightweight) with filters and pagination.
      */
     public function index(Request $request)
     {
         $user = Auth::user();
 
-        // Validate query param
+        // Validate query params
         $validated = $request->validate([
             'company_id' => 'required|integer|exists:companies,id',
+            'status' => 'nullable|string|in:pending,negotiating,accepted,cancelled',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
-        $companyId = (int) $request->query('company_id');
+        $companyId = (int) $request->input('company_id');
+        $status = $request->input('status');
+        $startDate = $request->input('start_date');
+        $endDate = $request->input('end_date');
+        $perPage = $request->input('per_page', 20); // default 20 per page
 
         // Security check
         if ($user->company_id !== $companyId && !$user->is_admin) {
@@ -33,7 +43,8 @@ class SupplyJobController extends Controller
         }
 
         try {
-            $supplyJobs = SupplyJob::with([
+            // Build query
+            $query = SupplyJob::with([
                 'rentalJob:id,name,from_date,to_date',
                 'products:id,supply_job_id,product_id',
                 'products.product:id,model,brand_id',
@@ -41,20 +52,38 @@ class SupplyJobController extends Controller
             ])
                 ->select(['id', 'rental_job_id', 'provider_id', 'status', 'created_at'])
                 ->where('provider_id', $companyId)
-                ->orderBy('created_at', 'desc')
-                ->get();
+                ->orderBy('created_at', 'desc'); // newest first
 
-            $data = $supplyJobs->map(function ($job) {
+            // Apply filters
+            if ($status) {
+                $query->where('status', $status);
+            }
+            if ($startDate) {
+                $query->whereHas('rentalJob', function ($q) use ($startDate) {
+                    $q->where('from_date', '>=', $startDate);
+                });
+            }
+            if ($endDate) {
+                $query->whereHas('rentalJob', function ($q) use ($endDate) {
+                    $q->where('to_date', '<=', $endDate);
+                });
+            }
+
+            // Paginate
+            $paginated = $query->paginate($perPage);
+
+            // Map response
+            $data = $paginated->getCollection()->map(function ($job) {
                 return [
                     'id' => $job->id,
-                    'name' => $job->rentalJob->name,
-                    'rental_job_id' => $job->rentalJob->id,
-                    'start_date' => $job->rentalJob->from_date,
-                    'end_date' => $job->rentalJob->to_date,
+                    'name' => $job->rentalJob?->name ?? '',
+                    'rental_job_id' => $job->rentalJob?->id ?? null,
+                    'start_date' => $job->rentalJob?->from_date ?? null,
+                    'end_date' => $job->rentalJob?->to_date ?? null,
                     'status' => $job->status,
                     'products' => $job->products->map(function ($sp) {
-                        $brandName = $sp->product->brand->name ?? '';
-                        $productName = $sp->product->model ?? '';
+                        $brandName = $sp->product?->brand?->name ?? '';
+                        $productName = $sp->product?->model ?? '';
                         return [
                             'id' => $sp->product_id,
                             'name' => trim("{$brandName} - {$productName}", ' -')
@@ -63,10 +92,20 @@ class SupplyJobController extends Controller
                 ];
             });
 
-            return response()->json([
+            // Keep pagination meta
+            $response = [
                 'success' => true,
                 'data' => $data,
-            ]);
+                'meta' => [
+                    'current_page' => $paginated->currentPage(),
+                    'last_page' => $paginated->lastPage(),
+                    'per_page' => $paginated->perPage(),
+                    'total' => $paginated->total(),
+                ]
+            ];
+
+            return response()->json($response);
+
         } catch (\Throwable $e) {
             \Log::error("Failed to fetch supply jobs", [
                 'company_id' => $companyId,
@@ -81,6 +120,7 @@ class SupplyJobController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * Show detailed supply job info for a provider.
@@ -108,6 +148,8 @@ class SupplyJobController extends Controller
                 'products.product:id,model,brand_id',
                 'products.product.brand:id,name',
                 'offers:id,supply_job_id,version,total_price,status',
+                'providerCompany:id,name,currency_id',
+                'providerCompany.currency:id,name,code,symbol',
             ])
                 ->where('id', $id)
                 ->where('provider_id', $companyId)
@@ -130,6 +172,9 @@ class SupplyJobController extends Controller
                 ];
             });
 
+            $company = $supplyJob->providerCompany;
+            $currency = $company?->currency;
+
             $data = [
                 'id' => $supplyJob->id,
                 'name' => $supplyJob->rentalJob->name,
@@ -138,6 +183,16 @@ class SupplyJobController extends Controller
                 'end_date' => $supplyJob->rentalJob->to_date,
                 'delivery_address' => $supplyJob->rentalJob->delivery_address,
                 'status' => $supplyJob->status,
+                'company' => [
+                    'id' => $company->id,
+                    'name' => $company->name,
+                    'currency' => $currency ? [
+                        'id' => $currency->id,
+                        'name' => $currency->name,
+                        'code' => $currency->code,
+                        'symbol' => $currency->symbol,
+                    ] : null,
+                ],
                 'products' => $products,
                 'offers' => $supplyJob->offers->map(function ($offer) {
                     return [

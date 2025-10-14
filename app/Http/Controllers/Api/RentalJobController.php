@@ -182,7 +182,8 @@ class RentalJobController extends Controller
 
             // 2. Load supply job with provider, products, offers
             $supplyJob = SupplyJob::with([
-                'providerCompany:id,name',
+                'providerCompany:id,name,currency_id',
+                'providerCompany.currency:id,name,code,symbol',
                 'products.product' => function ($q) {
                     $q->select('id', 'model', 'brand_id')
                         ->with('brand:id,name');
@@ -218,11 +219,20 @@ class RentalJobController extends Controller
             $latestOffer = $supplyJob->offers->first();
 
             // 6. Build response payload
+            $provider = $supplyJob->providerCompany;
+            $currency = $provider?->currency;
+
             $payload = [
                 'supply_job_id' => $supplyJob->id,
                 'rental_job_id' => $supplyJob->rental_job_id,
-                'company_id' => $supplyJob->providerCompany->id,
-                'company_name' => $supplyJob->providerCompany->name,
+                'company_id' => $provider->id,
+                'company_name' => $provider->name,
+                'currency' => $currency ? [
+                    'id' => $currency->id,
+                    'name' => $currency->name,
+                    'code' => $currency->code,
+                    'symbol' => $currency->symbol,
+                ] : null,
                 'status' => $supplyJob->status,
                 'equipment_details' => $equipmentDetails,
                 'latest_offer' => $latestOffer ? [
@@ -233,7 +243,6 @@ class RentalJobController extends Controller
                 ] : null,
                 'comments_endpoint' => "/api/supply-jobs/{$supplyJob->id}/comments",
             ];
-
             return response()->json([
                 'success' => true,
                 'data' => $payload,

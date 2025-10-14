@@ -113,6 +113,11 @@ class Company extends Model
         return $this->belongsTo('App\Models\Region', 'region_id', 'id');
     }
 
+    public function state()
+    {
+        return $this->belongsTo(StateProvince::class, 'state_id');
+    }
+
     public function getState()
     {
         return $this->belongsTo('App\Models\StateProvince', 'state_id', 'id');

@@ -19,4 +19,10 @@ class RentalJobOffer extends Model
     {
         return $this->belongsTo(SupplyJob::class);
     }
+
+    public function supplyOffers()
+    {
+        return $this->hasMany(SupplyJobOffer::class, 'rental_job_id');
+    }
+
 }

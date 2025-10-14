@@ -16,6 +16,8 @@ use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Log;
 use App\Models\SavedProduct;
 use Illuminate\Validation\ValidationException;
+use App\Http\Requests\CreateOrAttachRequest;
+use Illuminate\Support\Str;
 
 class ProductController extends Controller
 {
@@ -111,7 +113,112 @@ class ProductController extends Controller
         ]);
     }
 
-    public function createOrAttach(Request $request): JsonResponse
+    /**
+     * Create or attach product & equipment
+     */
+    public function createOrAttach(CreateOrAttachRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+        $user = Auth::user();
+
+        DB::beginTransaction();
+
+        try {
+            /** 1️⃣ Handle Category */
+            $categoryId = $validated['category_id'] ?? null;
+            if (isset($validated['category']['is_new']) && $validated['category']['is_new']) {
+                $category = Category::firstOrCreate(['name' => trim($validated['category']['name'])]);
+                $categoryId = $category->id;
+            }
+
+            /** 2️⃣ Handle SubCategory */
+            $subCategoryId = $validated['sub_category_id'] ?? null;
+            if (isset($validated['sub_category']['is_new']) && $validated['sub_category']['is_new']) {
+                $subCategory = SubCategory::firstOrCreate([
+                    'name' => trim($validated['sub_category']['name']),
+                    'category_id' => $categoryId,
+                ]);
+                $subCategoryId = $subCategory->id;
+            }
+
+            /** 3️⃣ Handle Brand */
+            $brandId = $validated['brand_id'] ?? null;
+            if (isset($validated['brand']['is_new']) && $validated['brand']['is_new']) {
+                $brand = Brand::firstOrCreate(['name' => trim($validated['brand']['name'])]);
+                $brandId = $brand->id;
+            }
+
+            /** 4️⃣ Handle Product — check for fuzzy match */
+            $normalizedName = $this->normalizeProductName($validated['name']);
+            $existingProduct = Product::all()->first(function ($p) use ($normalizedName) {
+                return $this->normalizeProductName($p->model) === $normalizedName;
+            });
+
+            if ($existingProduct) {
+                $product = $existingProduct;
+                $isVerified = $product->is_verified;
+            } else {
+                $product = Product::create([
+                    'category_id' => $categoryId,
+                    'sub_category_id' => $subCategoryId,
+                    'brand_id' => $brandId,
+                    'model' => trim($validated['name']),
+                    'psm_code' => isset($validated['psm_code']) ? trim($validated['psm_code']) : null,
+                    'is_verified' => 0,
+                ]);
+                $isVerified = 0;
+            }
+
+            /** 5️⃣ Attach or update Equipment */
+            Equipment::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'company_id' => $user->company_id,
+                    'product_id' => $product->id,
+                ],
+                [
+                    'quantity' => $validated['quantity'],
+                    'price' => $validated['price'],
+                    'software_code' => $validated['rental_software_code'],
+                ]
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => $existingProduct
+                    ? 'Existing product found and attached successfully.'
+                    : 'New product and equipment created successfully.',
+                'data' => [
+                    'product' => $product,
+                    'is_verified' => $isVerified,
+                ],
+            ], 201);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create or attach product',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Normalize product names for fuzzy comparison
+     */
+    private function normalizeProductName(string $name): string
+    {
+        return Str::of($name)
+            ->lower()
+            ->replace(['-', '_', ' '], '')
+            ->replaceMatches('/[^a-z0-9]/', '')
+            ->value();
+    }
+
+    public function createOrAttachOld(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],

@@ -5,11 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\SupplyJob;
 use App\Models\SupplyJobProduct;
-use App\Models\RentalJobOffer;
+use App\Models\SupplyJobOffer;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use App\Models\RentalJob;
+use App\Models\User;
+use App\Models\Company;
+use Illuminate\Support\Facades\Mail;
+
 
 class SupplyJobActionsController extends Controller
 {
@@ -22,9 +26,14 @@ class SupplyJobActionsController extends Controller
         if ($user->is_admin) {
             return null;
         }
+
         if ((int) $user->company_id !== (int) $supplyJob->provider_id) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized for this supply job.'], 403);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized for this supply job.'
+            ], 403);
         }
+
         return null;
     }
 
@@ -35,7 +44,6 @@ class SupplyJobActionsController extends Controller
     {
         $user = auth('api')->user();
 
-        // Validation: require at least one of these fields
         $validator = Validator::make($request->all(), [
             'packing_date' => 'nullable|date|required_without_all:delivery_date,return_date,unpacking_date',
             'delivery_date' => 'nullable|date|required_without_all:packing_date,return_date,unpacking_date',
@@ -43,7 +51,6 @@ class SupplyJobActionsController extends Controller
             'unpacking_date' => 'nullable|date|required_without_all:packing_date,delivery_date,return_date',
         ]);
 
-        // If validation fails, return proper JSON error
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -52,10 +59,8 @@ class SupplyJobActionsController extends Controller
             ], 422);
         }
 
-        // Disallow unknown fields (anything other than the 4 expected keys)
         $allowedKeys = ['packing_date', 'delivery_date', 'return_date', 'unpacking_date'];
         $extraKeys = collect(array_keys($request->all()))->diff($allowedKeys);
-
         if ($extraKeys->isNotEmpty()) {
             return response()->json([
                 'success' => false,
@@ -64,17 +69,24 @@ class SupplyJobActionsController extends Controller
         }
 
         try {
-            $sj = SupplyJob::findOrFail($id);
+            $supplyJob = SupplyJob::findOrFail($id);
 
-            if ($resp = $this->authorizeCompany($sj, $user)) {
+            if ($resp = $this->authorizeCompany($supplyJob, $user)) {
                 return $resp;
             }
 
-            $sj->fill($validator->validated())->save();
+            if (in_array($supplyJob->status, ['cancelled', 'completed'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot update dates for cancelled or completed jobs.'
+                ], 422);
+            }
+
+            $supplyJob->fill($validator->validated())->save();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Dates updated successfully.'
+                'message' => 'Milestone dates updated successfully.'
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
@@ -85,11 +97,10 @@ class SupplyJobActionsController extends Controller
             report($e);
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to update dates.'
+                'message' => 'Failed to update milestone dates.'
             ], 500);
         }
     }
-
 
     /**
      * Update supplier product lines: can_supply, price_per_unit.
@@ -107,22 +118,32 @@ class SupplyJobActionsController extends Controller
         ]);
 
         try {
-            $sj = SupplyJob::with('products')->findOrFail($id);
+            $supplyJob = SupplyJob::with('products')->findOrFail($id);
 
-            if ($resp = $this->authorizeCompany($sj, $user)) {
+            if ($resp = $this->authorizeCompany($supplyJob, $user)) {
                 return $resp;
             }
 
-            DB::transaction(function () use ($sj, $validated) {
-                foreach ($validated['items'] as $item) {
-                    /** @var SupplyJobProduct|null $sp */
-                    $sp = $sj->products()->where('product_id', $item['product_id'])->first();
+            if (in_array($supplyJob->status, ['cancelled', 'completed'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot update quantities for cancelled or completed jobs.'
+                ], 422);
+            }
 
-                    if (!$sp) { // create if not exists
-                        $sp = new SupplyJobProduct([
-                            'product_id' => $item['product_id'],
-                        ]);
-                        $sj->products()->save($sp);
+            DB::transaction(function () use ($supplyJob, $validated) {
+                $incomingIds = collect($validated['items'])->pluck('product_id');
+
+                // Remove old products not included in the new list
+                $supplyJob->products()->whereNotIn('product_id', $incomingIds)->delete();
+
+                // Update or insert new items
+                foreach ($validated['items'] as $item) {
+                    $sp = $supplyJob->products()->where('product_id', $item['product_id'])->first();
+
+                    if (!$sp) {
+                        $sp = new SupplyJobProduct(['product_id' => $item['product_id']]);
+                        $supplyJob->products()->save($sp);
                     }
 
                     $sp->offered_quantity = $item['can_supply'];
@@ -133,52 +154,107 @@ class SupplyJobActionsController extends Controller
                 }
             });
 
-            return response()->json(['success' => true, 'message' => 'Supply quantities updated.']);
+            return response()->json([
+                'success' => true,
+                'message' => 'Supply quantities updated successfully.'
+            ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json(['success' => false, 'message' => 'Supply job not found.'], 404);
         } catch (\Throwable $e) {
             report($e);
-            return response()->json(['success' => false, 'message' => 'Update failed.'], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to update supply quantities.'], 500);
         }
     }
 
     /**
-     * Send a new offer/quote (integer as requested).
-     * Body: { amount: <int> }
-     * Creates a new version automatically (version = last + 1).
+     * Send a new offer for the supply job.
+     * Creates a new SupplyJobOffer, links it to the SupplyJob, and sends notification emails.
+     * Payload: { amount: numeric }
      */
     public function sendNewOffer(Request $request, int $id)
     {
         $user = auth('api')->user();
 
         $data = $request->validate([
-            'amount' => 'required|integer|min:0',
+            'amount' => 'required|numeric|min:0',
         ]);
 
         try {
-            $sj = SupplyJob::with('offers')->findOrFail($id);
+            $supplyJob = SupplyJob::with('rentalJob')->findOrFail($id);
 
-            if ($resp = $this->authorizeCompany($sj, $user)) {
+            if ($resp = $this->authorizeCompany($supplyJob, $user)) {
                 return $resp;
             }
 
-            $nextVersion = ($sj->offers->max('version') ?? 0) + 1;
+            $rentalJob = $supplyJob->rentalJob;
+            if (!$rentalJob) {
+                return response()->json(['success' => false, 'message' => 'Associated rental job not found.'], 404);
+            }
 
-            $offer = new RentalJobOffer();
-            $offer->supply_job_id = $sj->id;
-            $offer->version = $nextVersion;
-            $offer->total_price = $data['amount']; // integer as per requirement
-            $offer->status = 'pending';
-            $offer->save();
+            // Determine next version
+            $lastVersion = SupplyJobOffer::where('rental_job_id', $rentalJob->id)->max('version');
+            $nextVersion = ($lastVersion ?? 0) + 1;
+
+            // Save offer
+            $offer = SupplyJobOffer::create([
+                'rental_job_id' => $rentalJob->id,
+                'version' => $nextVersion,
+                'total_price' => $data['amount'],
+                'status' => 'pending',
+            ]);
+
+            // Collect emails
+            $emails = [];
+
+            // 1️⃣ Rental job user email
+            $rentalUser = User::with('profile')->find($rentalJob->user_id);
+            if ($rentalUser && $rentalUser->profile && $rentalUser->profile->email) {
+                $emails[] = $rentalUser->profile->email;
+            }
+
+            // 2️⃣ Default contact of that user’s company
+            if ($rentalUser && $rentalUser->company_id) {
+                $company = Company::with('defaultContact.profile')->find($rentalUser->company_id);
+
+                if ($company && $company->defaultContact && $company->defaultContact->profile) {
+                    $defaultEmail = $company->defaultContact->profile->email;
+                    if ($defaultEmail) {
+                        $emails[] = $defaultEmail;
+                    }
+                }
+            }
+
+            // Remove duplicates
+            $emails = array_unique(array_filter($emails));
+
+            // Prepare mail content
+            $mailContent = [
+                'provider_name' => $user->company ? $user->company->name : 'A Supplier',
+                'rental_job_id' => $rentalJob->id,
+                'amount' => number_format($data['amount'], 2),
+                'version' => $nextVersion,
+                'sent_at' => now()->format('d M Y, h:i A'),
+            ];
+
+            // Send emails
+            foreach ($emails as $email) {
+                Mail::send('emails.supplyNewOffer', $mailContent, function ($message) use ($email) {
+                    $message->to($email)
+                        ->subject('New Offer from Pro Subrental Marketplace')
+                        ->from('acctracking001@gmail.com', 'Pro Subrental Marketplace');
+                });
+            }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Offer sent.',
+                'message' => 'Offer sent successfully and notification emails delivered.',
                 'data' => [
                     'id' => $offer->id,
+                    'rental_job_id' => $rentalJob->id,
                     'version' => $offer->version,
                     'total_price' => $offer->total_price,
                     'status' => $offer->status,
+                    'notified_emails' => $emails,
                 ],
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -189,28 +265,36 @@ class SupplyJobActionsController extends Controller
         }
     }
 
+
     /**
-     * Handshake = accept. Updates both supply job status and (optionally) rental job status.
+     * Handshake = accept offer.
+     * Updates both supply job status and (optionally) rental job status.
      */
     public function handshake(Request $request, int $id)
     {
         $user = auth('api')->user();
 
         try {
-            $sj = SupplyJob::with('rentalJob')->findOrFail($id);
+            $supplyJob = SupplyJob::with('rentalJob')->findOrFail($id);
 
-            if ($resp = $this->authorizeCompany($sj, $user)) {
+            if ($resp = $this->authorizeCompany($supplyJob, $user)) {
                 return $resp;
             }
 
-            DB::transaction(function () use ($sj) {
-                $sj->status = 'accepted';
-                $sj->save();
+            if (in_array($supplyJob->status, ['accepted', 'cancelled', 'completed'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot handshake in current job status.'
+                ], 422);
+            }
 
-                // If you want to mark the rental job accepted when any provider accepted:
-                if ($sj->rentalJob && $sj->rentalJob->status !== 'accepted') {
-                    $sj->rentalJob->status = 'accepted';
-                    $sj->rentalJob->save();
+            DB::transaction(function () use ($supplyJob) {
+                $supplyJob->status = 'accepted';
+                $supplyJob->save();
+
+                if ($supplyJob->rentalJob && $supplyJob->rentalJob->status !== 'accepted') {
+                    $supplyJob->rentalJob->status = 'accepted';
+                    $supplyJob->rentalJob->save();
                 }
             });
 
@@ -231,21 +315,28 @@ class SupplyJobActionsController extends Controller
         $user = auth('api')->user();
 
         try {
-            $sj = SupplyJob::findOrFail($id);
+            $supplyJob = SupplyJob::findOrFail($id);
 
-            if ($resp = $this->authorizeCompany($sj, $user)) {
+            if ($resp = $this->authorizeCompany($supplyJob, $user)) {
                 return $resp;
             }
 
-            $sj->status = 'cancelled';
-            $sj->save();
+            if (in_array($supplyJob->status, ['cancelled', 'completed'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Job is already cancelled or completed.'
+                ], 422);
+            }
 
-            return response()->json(['success' => true, 'message' => 'Negotiation cancelled.']);
+            $supplyJob->status = 'cancelled';
+            $supplyJob->save();
+
+            return response()->json(['success' => true, 'message' => 'Negotiation cancelled successfully.']);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json(['success' => false, 'message' => 'Supply job not found.'], 404);
         } catch (\Throwable $e) {
             report($e);
-            return response()->json(['success' => false, 'message' => 'Failed to cancel.'], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to cancel negotiation.'], 500);
         }
     }
 }

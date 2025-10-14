@@ -17,7 +17,17 @@ class CompanyResource extends JsonResource
             'image1' => $this->image1,
             'image2' => $this->image2,
             'image3' => $this->image3,
-            'rental_software' => $this->rental_software_id,
+            'currency_id' => $this->currency_id,
+            'rental_software_id' => $this->rental_software_id,
+
+            // Relations (only if loaded)
+            'currency' => new CurrencyResource($this->whenLoaded('currency')),
+            'rental_software' => new RentalSoftwareResource($this->whenLoaded('rentalSoftware')),
+            'country' => new CountryResource($this->whenLoaded('country')),
+
+            // Optional fields
+            'rating' => $this->when(isset($this->rating), (float) $this->rating),
+            'is_blocked' => $this->when(isset($this->is_blocked), (bool) $this->is_blocked),
         ];
     }
 }

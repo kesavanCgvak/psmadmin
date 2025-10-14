@@ -28,6 +28,14 @@ class Country extends Model
     }
 
     /**
+     * Alias for states relationship
+     */
+    public function statesProvinces()
+    {
+        return $this->hasMany(StateProvince::class);
+    }
+
+    /**
      * A country has many cities.
      */
     public function cities()
