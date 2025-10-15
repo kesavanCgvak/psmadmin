@@ -175,6 +175,9 @@ Route::middleware(['jwt.verify'])->group(function () {
 
 Route::group(['middleware' => ['jwt.verify']], function () {
 
+    //uopdate supply job name
+    Route::put('/supply-jobs/{id}/name', [SupplyJobActionsController::class, 'updateName']);
+
     // Update milestone dates
     Route::put('/supply-jobs/{id}/milestones', [SupplyJobActionsController::class, 'updateMilestoneDates']);
 

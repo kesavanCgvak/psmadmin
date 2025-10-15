@@ -51,6 +51,7 @@ class RentalRequestController extends Controller
 
         try {
             return DB::transaction(function () use ($validated, $user) {
+
                 //Create rental job
                 $rentalJob = RentalJob::create([
                     'user_id' => $user->id,
@@ -67,6 +68,7 @@ class RentalRequestController extends Controller
 
                 //Process each company and its products
                 foreach ($validated['company_products'] as $companyData) {
+
                     // Supply job for this company
                     $supplyJob = SupplyJob::create([
                         'rental_job_id' => $rentalJob->id,
@@ -74,13 +76,15 @@ class RentalRequestController extends Controller
                         'status' => 'pending'
                     ]);
 
+                    $productsForMail = [];
+
                     // Requested products
                     foreach ($companyData['products'] as $product) {
                         // Supply job product
                         SupplyJobProduct::create([
                             'supply_job_id' => $supplyJob->id,
                             'product_id' => $product['product_id'],
-                            'offered_quantity' => 0, // supplier will update later
+                            'offered_quantity' => 0,
                             'price_per_unit' => null
                         ]);
 
@@ -91,6 +95,22 @@ class RentalRequestController extends Controller
                             'requested_quantity' => $product['requested_quantity'],
                             'company_id' => $companyData['company_id']
                         ]);
+
+                        // Prepare data for email (aggregate all product info)
+                        $productData = Product::with([
+                            'getEquipment' => function ($q) use ($companyData) {
+                                $q->where('company_id', '!=', $companyData['company_id']);
+                            }
+                        ])->find($product['product_id']);
+
+                        if ($productData) {
+                            $productsForMail[] = [
+                                'model' => $productData->model,
+                                'requested_quantity' => $product['requested_quantity'],
+                                'psm_code' => $productData->psm_code,
+                                'software_code' => optional($productData->getEquipment)->software_code
+                            ];
+                        }
                     }
 
                     // Private message (per-company)
@@ -114,41 +134,28 @@ class RentalRequestController extends Controller
                         ]);
                     }
 
-                    //Send notification email
+                    // Send notification email (only once per company)
                     $company = Company::with('getDefaultcontact')->find($companyData['company_id']);
                     if ($company && $company->getDefaultcontact) {
-                        foreach ($companyData['products'] as $product) {
-                            $productData = Product::with([
-                                'getEquipment' => function ($q) use ($companyData) {
-                                    $q->where('company_id', '!=', $companyData['company_id']);
-                                }
-                            ])->find($product['product_id']);
+                        $mailContent = [
+                            'rental_name' => $validated['name'],
+                            'from_date' => $validated['from_date'],
+                            'to_date' => $validated['to_date'],
+                            'delivery_address' => $validated['delivery_address'],
+                            'offer_requirements' => $validated['offer_requirements'],
+                            'email' => $user->email,
+                            'mobile' => $user->mobile,
+                            'company_name' => $company->name,
+                            'private_message' => $companyData['private_message'] ?? null,
+                            'initial_offer' => $companyData['initial_offer'] ?? null,
+                            'products' => $productsForMail
+                        ];
 
-                            if ($productData) {
-                                $mailContent = [
-                                    'rental_name' => $validated['name'],
-                                    'from_date' => $validated['from_date'],
-                                    'to_date' => $validated['to_date'],
-                                    'delivery_address' => $validated['delivery_address'],
-                                    'offer_requirements' => $validated['offer_requirements'],
-                                    'email' => $user->email,
-                                    'mobile' => $user->mobile,
-                                    'company_name' => $company->name,
-                                    'private_message' => $companyData['private_message'] ?? null,
-                                    'initial_offer' => $companyData['initial_offer'] ?? null,
-                                    'model' => $productData->model,
-                                    'requested_quantity' => $product['requested_quantity'],
-                                    'psm_code' => $productData->psm_code,
-                                    'software_code' => optional($productData->getEquipment)->software_code
-                                ];
-
-                                Mail::send('emails.quoteRequest', $mailContent, function ($message) use ($company, $validated) {
-                                    $message->to($company->getDefaultcontact->email, $validated['name'])
-                                        ->subject('Quote Request from Pro Subrental Marketplace')
-                                        ->from('acctracking001@gmail.com', 'Pro Subrental Marketplace');
-                                });
-                            }
-                        }
+                        Mail::send('emails.quoteRequest', $mailContent, function ($message) use ($company, $validated) {
+                            $message->to($company->getDefaultcontact->email, $validated['name'])
+                                ->subject('Quote Request from Pro Subrental Marketplace')
+                                ->from('acctracking001@gmail.com', 'Pro Subrental Marketplace');
+                        });
                     }
                 }
 

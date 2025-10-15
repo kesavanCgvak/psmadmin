@@ -13,6 +13,7 @@ use App\Models\RentalJob;
 use App\Models\User;
 use App\Models\Company;
 use Illuminate\Support\Facades\Mail;
+use Tymon\JWTAuth\Facades\JWTAuth;
 use Log;
 
 
@@ -280,7 +281,6 @@ class SupplyJobActionsController extends Controller
         }
     }
 
-
     /**
      * Handshake = accept offer.
      * Updates both supply job status and (optionally) rental job status.
@@ -354,4 +354,37 @@ class SupplyJobActionsController extends Controller
             return response()->json(['success' => false, 'message' => 'Failed to cancel negotiation.'], 500);
         }
     }
+
+    /**
+     * Update the name of a supply job.
+     * Only authorized users (job owner or admin) can update the name.
+     *
+     * PATCH api/supply-jobs/{id}/name
+     */
+    public function updateName(Request $request, int $id)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
+        }
+
+        $data = $request->validate([
+            'name' => 'required|string|min:3|max:255',
+        ]);
+
+        try {
+            $job = RentalJob::query()->findOrFail($id);
+
+            $job->fill($data)->save();
+
+            return response()->json(['success' => true, 'message' => 'Job Name updated.']);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to update job name.'], 500);
+        }
+    }
+
 }
