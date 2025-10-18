@@ -30,16 +30,18 @@ class CompanyManagementController extends Controller
     /**
      * Show the form for creating a new company.
      */
-    public function create()
+    public function create(Request $request)
     {
         $regions = Region::orderBy('name')->get();
-        $countries = Country::orderBy('name')->get();
-        $states = StateProvince::orderBy('name')->get();
-        $cities = City::orderBy('name')->get();
+        // Countries, states, and cities will be loaded dynamically via AJAX
+        $countries = collect(); // Empty collection
+        $states = collect(); // Empty collection
+        $cities = collect(); // Empty collection
         $currencies = Currency::orderBy('name')->get();
         $rentalSoftwares = RentalSoftware::orderBy('name')->get();
+        $returnToUserCreate = $request->query('return_to_user_create', false);
 
-        return view('admin.companies.create', compact('regions', 'countries', 'states', 'cities', 'currencies', 'rentalSoftwares'));
+        return view('admin.companies.create', compact('regions', 'countries', 'states', 'cities', 'currencies', 'rentalSoftwares', 'returnToUserCreate'));
     }
 
     /**
@@ -63,7 +65,6 @@ class CompanyManagementController extends Controller
             'rental_software_id' => 'nullable|exists:rental_softwares,id',
             'date_format' => 'nullable|string|max:255',
             'pricing_scheme' => 'nullable|string|max:255',
-            'search_priority' => 'nullable|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -72,7 +73,13 @@ class CompanyManagementController extends Controller
                 ->withInput();
         }
 
-        Company::create($request->all());
+        $company = Company::create($request->all());
+
+        // Check if we should redirect back to user create page
+        if ($request->input('return_to_user_create')) {
+            return redirect()->route('admin.users.create', ['company_id' => $company->id])
+                ->with('success', 'Company created successfully. Please continue with user creation.');
+        }
 
         return redirect()->route('admin.companies.index')
             ->with('success', 'Company created successfully.');
@@ -93,9 +100,10 @@ class CompanyManagementController extends Controller
     public function edit(Company $company)
     {
         $regions = Region::orderBy('name')->get();
-        $countries = Country::orderBy('name')->get();
+        // Countries, states, and cities will be loaded dynamically via AJAX based on existing values
+        $countries = Country::where('region_id', $company->region_id)->orderBy('name')->get();
         $states = StateProvince::where('country_id', $company->country_id)->orderBy('name')->get();
-        $cities = City::where('country_id', $company->country_id)->orderBy('name')->get();
+        $cities = City::where('state_id', $company->state_id)->orderBy('name')->get();
         $currencies = Currency::orderBy('name')->get();
         $rentalSoftwares = RentalSoftware::orderBy('name')->get();
 
@@ -123,7 +131,6 @@ class CompanyManagementController extends Controller
             'rental_software_id' => 'nullable|exists:rental_softwares,id',
             'date_format' => 'nullable|string|max:255',
             'pricing_scheme' => 'nullable|string|max:255',
-            'search_priority' => 'nullable|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -151,6 +158,59 @@ class CompanyManagementController extends Controller
             return redirect()->route('admin.companies.index')
                 ->with('error', 'Cannot delete company. It may have associated users or equipment.');
         }
+    }
+
+    /**
+     * Get countries by region (AJAX endpoint)
+     */
+    public function getCountriesByRegion($regionId)
+    {
+        $countries = Country::where('region_id', $regionId)
+            ->orderBy('name')
+            ->get(['id', 'name', 'iso_code']);
+
+        return response()->json($countries);
+    }
+
+    /**
+     * Get states by country (AJAX endpoint)
+     */
+    public function getStatesByCountry($countryId)
+    {
+        $states = StateProvince::where('country_id', $countryId)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return response()->json($states);
+    }
+
+    /**
+     * Get cities by state (AJAX endpoint)
+     */
+    public function getCitiesByState($stateId)
+    {
+        $cities = City::where('state_id', $stateId)
+            ->orderBy('name')
+            ->get(['id', 'name', 'latitude', 'longitude']);
+
+        return response()->json($cities);
+    }
+
+    /**
+     * Get city coordinates (AJAX endpoint)
+     */
+    public function getCityCoordinates($cityId)
+    {
+        $city = City::find($cityId);
+
+        if (!$city) {
+            return response()->json(['error' => 'City not found'], 404);
+        }
+
+        return response()->json([
+            'latitude' => $city->latitude,
+            'longitude' => $city->longitude
+        ]);
     }
 }
 

@@ -235,3 +235,413 @@
         </div>
     </div>
 @stop
+
+@section('css')
+<style>
+    /* ========== Base Styles ========== */
+    .card {
+        box-shadow: 0 0 1px rgba(0,0,0,.125), 0 1px 3px rgba(0,0,0,.2);
+        margin-bottom: 1rem;
+    }
+
+    /* ========== Profile Picture Styles ========== */
+    .profile-user-img {
+        max-width: 100px;
+        border: 3px solid #dee2e6;
+    }
+
+    .profile-username {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+
+    /* ========== Mobile Responsive (320px - 576px) ========== */
+    @media (max-width: 576px) {
+        .content-header h1 {
+            font-size: 1.125rem;
+            word-wrap: break-word;
+        }
+
+        /* Stack columns on mobile */
+        .col-md-4,
+        .col-md-8 {
+            padding-left: 0;
+            padding-right: 0;
+        }
+
+        .card-body {
+            padding: 0.75rem;
+        }
+
+        /* Profile section */
+        .profile-user-img {
+            max-width: 80px;
+            height: 80px;
+        }
+
+        .profile-username {
+            font-size: 1.25rem;
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .text-muted {
+            font-size: 0.875rem;
+        }
+
+        /* List group */
+        .list-group-item {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.875rem;
+        }
+
+        .list-group-item b {
+            font-size: 0.875rem;
+        }
+
+        .list-group-item .float-right {
+            float: none !important;
+            display: block;
+            margin-top: 0.25rem;
+            word-wrap: break-word;
+        }
+
+        /* Badge sizes */
+        .badge {
+            font-size: 0.7rem;
+            padding: 0.25em 0.5em;
+        }
+
+        /* Buttons */
+        .btn-block {
+            font-size: 0.875rem;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            min-height: 44px;
+        }
+
+        .btn-block i {
+            margin-right: 0.25rem;
+        }
+
+        /* Card headers */
+        .card-header {
+            padding: 0.75rem;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            margin-bottom: 0;
+        }
+
+        /* Navigation tabs */
+        .nav-pills .nav-link {
+            font-size: 0.875rem;
+            padding: 0.5rem 0.75rem;
+        }
+
+        .nav-item {
+            flex: 1;
+            text-align: center;
+        }
+
+        /* Info boxes */
+        .info-box {
+            margin-bottom: 0.75rem;
+            min-height: auto;
+        }
+
+        .info-box-icon {
+            width: 60px;
+            font-size: 1.5rem;
+        }
+
+        .info-box-content {
+            padding: 0.5rem;
+        }
+
+        .info-box-text {
+            font-size: 0.75rem;
+        }
+
+        .info-box-number {
+            font-size: 0.875rem;
+        }
+
+        /* Definition list */
+        dl.row {
+            margin-bottom: 0.5rem;
+        }
+
+        .col-sm-3, .col-sm-4 {
+            font-size: 0.875rem;
+            padding: 0.25rem 0.5rem;
+            font-weight: 600;
+        }
+
+        .col-sm-8, .col-sm-9 {
+            font-size: 0.875rem;
+            padding: 0.25rem 0.5rem;
+        }
+
+        dt.col-sm-3, dt.col-sm-4 {
+            margin-bottom: 0;
+        }
+
+        dd.col-sm-8, dd.col-sm-9 {
+            margin-bottom: 0.5rem;
+        }
+
+        /* Quick actions card */
+        .row > .col-12 {
+            margin-bottom: 0;
+        }
+
+        /* Tab content */
+        .tab-content {
+            padding-top: 0.75rem;
+        }
+
+        h5 {
+            font-size: 1rem;
+            margin-top: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        hr {
+            margin: 1rem 0;
+        }
+    }
+
+    /* ========== Tablet (577px - 768px) ========== */
+    @media (min-width: 577px) and (max-width: 768px) {
+        .content-header h1 {
+            font-size: 1.375rem;
+        }
+
+        .profile-user-img {
+            max-width: 90px;
+            height: 90px;
+        }
+
+        .profile-username {
+            font-size: 1.375rem;
+        }
+
+        .list-group-item {
+            padding: 0.625rem 0.875rem;
+            font-size: 0.9rem;
+        }
+
+        .btn-block {
+            font-size: 0.9rem;
+        }
+
+        .info-box {
+            margin-bottom: 0.875rem;
+        }
+
+        .info-box-icon {
+            width: 70px;
+            font-size: 1.75rem;
+        }
+
+        .info-box-text {
+            font-size: 0.825rem;
+        }
+
+        .info-box-number {
+            font-size: 0.95rem;
+        }
+
+        .nav-pills .nav-link {
+            font-size: 0.9rem;
+        }
+
+        dt, dd {
+            font-size: 0.9rem;
+        }
+    }
+
+    /* ========== Medium (769px - 1024px) ========== */
+    @media (min-width: 769px) and (max-width: 1024px) {
+        .card-body {
+            padding: 1rem;
+        }
+
+        .profile-user-img {
+            max-width: 95px;
+        }
+
+        .list-group-item {
+            font-size: 0.925rem;
+        }
+
+        .info-box-text {
+            font-size: 0.875rem;
+        }
+    }
+
+    /* ========== Large Desktop (1025px - 1440px) ========== */
+    @media (min-width: 1025px) and (max-width: 1440px) {
+        .card-body {
+            padding: 1.25rem;
+        }
+    }
+
+    /* ========== Extra Large (1441px+) ========== */
+    @media (min-width: 1441px) {
+        .card-body {
+            padding: 1.5rem;
+        }
+
+        .profile-user-img {
+            max-width: 120px;
+        }
+    }
+
+    /* ========== Text Wrapping & Truncation ========== */
+    .list-group-item .float-right {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        max-width: 60%;
+    }
+
+    @media (max-width: 576px) {
+        .list-group-item .float-right {
+            max-width: 100%;
+        }
+    }
+
+    /* ========== Button Improvements ========== */
+    .btn i {
+        margin-right: 0.25rem;
+    }
+
+    @media (max-width: 768px) {
+        .btn {
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    }
+
+    /* ========== Info Box Responsive ========== */
+    @media (max-width: 576px) {
+        .col-md-6 {
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+
+        .row {
+            margin-left: -0.5rem;
+            margin-right: -0.5rem;
+        }
+    }
+
+    /* ========== Navigation Tabs ========== */
+    @media (max-width: 576px) {
+        .nav-pills {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .nav-pills::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        .nav-pills::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 4px;
+        }
+    }
+
+    /* ========== Form Submit Buttons ========== */
+    form {
+        display: inline-block;
+        width: 100%;
+    }
+
+    @media (max-width: 576px) {
+        form button {
+            width: 100%;
+        }
+    }
+
+    /* ========== Card Spacing ========== */
+    @media (max-width: 576px) {
+        .card {
+            margin-bottom: 0.75rem;
+        }
+    }
+
+    /* ========== Profile Section ========== */
+    .box-profile {
+        text-align: center;
+    }
+
+    @media (max-width: 576px) {
+        .box-profile .row {
+            margin-top: 0.5rem;
+        }
+
+        .box-profile .col-6 {
+            padding-left: 0.25rem !important;
+            padding-right: 0.25rem !important;
+        }
+    }
+
+    /* ========== Print Styles ========== */
+    @media print {
+        .card-header,
+        .btn,
+        form,
+        .card-footer {
+            display: none !important;
+        }
+
+        .card-body {
+            padding: 0;
+        }
+
+        .info-box {
+            page-break-inside: avoid;
+        }
+
+        .card {
+            box-shadow: none;
+            border: 1px solid #dee2e6;
+        }
+    }
+
+    /* ========== Additional Touch Targets ========== */
+    @media (max-width: 768px) and (hover: none) and (pointer: coarse) {
+        .nav-link {
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .list-group-item {
+            min-height: 48px;
+        }
+    }
+
+    /* ========== Accessibility ========== */
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        white-space: nowrap;
+    }
+
+    /* ========== Loading States ========== */
+    .card.loading {
+        opacity: 0.6;
+        pointer-events: none;
+    }
+</style>
+@stop

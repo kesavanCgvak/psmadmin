@@ -6,12 +6,16 @@
     <h1>Edit Product</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="card card-warning">
         <div class="card-header">
             <h3 class="card-title">Product Details</h3>
         </div>
-        <form action="{{ route('products.update', $product) }}" method="POST">
+        <form action="{{ route('admin.products.update', $product) }}" method="POST">
             @csrf
             @method('PUT')
             <div class="card-body">
@@ -111,7 +115,7 @@
                 <button type="submit" class="btn btn-warning">
                     <i class="fas fa-save"></i> Update Product
                 </button>
-                <a href="{{ route('products.index') }}" class="btn btn-default">
+                <a href="{{ route('admin.products.index') }}" class="btn btn-default">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
@@ -134,7 +138,7 @@
 
                 if (categoryId) {
                     $.ajax({
-                        url: '/ajax/categories/' + categoryId + '/subcategories',
+                        url: '/admin/ajax/categories/' + categoryId + '/subcategories',
                         type: 'GET',
                         dataType: 'json',
                         success: function(data) {

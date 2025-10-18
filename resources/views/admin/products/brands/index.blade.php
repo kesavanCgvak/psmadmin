@@ -6,6 +6,10 @@
     <h1>Brands Management</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     @if(session('success'))
         <div class="alert alert-success alert-dismissible fade show">
@@ -76,14 +80,16 @@
 @stop
 
 @section('js')
+    @include('partials.responsive-js')
     <script>
         $(document).ready(function() {
-            $('#brandsTable').DataTable({
-                "responsive": true,
-                "lengthChange": true,
-                "autoWidth": false,
-                "buttons": ["copy", "csv", "excel", "pdf", "print", "colvis"]
-            }).buttons().container().appendTo('#brandsTable_wrapper .col-md-6:eq(0)');
+            initResponsiveDataTable('brandsTable', {
+                "columnDefs": [
+                    { "orderable": false, "targets": -1 },
+                    { "responsivePriority": 1, "targets": 1 },
+                    { "responsivePriority": 2, "targets": -1 }
+                ]
+            });
         });
     </script>
 @stop

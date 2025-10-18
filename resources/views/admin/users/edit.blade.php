@@ -207,3 +207,233 @@
         </div>
     </div>
 @stop
+
+@section('css')
+<style>
+    /* ========== Responsive Form Layout ========== */
+    @media (max-width: 576px) {
+        .content-header h1 {
+            font-size: 1.125rem;
+            word-wrap: break-word;
+        }
+
+        .card-header .card-title {
+            font-size: 1rem;
+        }
+
+        .card-body {
+            padding: 0.75rem;
+        }
+
+        .form-group label {
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .form-control,
+        .form-control-file {
+            font-size: 0.875rem;
+            padding: 0.375rem 0.75rem;
+            min-height: 44px;
+        }
+
+        select.form-control {
+            font-size: 0.875rem;
+        }
+
+        .btn {
+            font-size: 0.875rem;
+            padding: 0.5rem 1rem;
+            min-height: 44px;
+        }
+
+        small.form-text {
+            font-size: 0.75rem;
+        }
+
+        .invalid-feedback,
+        .valid-feedback {
+            font-size: 0.75rem;
+        }
+
+        /* Profile picture preview */
+        .img-circle {
+            width: 40px !important;
+            height: 40px !important;
+        }
+
+        .mb-2 {
+            margin-bottom: 0.5rem !important;
+        }
+    }
+
+    @media (min-width: 577px) and (max-width: 768px) {
+        .content-header h1 {
+            font-size: 1.375rem;
+        }
+
+        .form-group label {
+            font-size: 0.9rem;
+        }
+
+        .form-control {
+            font-size: 0.9rem;
+        }
+
+        .btn {
+            font-size: 0.9rem;
+        }
+
+        .img-circle {
+            width: 45px !important;
+            height: 45px !important;
+        }
+    }
+
+    /* ========== Better Spacing on Mobile ========== */
+    @media (max-width: 768px) {
+        .row {
+            margin-left: 0;
+            margin-right: 0;
+        }
+
+        .row > [class*='col-'] {
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+        }
+
+        .card-footer {
+            padding: 0.75rem;
+        }
+
+        .card-footer .btn {
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-footer .btn:last-child {
+            margin-bottom: 0;
+        }
+
+        hr {
+            margin: 1rem 0;
+        }
+
+        h5 {
+            font-size: 1rem;
+            margin-bottom: 0.75rem;
+        }
+    }
+
+    /* ========== Form Check Boxes ========== */
+    @media (max-width: 768px) {
+        .form-check {
+            margin-bottom: 0.5rem;
+        }
+
+        .form-check-label {
+            font-size: 0.875rem;
+        }
+
+        .form-check-input {
+            width: 20px;
+            height: 20px;
+            margin-top: 0.15rem;
+        }
+    }
+
+    /* ========== File Input ========== */
+    .form-control-file {
+        width: 100%;
+        display: block;
+    }
+
+    @media (max-width: 576px) {
+        .form-control-file {
+            font-size: 0.75rem;
+        }
+    }
+
+    /* ========== Profile Picture Section ========== */
+    .img-circle {
+        border: 2px solid #dee2e6;
+        object-fit: cover;
+    }
+
+    @media (max-width: 576px) {
+        .d-block {
+            font-size: 0.75rem;
+        }
+    }
+
+    /* ========== Card Header on Mobile ========== */
+    @media (max-width: 576px) {
+        .card-header {
+            padding: 0.75rem;
+        }
+
+        .card-header .card-title {
+            margin-bottom: 0;
+        }
+    }
+
+    /* ========== Better Icon Spacing ========== */
+    .btn i {
+        margin-right: 0.25rem;
+    }
+
+    @media (max-width: 576px) {
+        .btn i {
+            margin-right: 0.15rem;
+        }
+    }
+
+    /* ========== Text Wrapping ========== */
+    .content-header h1 {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+
+    /* ========== Password Note ========== */
+    @media (max-width: 576px) {
+        label small.text-muted {
+            display: block;
+            margin-top: 0.25rem;
+        }
+    }
+
+    /* ========== Medium Screens ========== */
+    @media (min-width: 769px) and (max-width: 1024px) {
+        .card-body {
+            padding: 1rem;
+        }
+
+        .form-group label {
+            font-size: 0.925rem;
+        }
+
+        .form-control {
+            font-size: 0.925rem;
+        }
+    }
+
+    /* ========== Large Desktop ========== */
+    @media (min-width: 1025px) {
+        .card-body {
+            padding: 1.25rem;
+        }
+    }
+
+    /* ========== Print Styles ========== */
+    @media print {
+        .card-footer,
+        .btn {
+            display: none !important;
+        }
+
+        .card-body {
+            padding: 0;
+        }
+    }
+</style>
+@stop

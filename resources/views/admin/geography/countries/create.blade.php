@@ -6,6 +6,10 @@
     <h1>Create New Country</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="card card-success">
         <div class="card-header">

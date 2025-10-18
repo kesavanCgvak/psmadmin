@@ -46,6 +46,121 @@ class ProductController extends Controller
     }
 
     /**
+     * Get products data for DataTables (server-side processing)
+     */
+    public function getProductsData(Request $request)
+    {
+        try {
+            $query = Product::select(['id', 'category_id', 'brand_id', 'sub_category_id', 'model', 'psm_code', 'created_at'])
+                ->with([
+                    'category:id,name',
+                    'subCategory:id,name',
+                    'brand:id,name'
+                ]);
+
+        // Handle DataTables parameters
+        $draw = $request->get('draw');
+        $start = $request->get('start', 0);
+        $length = $request->get('length', 25);
+        $searchValue = $request->get('search')['value'] ?? '';
+        $orderColumn = $request->get('order')[0]['column'] ?? 0;
+        $orderDir = $request->get('order')[0]['dir'] ?? 'desc';
+
+        // Column mapping for ordering
+        $columns = ['id', 'brand_id', 'model', 'category_id', 'sub_category_id', 'psm_code', 'created_at'];
+        $orderColumnName = $columns[$orderColumn] ?? 'created_at';
+
+        // Apply search filter
+        if (!empty($searchValue)) {
+            $query->where(function($q) use ($searchValue) {
+                $q->where('model', 'like', "%{$searchValue}%")
+                  ->orWhere('psm_code', 'like', "%{$searchValue}%")
+                  ->orWhereHas('brand', function($brandQuery) use ($searchValue) {
+                      $brandQuery->where('name', 'like', "%{$searchValue}%");
+                  })
+                  ->orWhereHas('category', function($categoryQuery) use ($searchValue) {
+                      $categoryQuery->where('name', 'like', "%{$searchValue}%");
+                  })
+                  ->orWhereHas('subCategory', function($subCategoryQuery) use ($searchValue) {
+                      $subCategoryQuery->where('name', 'like', "%{$searchValue}%");
+                  });
+            });
+        }
+
+        // Get total count before filtering
+        $totalRecords = Product::count();
+
+        // Get filtered count
+        $filteredRecords = $query->count();
+
+        // Apply ordering and pagination
+        $products = $query->orderBy($orderColumnName, $orderDir)
+                         ->skip($start)
+                         ->take($length)
+                         ->get();
+
+        // Prepare data for DataTables
+        $data = [];
+        foreach ($products as $product) {
+            $data[] = [
+                'id' => $product->id,
+                'brand' => $product->brand ? $product->brand->name : '—',
+                'model' => $product->model,
+                'category' => $product->category ? $product->category->name : '—',
+                'sub_category' => $product->subCategory ? $product->subCategory->name : '—',
+                'psm_code' => $product->psm_code ?? '—',
+                'created_at' => $product->created_at ? $product->created_at->format('M d, Y') : '—',
+                'actions' => $this->getActionButtons($product)
+            ];
+        }
+
+            return response()->json([
+                'draw' => intval($draw),
+                'recordsTotal' => $totalRecords,
+                'recordsFiltered' => $filteredRecords,
+                'data' => $data
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('DataTables Products Error: ' . $e->getMessage());
+            return response()->json([
+                'draw' => intval($request->get('draw', 1)),
+                'recordsTotal' => 0,
+                'recordsFiltered' => 0,
+                'data' => [],
+                'error' => 'Error loading products data: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate action buttons HTML for DataTables
+     */
+    private function getActionButtons($product)
+    {
+        $viewUrl = route('admin.products.show', $product);
+        $editUrl = route('admin.products.edit', $product);
+        $deleteUrl = route('admin.products.destroy', $product);
+
+        return '
+            <div class="btn-group">
+                <a href="' . $viewUrl . '" class="btn btn-info btn-sm" title="View">
+                    <i class="fas fa-eye"></i>
+                </a>
+                <a href="' . $editUrl . '" class="btn btn-warning btn-sm" title="Edit">
+                    <i class="fas fa-edit"></i>
+                </a>
+                <form action="' . $deleteUrl . '" method="POST" class="d-inline" onsubmit="return confirm(\'Are you sure you want to delete this product?\');">
+                    ' . csrf_field() . '
+                    <input type="hidden" name="_method" value="DELETE">
+                    <button type="submit" class="btn btn-danger btn-sm" title="Delete">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </form>
+            </div>
+        ';
+    }
+
+    /**
      * Show the form for creating a new product.
      */
     public function create()
@@ -91,7 +206,7 @@ class ProductController extends Controller
         Cache::forget('subcategories_list');
         Cache::forget('brands_list');
 
-        return redirect()->route('products.index')
+        return redirect()->route('admin.products.index')
             ->with('success', 'Product created successfully.');
     }
 
@@ -151,7 +266,7 @@ class ProductController extends Controller
         Cache::forget('subcategories_list');
         Cache::forget('brands_list');
 
-        return redirect()->route('products.index')
+        return redirect()->route('admin.products.index')
             ->with('success', 'Product updated successfully.');
     }
 
@@ -168,10 +283,10 @@ class ProductController extends Controller
             Cache::forget('subcategories_list');
             Cache::forget('brands_list');
 
-            return redirect()->route('products.index')
+            return redirect()->route('admin.products.index')
                 ->with('success', 'Product deleted successfully.');
         } catch (\Exception $e) {
-            return redirect()->route('products.index')
+            return redirect()->route('admin.products.index')
                 ->with('error', 'Cannot delete product. It may have associated equipment or be used in rental jobs.');
         }
     }

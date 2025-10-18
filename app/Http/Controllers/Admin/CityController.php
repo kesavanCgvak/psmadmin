@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\City;
 use App\Models\Country;
 use App\Models\StateProvince;
+use App\Models\Region;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -25,9 +26,10 @@ class CityController extends Controller
      */
     public function create()
     {
-        $countries = Country::orderBy('name')->get();
-        $states = StateProvince::orderBy('name')->get();
-        return view('admin.geography.cities.create', compact('countries', 'states'));
+        $regions = Region::orderBy('name')->get();
+        $countries = collect(); // Empty collection - will load via AJAX
+        $states = collect(); // Empty collection - will load via AJAX
+        return view('admin.geography.cities.create', compact('regions', 'countries', 'states'));
     }
 
     /**
@@ -39,8 +41,8 @@ class CityController extends Controller
             'country_id' => 'required|exists:countries,id',
             'state_id' => 'nullable|exists:states_provinces,id',
             'name' => 'required|string|max:150',
-            'latitude' => 'nullable|numeric|between:-90,90',
-            'longitude' => 'nullable|numeric|between:-180,180',
+            'latitude' => 'required|numeric|between:-90,90',
+            'longitude' => 'required|numeric|between:-180,180',
         ]);
 
         if ($validator->fails()) {
@@ -69,9 +71,10 @@ class CityController extends Controller
      */
     public function edit(City $city)
     {
-        $countries = Country::orderBy('name')->get();
+        $regions = Region::orderBy('name')->get();
+        $countries = Country::where('region_id', $city->country->region_id ?? null)->orderBy('name')->get();
         $states = StateProvince::where('country_id', $city->country_id)->orderBy('name')->get();
-        return view('admin.geography.cities.edit', compact('city', 'countries', 'states'));
+        return view('admin.geography.cities.edit', compact('city', 'regions', 'countries', 'states'));
     }
 
     /**
@@ -83,8 +86,8 @@ class CityController extends Controller
             'country_id' => 'required|exists:countries,id',
             'state_id' => 'nullable|exists:states_provinces,id',
             'name' => 'required|string|max:150',
-            'latitude' => 'nullable|numeric|between:-90,90',
-            'longitude' => 'nullable|numeric|between:-180,180',
+            'latitude' => 'required|numeric|between:-90,90',
+            'longitude' => 'required|numeric|between:-180,180',
         ]);
 
         if ($validator->fails()) {
@@ -124,6 +127,18 @@ class CityController extends Controller
             ->get(['id', 'name']);
 
         return response()->json($states);
+    }
+
+    /**
+     * Get countries by region (AJAX endpoint)
+     */
+    public function getCountriesByRegion($regionId)
+    {
+        $countries = Country::where('region_id', $regionId)
+            ->orderBy('name')
+            ->get(['id', 'name', 'iso_code']);
+
+        return response()->json($countries);
     }
 }
 

@@ -6,6 +6,10 @@
     <h1>Edit Category</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="card card-warning">
         <div class="card-header">

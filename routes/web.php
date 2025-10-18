@@ -35,16 +35,23 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // States/Provinces
     Route::resource('states', StateProvinceController::class);
 
+    // State AJAX endpoints
+    Route::get('/ajax/regions/{region}/countries-for-states', [\App\Http\Controllers\Admin\StateProvinceController::class, 'getCountriesByRegion'])
+        ->name('ajax.countries-by-region-states');
+
     // Cities
     Route::resource('cities', CityController::class);
 
-    // AJAX endpoint for getting states by country
+    // City AJAX endpoints
     Route::get('/ajax/countries/{country}/states', [CityController::class, 'getStatesByCountry'])
         ->name('ajax.states-by-country');
+    Route::get('/ajax/regions/{region}/countries-for-cities', [CityController::class, 'getCountriesByRegion'])
+        ->name('ajax.countries-by-region-cities');
 });
 
-// Product Catalog Management Routes
-Route::middleware(['auth', 'verified'])->group(function () {
+// Admin Routes (Product Catalog, Company Management, User Management)
+Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(function () {
+    // Product Catalog Management
     // Categories
     Route::resource('categories', \App\Http\Controllers\Admin\CategoryController::class);
 
@@ -54,18 +61,27 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Brands
     Route::resource('brands', \App\Http\Controllers\Admin\BrandController::class);
 
-    // Products
+    // Products - DataTables AJAX endpoint MUST be before resource route
+    Route::get('/products/data', [\App\Http\Controllers\Admin\ProductController::class, 'getProductsData'])
+        ->name('products.data');
     Route::resource('products', \App\Http\Controllers\Admin\ProductController::class);
 
     // AJAX endpoint for getting subcategories by category
     Route::get('/ajax/categories/{category}/subcategories', [\App\Http\Controllers\Admin\ProductController::class, 'getSubCategoriesByCategory'])
         ->name('ajax.subcategories-by-category');
-});
 
-// Company Management Routes
-Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(function () {
     // Companies
     Route::resource('companies', \App\Http\Controllers\Admin\CompanyManagementController::class);
+
+    // Company AJAX endpoints
+    Route::get('/ajax/regions/{region}/countries', [\App\Http\Controllers\Admin\CompanyManagementController::class, 'getCountriesByRegion'])
+        ->name('ajax.countries-by-region');
+    Route::get('/ajax/countries/{country}/states', [\App\Http\Controllers\Admin\CompanyManagementController::class, 'getStatesByCountry'])
+        ->name('ajax.states-by-country-admin');
+    Route::get('/ajax/states/{state}/cities', [\App\Http\Controllers\Admin\CompanyManagementController::class, 'getCitiesByState'])
+        ->name('ajax.cities-by-state');
+    Route::get('/ajax/cities/{city}/coordinates', [\App\Http\Controllers\Admin\CompanyManagementController::class, 'getCityCoordinates'])
+        ->name('ajax.city-coordinates');
 
     // Currencies
     Route::resource('currencies', \App\Http\Controllers\Admin\CurrencyManagementController::class);
@@ -86,6 +102,10 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     // AJAX endpoints
     Route::get('/ajax/companies/{company}/users', [\App\Http\Controllers\Admin\EquipmentManagementController::class, 'getUsersByCompany'])
         ->name('ajax.users-by-company');
+    Route::get('/ajax/check-username', [\App\Http\Controllers\Admin\UserManagementController::class, 'checkUsername'])
+        ->name('ajax.check-username');
+    Route::get('/ajax/company/{company}/phone-format', [\App\Http\Controllers\Admin\UserManagementController::class, 'getPhoneFormat'])
+        ->name('ajax.phone-format');
 });
 
 // Clear application cache

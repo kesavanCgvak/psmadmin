@@ -6,6 +6,10 @@
     <h1>Create New Sub-Category</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="card card-info">
         <div class="card-header">

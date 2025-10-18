@@ -29,10 +29,12 @@ class UserManagementController extends Controller
     /**
      * Show the form for creating a new user.
      */
-    public function create()
+    public function create(Request $request)
     {
         $companies = Company::orderBy('name')->get();
-        return view('admin.users.create', compact('companies'));
+        $selectedCompanyId = $request->query('company_id');
+
+        return view('admin.users.create', compact('companies', 'selectedCompanyId'));
     }
 
     /**
@@ -40,22 +42,29 @@ class UserManagementController extends Controller
      */
     public function store(Request $request)
     {
+        // Validate birthday to ensure user is at least 18 years old
+        $eighteenYearsAgo = now()->subYears(18)->format('Y-m-d');
+
         $request->validate([
             'username' => 'required|string|max:255|unique:users',
-            'email' => 'required|email|max:255|unique:users',
+            'email' => 'required|email|max:255|unique:user_profiles,email',
             'password' => 'required|string|min:8|confirmed',
-            'account_type' => 'required|in:individual,company,provider',
-            'role' => 'required|in:user,admin,super_admin',
-            'is_admin' => 'boolean',
+            'account_type' => 'required|in:provider,user',
             'email_verified' => 'boolean',
-            'company_id' => 'nullable|exists:companies,id',
+            'company_id' => 'required|exists:companies,id',
 
             // Profile fields
-            'full_name' => 'nullable|string|max:255',
-            'mobile' => 'nullable|string|max:20',
-            'birthday' => 'nullable|date',
+            'full_name' => 'required|string|max:255',
+            'mobile' => 'required|string|max:20',
+            'birthday' => "required|date|before_or_equal:$eighteenYearsAgo",
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+        ], [
+            'birthday.before_or_equal' => 'User must be at least 18 years old.',
+            'account_type.in' => 'Account type must be either Provider or User.',
         ]);
+
+        // Determine role based on account_type
+        $role = $request->account_type === 'provider' ? 'admin' : 'user';
 
         // Create user
         $userData = [
@@ -63,8 +72,8 @@ class UserManagementController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'account_type' => $request->account_type,
-            'role' => $request->role,
-            'is_admin' => $request->boolean('is_admin'),
+            'role' => $role,
+            'is_admin' => $request->account_type === 'provider' ? true : false,
             'email_verified' => $request->boolean('email_verified'),
             'company_id' => $request->company_id,
         ];
@@ -80,6 +89,7 @@ class UserManagementController extends Controller
         $profileData = [
             'user_id' => $user->id,
             'full_name' => $request->full_name,
+            'email' => $request->email,
             'mobile' => $request->mobile,
             'birthday' => $request->birthday,
         ];
@@ -256,5 +266,74 @@ class UserManagementController extends Controller
         $status = $user->is_admin ? 'granted admin privileges' : 'revoked admin privileges';
         return redirect()->back()
             ->with('success', "User {$status} successfully.");
+    }
+
+    /**
+     * Check if username is available (AJAX endpoint).
+     */
+    public function checkUsername(Request $request)
+    {
+        $username = $request->query('username');
+        $userId = $request->query('user_id'); // For edit mode
+
+        if (empty($username)) {
+            return response()->json([
+                'available' => false,
+                'message' => 'Username is required.'
+            ]);
+        }
+
+        $query = User::where('username', $username);
+
+        // Exclude current user if editing
+        if ($userId) {
+            $query->where('id', '!=', $userId);
+        }
+
+        $exists = $query->exists();
+
+        return response()->json([
+            'available' => !$exists,
+            'message' => $exists ? 'Username is already taken.' : 'Username is available.'
+        ]);
+    }
+
+    /**
+     * Get phone format information for a company (AJAX endpoint).
+     */
+    public function getPhoneFormat(Company $company)
+    {
+        $company->load(['country', 'state']);
+
+        $phoneFormat = '';
+        $countryCode = '';
+
+        if ($company->country) {
+            $countryName = $company->country->name;
+            $countryCode = $company->country->phone_code ?? '';
+
+            // Basic phone format patterns by country (can be expanded)
+            $phoneFormats = [
+                'United States' => '+1 (###) ###-####',
+                'Canada' => '+1 (###) ###-####',
+                'United Kingdom' => '+44 #### ######',
+                'Australia' => '+61 # #### ####',
+                'Germany' => '+49 ### #######',
+                'France' => '+33 # ## ## ## ##',
+                'India' => '+91 ##### #####',
+                'China' => '+86 ### #### ####',
+                'Japan' => '+81 ##-####-####',
+                'Brazil' => '+55 (##) #####-####',
+            ];
+
+            $phoneFormat = $phoneFormats[$countryName] ?? "+$countryCode ###########";
+        }
+
+        return response()->json([
+            'country' => $company->country ? $company->country->name : null,
+            'state' => $company->state ? $company->state->name : null,
+            'phone_format' => $phoneFormat,
+            'country_code' => $countryCode,
+        ]);
     }
 }

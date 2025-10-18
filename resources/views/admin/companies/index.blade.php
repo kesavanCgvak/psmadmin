@@ -111,16 +111,21 @@
     </div>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('js')
+    @include('partials.responsive-js')
     <script>
         $(document).ready(function() {
-            $('#companiesTable').DataTable({
-                "responsive": true,
-                "lengthChange": true,
-                "autoWidth": false,
-                "buttons": ["copy", "csv", "excel", "pdf", "print", "colvis"],
-                "order": [[0, "desc"]]
-            }).buttons().container().appendTo('#companiesTable_wrapper .col-md-6:eq(0)');
+            initResponsiveDataTable('companiesTable', {
+                "columnDefs": [
+                    { "orderable": false, "targets": [7, 9] },
+                    { "responsivePriority": 1, "targets": 1 },
+                    { "responsivePriority": 2, "targets": 9 }
+                ]
+            });
         });
     </script>
 @stop
