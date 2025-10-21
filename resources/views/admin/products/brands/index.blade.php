@@ -29,7 +29,7 @@
         <div class="card-header">
             <h3 class="card-title">All Brands</h3>
             <div class="card-tools">
-                <a href="{{ route('brands.create') }}" class="btn btn-success btn-sm">
+                <a href="{{ route('admin.brands.create') }}" class="btn btn-success btn-sm">
                     <i class="fas fa-plus"></i> Add New Brand
                 </a>
             </div>
@@ -56,13 +56,13 @@
                             <td>{{ $brand->created_at?->format('M d, Y') }}</td>
                             <td>
                                 <div class="btn-group">
-                                    <a href="{{ route('brands.show', $brand) }}" class="btn btn-info btn-sm" title="View">
+                                    <a href="{{ route('admin.brands.show', $brand) }}" class="btn btn-info btn-sm" title="View">
                                         <i class="fas fa-eye"></i>
                                     </a>
-                                    <a href="{{ route('brands.edit', $brand) }}" class="btn btn-warning btn-sm" title="Edit">
+                                    <a href="{{ route('admin.brands.edit', $brand) }}" class="btn btn-warning btn-sm" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </a>
-                                    <form action="{{ route('brands.destroy', $brand) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this brand?');">
+                                    <form action="{{ route('admin.brands.destroy', $brand) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this brand?');">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="btn btn-danger btn-sm" title="Delete">

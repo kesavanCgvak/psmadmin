@@ -99,6 +99,17 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     Route::post('/users/{user}/toggle-admin', [\App\Http\Controllers\Admin\UserManagementController::class, 'toggleAdmin'])
         ->name('users.toggle-admin');
 
+    // Job Management (Read-only)
+    Route::resource('rental-jobs', \App\Http\Controllers\Admin\RentalJobController::class)->only(['index', 'show']);
+    Route::resource('supply-jobs', \App\Http\Controllers\Admin\SupplyJobController::class)->only(['index', 'show']);
+
+    // Admin User Management
+    Route::resource('admin-users', \App\Http\Controllers\Admin\AdminUserManagementController::class);
+    Route::post('/admin-users/{adminUser}/reactivate', [\App\Http\Controllers\Admin\AdminUserManagementController::class, 'reactivate'])
+        ->name('admin-users.reactivate');
+    Route::post('/admin-users/{adminUser}/reset-password', [\App\Http\Controllers\Admin\AdminUserManagementController::class, 'resetPassword'])
+        ->name('admin-users.reset-password');
+
     // AJAX endpoints
     Route::get('/ajax/companies/{company}/users', [\App\Http\Controllers\Admin\EquipmentManagementController::class, 'getUsersByCompany'])
         ->name('ajax.users-by-company');

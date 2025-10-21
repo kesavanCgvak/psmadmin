@@ -211,4 +211,24 @@ class User extends Authenticatable implements JWTSubject
     {
         return [];
     }
+
+    /**
+     * Get the user's display description for AdminLTE.
+     *
+     * @return string|null
+     */
+    public function adminlte_desc()
+    {
+        return $this->role ?? 'User';
+    }
+
+    /**
+     * Get the user's profile URL for AdminLTE.
+     *
+     * @return string
+     */
+    public function adminlte_profile_url()
+    {
+        return route('profile.edit');
+    }
 }

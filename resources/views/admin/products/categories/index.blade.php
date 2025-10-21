@@ -29,7 +29,7 @@
         <div class="card-header">
             <h3 class="card-title">All Categories</h3>
             <div class="card-tools">
-                <a href="{{ route('categories.create') }}" class="btn btn-primary btn-sm">
+                <a href="{{ route('admin.categories.create') }}" class="btn btn-primary btn-sm">
                     <i class="fas fa-plus"></i> Add New Category
                 </a>
             </div>
@@ -60,13 +60,13 @@
                             <td>{{ $category->created_at?->format('M d, Y') }}</td>
                             <td>
                                 <div class="btn-group">
-                                    <a href="{{ route('categories.show', $category) }}" class="btn btn-info btn-sm" title="View">
+                                    <a href="{{ route('admin.categories.show', $category) }}" class="btn btn-info btn-sm" title="View">
                                         <i class="fas fa-eye"></i>
                                     </a>
-                                    <a href="{{ route('categories.edit', $category) }}" class="btn btn-warning btn-sm" title="Edit">
+                                    <a href="{{ route('admin.categories.edit', $category) }}" class="btn btn-warning btn-sm" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </a>
-                                    <form action="{{ route('categories.destroy', $category) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this category?');">
+                                    <form action="{{ route('admin.categories.destroy', $category) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this category?');">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="btn btn-danger btn-sm" title="Delete">

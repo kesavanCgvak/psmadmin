@@ -177,7 +177,7 @@
                                     <label for="profile_picture">Profile Picture</label>
                                     @if($user->profile?->profile_picture)
                                         <div class="mb-2">
-                                            <img src="{{ asset('storage/' . $user->profile->profile_picture) }}"
+                                            <img src="{{ asset($user->profile->profile_picture) }}"
                                                  alt="Current Profile Picture"
                                                  class="img-circle"
                                                  style="width: 50px; height: 50px;">

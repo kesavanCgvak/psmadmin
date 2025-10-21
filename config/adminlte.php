@@ -137,8 +137,8 @@ return [
     'usermenu_header' => false,
     'usermenu_header_class' => 'bg-primary',
     'usermenu_image' => false,
-    'usermenu_desc' => false,
-    'usermenu_profile_url' => false,
+    'usermenu_desc' => true,
+    'usermenu_profile_url' => true,
 
     /*
     |--------------------------------------------------------------------------
@@ -408,6 +408,25 @@ return [
             'route' => 'admin.users.index',
             'icon' => 'fas fa-fw fa-users',
             'icon_color' => 'primary',
+        ],
+        [
+            'text' => 'Super Admin Users',
+            'route' => 'admin.admin-users.index',
+            'icon' => 'fas fa-fw fa-user-shield',
+            'icon_color' => 'danger',
+        ],
+        ['header' => 'JOB MANAGEMENT'],
+        [
+            'text' => 'Rental Jobs',
+            'route' => 'admin.rental-jobs.index',
+            'icon' => 'fas fa-fw fa-briefcase',
+            'icon_color' => 'primary',
+        ],
+        [
+            'text' => 'Supply Jobs',
+            'route' => 'admin.supply-jobs.index',
+            'icon' => 'fas fa-fw fa-truck',
+            'icon_color' => 'success',
         ],
         ['header' => 'ACCOUNT SETTINGS'],
         [

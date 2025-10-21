@@ -29,7 +29,7 @@
         <div class="card-header">
             <h3 class="card-title">All Sub-Categories</h3>
             <div class="card-tools">
-                <a href="{{ route('subcategories.create') }}" class="btn btn-info btn-sm">
+                <a href="{{ route('admin.subcategories.create') }}" class="btn btn-info btn-sm">
                     <i class="fas fa-plus"></i> Add New Sub-Category
                 </a>
             </div>
@@ -60,13 +60,13 @@
                             <td>{{ $subCategory->created_at?->format('M d, Y') }}</td>
                             <td>
                                 <div class="btn-group">
-                                    <a href="{{ route('subcategories.show', $subCategory) }}" class="btn btn-info btn-sm" title="View">
+                                    <a href="{{ route('admin.subcategories.show', $subCategory) }}" class="btn btn-info btn-sm" title="View">
                                         <i class="fas fa-eye"></i>
                                     </a>
-                                    <a href="{{ route('subcategories.edit', $subCategory) }}" class="btn btn-warning btn-sm" title="Edit">
+                                    <a href="{{ route('admin.subcategories.edit', $subCategory) }}" class="btn btn-warning btn-sm" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </a>
-                                    <form action="{{ route('subcategories.destroy', $subCategory) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this sub-category?');">
+                                    <form action="{{ route('admin.subcategories.destroy', $subCategory) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this sub-category?');">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="btn btn-danger btn-sm" title="Delete">

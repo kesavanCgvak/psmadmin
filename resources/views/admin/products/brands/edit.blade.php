@@ -15,7 +15,7 @@
         <div class="card-header">
             <h3 class="card-title">Brand Details</h3>
         </div>
-        <form action="{{ route('brands.update', $brand) }}" method="POST">
+        <form action="{{ route('admin.brands.update', $brand) }}" method="POST">
             @csrf
             @method('PUT')
             <div class="card-body">
@@ -37,7 +37,7 @@
                 <button type="submit" class="btn btn-warning">
                     <i class="fas fa-save"></i> Update Brand
                 </button>
-                <a href="{{ route('brands.index') }}" class="btn btn-default">
+                <a href="{{ route('admin.brands.index') }}" class="btn btn-default">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>

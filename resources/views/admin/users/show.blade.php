@@ -12,14 +12,14 @@
             <div class="card card-primary card-outline">
                 <div class="card-body box-profile">
                     <div class="text-center">
-                        @if($user->profile?->profile_picture && file_exists(public_path('storage/' . $user->profile->profile_picture)))
+                        @if($user->profile?->profile_picture && file_exists(public_path($user->profile->profile_picture)))
                             <img class="profile-user-img img-fluid img-circle img-bordered-sm"
-                                 src="{{ asset('storage/' . $user->profile->profile_picture) }}"
+                                 src="{{ asset($user->profile->profile_picture) }}"
                                  alt="{{ $user->username }}'s profile picture"
                                  style="object-fit: cover;"
                                  onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                         @endif
-                        <div class="profile-user-img img-fluid img-circle img-bordered-sm bg-primary d-flex align-items-center justify-content-center text-white mx-auto {{ $user->profile?->profile_picture && file_exists(public_path('storage/' . $user->profile->profile_picture)) ? 'd-none' : '' }}"
+                        <div class="profile-user-img img-fluid img-circle img-bordered-sm bg-primary d-flex align-items-center justify-content-center text-white mx-auto {{ $user->profile?->profile_picture && file_exists(public_path($user->profile->profile_picture)) ? 'd-none' : '' }}"
                              style="width: 100px; height: 100px; font-size: 36px; font-weight: bold;">
                             {{ strtoupper(substr($user->username, 0, 1)) }}
                         </div>

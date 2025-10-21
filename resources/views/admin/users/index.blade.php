@@ -51,14 +51,14 @@
                                     <td>{{ $user->id }}</td>
                                     <td>
                                         <div class="profile-picture-container">
-                                            @if($user->profile?->profile_picture && file_exists(public_path('storage/' . $user->profile->profile_picture)))
-                                                <img src="{{ asset('storage/' . $user->profile->profile_picture) }}"
+                                            @if($user->profile?->profile_picture && file_exists(public_path($user->profile->profile_picture)))
+                                                <img src="{{ asset($user->profile->profile_picture) }}"
                                                      alt="{{ $user->username }}"
                                                      class="profile-picture"
                                                      style="width: 40px; height: 40px; object-fit: cover; border-radius: 50%; border: 2px solid #dee2e6;"
                                                      onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                                             @endif
-                                            <div class="profile-initial {{ $user->profile?->profile_picture && file_exists(public_path('storage/' . $user->profile->profile_picture)) ? 'd-none' : 'd-flex' }} align-items-center justify-content-center"
+                                            <div class="profile-initial {{ $user->profile?->profile_picture && file_exists(public_path($user->profile->profile_picture)) ? 'd-none' : 'd-flex' }} align-items-center justify-content-center"
                                                  style="width: 40px; height: 40px; border-radius: 50%; background-color: #007bff; color: white; font-size: 16px; font-weight: bold; border: 2px solid #dee2e6;">
                                                 {{ strtoupper(substr($user->username, 0, 1)) }}
                                             </div>

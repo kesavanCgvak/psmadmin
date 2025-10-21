@@ -15,7 +15,7 @@
         <div class="card-header">
             <h3 class="card-title">Category Details</h3>
         </div>
-        <form action="{{ route('categories.store') }}" method="POST">
+        <form action="{{ route('admin.categories.store') }}" method="POST">
             @csrf
             <div class="card-body">
                 <div class="form-group">
@@ -38,7 +38,7 @@
                 <button type="submit" class="btn btn-primary">
                     <i class="fas fa-save"></i> Create Category
                 </button>
-                <a href="{{ route('categories.index') }}" class="btn btn-default">
+                <a href="{{ route('admin.categories.index') }}" class="btn btn-default">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>

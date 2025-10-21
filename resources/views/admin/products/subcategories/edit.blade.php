@@ -15,7 +15,7 @@
         <div class="card-header">
             <h3 class="card-title">Sub-Category Details</h3>
         </div>
-        <form action="{{ route('subcategories.update', $subcategory) }}" method="POST">
+        <form action="{{ route('admin.subcategories.update', $subcategory) }}" method="POST">
             @csrf
             @method('PUT')
             <div class="card-body">
@@ -55,7 +55,7 @@
                 <button type="submit" class="btn btn-warning">
                     <i class="fas fa-save"></i> Update Sub-Category
                 </button>
-                <a href="{{ route('subcategories.index') }}" class="btn btn-default">
+                <a href="{{ route('admin.subcategories.index') }}" class="btn btn-default">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>

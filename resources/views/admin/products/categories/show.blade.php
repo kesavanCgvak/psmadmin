@@ -43,10 +43,10 @@
                     </dl>
                 </div>
                 <div class="card-footer">
-                    <a href="{{ route('categories.edit', $category) }}" class="btn btn-warning">
+                    <a href="{{ route('admin.categories.edit', $category) }}" class="btn btn-warning">
                         <i class="fas fa-edit"></i> Edit
                     </a>
-                    <a href="{{ route('categories.index') }}" class="btn btn-default">
+                    <a href="{{ route('admin.categories.index') }}" class="btn btn-default">
                         <i class="fas fa-arrow-left"></i> Back to List
                     </a>
                 </div>

@@ -2,6 +2,11 @@
 
 @section('title', 'Dashboard')
 
+@section('head')
+<link rel="shortcut icon" href="{{ asset('favicon.ico') }}" type="image/x-icon">
+<link rel="icon" href="{{ asset('favicon.ico') }}" type="image/x-icon">
+@endsection
+
 @section('content_header')
     <h1>Dashboard</h1>
 @stop
