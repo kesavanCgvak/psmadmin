@@ -480,6 +480,7 @@ class CompanyController extends Controller
                 'region' => $company->region_id,
                 'country' => $company->country_id,
                 'city' => $company->city_id,
+                'state' => $company->state_id,
                 'address_line_1' => $company->address_line_1,
                 'address_line_2' => $company->address_line_2,
                 'postal_code' => $company->postal_code,
@@ -519,6 +520,7 @@ class CompanyController extends Controller
                 // 'region' => 'nullable|integer|exists:regions,id',
                 'country_id' => 'nullable|integer|exists:countries,id',
                 'city_id' => 'nullable|integer|exists:cities,id',
+                'state_id' => 'nullable|integer|exists:states_provinces,id',
                 'address_line_1' => 'nullable|string|max:255',
                 'address_line_2' => 'nullable|string|max:255',
                 'postal_code' => 'nullable|string|max:20',
@@ -535,6 +537,7 @@ class CompanyController extends Controller
                 // 'region_id' => $request->region,
                 'country_id' => $request->country_id,
                 'city_id' => $request->city_id,
+                'state_id' => $request->state_id,
                 'address_line_1' => $request->address_line_1,
                 'address_line_2' => $request->address_line_2,
                 'postal_code' => $request->postal_code,
@@ -673,7 +676,7 @@ class CompanyController extends Controller
                 ->pluck('company_id')
                 ->toArray();
 
-            // ✅ Main query with SQL distance calculation
+            // ✅ Main query with joins + geolocation
             $query = Company::with(['defaultContactProfile'])
                 ->join('equipments', function ($join) use ($productIds) {
                     $join->on('companies.id', '=', 'equipments.company_id')
@@ -681,6 +684,10 @@ class CompanyController extends Controller
                 })
                 ->join('products', 'products.id', '=', 'equipments.product_id')
                 ->join('currencies', 'currencies.id', '=', 'companies.currency_id')
+                // 🆕 Join city, state, and country tables for geolocation details
+                ->leftJoin('cities', 'cities.id', '=', 'companies.city_id')
+                ->leftJoin('states_provinces', 'states_provinces.id', '=', 'companies.state_id')
+                ->leftJoin('countries', 'countries.id', '=', 'companies.country_id')
                 ->select(
                     'companies.id as company_id',
                     'companies.name as company_name',
@@ -698,6 +705,10 @@ class CompanyController extends Controller
                     'currencies.name as currency_name',
                     'currencies.code as currency_code',
                     'currencies.symbol as currency_symbol',
+                    // 🆕 Geolocation fields
+                    'cities.name as city_name',
+                    'states_provinces.name as state_name',
+                    'countries.name as country_name',
                     DB::raw("(
                     COALESCE(
                         6371 * acos(
@@ -744,6 +755,11 @@ class CompanyController extends Controller
                     'name' => $first->company_name,
                     'rating' => $first->company_rating,
                     'distance' => round($first->distance, 2),
+                    'location' => [ // 🆕 Added location block
+                        'country' => $first->country_name,
+                        'state' => $first->state_name,
+                        'city' => $first->city_name,
+                    ],
                     'currency' => [
                         'id' => $first->currency_id,
                         'name' => $first->currency_name,

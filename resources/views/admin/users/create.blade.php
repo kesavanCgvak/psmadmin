@@ -38,7 +38,8 @@
                                                 <option value="{{ $company->id }}"
                                                     {{ (old('company_id') == $company->id || (isset($selectedCompanyId) && $selectedCompanyId == $company->id)) ? 'selected' : '' }}
                                                     data-country-id="{{ $company->country_id }}"
-                                                    data-state-id="{{ $company->state_id }}">
+                                                    data-state-id="{{ $company->state_id }}"
+                                                    data-account-type="{{ $company->account_type }}">
                                                     {{ $company->name }}
                                                 </option>
                                             @endforeach
@@ -84,16 +85,16 @@
                                 <div class="form-group">
                                     <label for="account_type">Account Type <span class="text-danger">*</span></label>
                                     <select class="form-control @error('account_type') is-invalid @enderror"
-                                            id="account_type" name="account_type" required>
-                                        <option value="">Select Account Type</option>
-                                        <option value="provider" {{ old('account_type') === 'provider' ? 'selected' : '' }}>Provider</option>
-                                        <option value="user" {{ old('account_type') === 'user' ? 'selected' : '' }}>User</option>
+                                            id="account_type" name="account_type" required readonly>
+                                        <option value="">Auto-assigned based on company</option>
+                                        <option value="Provider" {{ old('account_type') === 'Provider' ? 'selected' : '' }}>Provider</option>
+                                        <option value="User" {{ old('account_type') === 'User' ? 'selected' : '' }}>User</option>
                                     </select>
                                     @error('account_type')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
                                     <small class="form-text text-muted">
-                                        Provider = Admin role | User = Regular user role
+                                        Account type is automatically assigned based on the selected company
                                     </small>
                                 </div>
                             </div>
@@ -102,9 +103,33 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
+                                    <label for="role">Role in Company <span class="text-danger">*</span></label>
+                                    <select class="form-control @error('role') is-invalid @enderror"
+                                            id="role" name="role" required>
+                                        <option value="">Select Role</option>
+                                        <option value="admin" {{ old('role') === 'admin' ? 'selected' : '' }}>Admin</option>
+                                        <option value="user" {{ old('role') === 'user' ? 'selected' : '' }}>User</option>
+                                    </select>
+                                    @error('role')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                    <small class="form-text text-muted">
+                                        Admin = Full access | User = Limited access
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
                                     <label for="password">Password <span class="text-danger">*</span></label>
-                                    <input type="password" class="form-control @error('password') is-invalid @enderror"
-                                           id="password" name="password" required>
+                                    <div class="input-group">
+                                        <input type="password" class="form-control @error('password') is-invalid @enderror"
+                                               id="password" name="password" required>
+                                        <div class="input-group-append">
+                                            <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                                <i class="fas fa-eye" id="togglePasswordIcon"></i>
+                                            </button>
+                                        </div>
+                                    </div>
                                     @error('password')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -119,6 +144,9 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
+
+                        <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label for="password_confirmation">Confirm Password <span class="text-danger">*</span></label>
@@ -128,6 +156,7 @@
                                 </div>
                             </div>
                         </div>
+
 
                         <hr>
 
@@ -443,6 +472,18 @@
             margin-right: 0.15rem;
         }
     }
+
+    /* ========== Readonly Select Styling ========== */
+    select[readonly] {
+        background-color: #e9ecef;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+
+    select[readonly]:focus {
+        border-color: #ced4da;
+        box-shadow: none;
+    }
 </style>
 @stop
 
@@ -612,34 +653,80 @@ $(document).ready(function() {
         }
     });
 
-    // Company selection - fetch phone format
+    // Company selection - fetch phone format and auto-assign account type
     $('#company_id').on('change', function() {
         const companyId = $(this).val();
         const $hint = $('#phoneFormatHint');
         const $mobileHint = $('#mobileFormatHint');
+        const $accountType = $('#account_type');
+        const selectedOption = $(this).find('option:selected');
 
         if (!companyId) {
             $hint.text('');
             $mobileHint.text('Select a company first to see the format');
+            $accountType.val('');
             return;
         }
 
+        // Auto-assign account type immediately from data attribute
+        const accountType = selectedOption.data('account-type');
+        console.log('Company selected, account type from data attribute:', accountType);
+
+        if (accountType) {
+            // Set the value and mark as selected
+            $accountType.val(accountType);
+            $accountType.find('option[value="' + accountType + '"]').prop('selected', true);
+            $accountType.removeClass('is-invalid').addClass('is-valid');
+            console.log('Account type set to:', accountType);
+        }
+
+        // Fetch company details and phone format
         $.ajax({
             url: "{{ url('admin/ajax/company') }}/" + companyId + "/phone-format",
             method: 'GET',
             success: function(response) {
+                console.log('AJAX response:', response);
+
                 if (response.phone_format) {
                     $hint.html('<i class="fas fa-info-circle"></i> Company location: ' +
                         (response.country || 'N/A') +
                         (response.state ? ', ' + response.state : ''));
                     $mobileHint.html('<i class="fas fa-phone"></i> Format: <code>' + response.phone_format + '</code>');
                 }
+
+                // Auto-assign account type based on company (fallback from AJAX)
+                if (response.account_type && !accountType) {
+                    console.log('Setting account type from AJAX response:', response.account_type);
+                    $accountType.val(response.account_type);
+                    $accountType.find('option[value="' + response.account_type + '"]').prop('selected', true);
+                    $accountType.removeClass('is-invalid').addClass('is-valid');
+                }
             },
             error: function(xhr) {
-                console.error('Error fetching phone format:', xhr);
+                console.error('Error fetching company details:', xhr);
+                // Account type should already be set from data attribute
             }
         });
     });
+
+    // Password visibility toggle
+    $('#togglePassword').on('click', function() {
+        const passwordField = $('#password');
+        const passwordIcon = $('#togglePasswordIcon');
+
+        if (passwordField.attr('type') === 'password') {
+            passwordField.attr('type', 'text');
+            passwordIcon.removeClass('fa-eye').addClass('fa-eye-slash');
+        } else {
+            passwordField.attr('type', 'password');
+            passwordIcon.removeClass('fa-eye-slash').addClass('fa-eye');
+        }
+    });
+
+    // Trigger company change event on page load if a company is already selected
+    if ($('#company_id').val()) {
+        $('#company_id').trigger('change');
+    }
 
     // Trigger phone format load if company is pre-selected
     @if(isset($selectedCompanyId) && $selectedCompanyId)

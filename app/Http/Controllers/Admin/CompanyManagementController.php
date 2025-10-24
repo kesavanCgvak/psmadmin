@@ -51,6 +51,7 @@ class CompanyManagementController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255|unique:companies,name',
+            'account_type' => 'required|in:user,provider',
             'description' => 'nullable|string',
             'region_id' => 'nullable|exists:regions,id',
             'country_id' => 'nullable|exists:countries,id',
@@ -65,6 +66,9 @@ class CompanyManagementController extends Controller
             'rental_software_id' => 'nullable|exists:rental_softwares,id',
             'date_format' => 'nullable|string|max:255',
             'pricing_scheme' => 'nullable|string|max:255',
+        ], [
+            'account_type.required' => 'Company type is required.',
+            'account_type.in' => 'Company type must be either User or Provider.',
         ]);
 
         if ($validator->fails()) {

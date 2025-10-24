@@ -45,7 +45,7 @@ class BrandController extends Controller
             'name' => $request->name,
         ]);
 
-        return redirect()->route('brands.index')
+        return redirect()->route('admin.brands.index')
             ->with('success', 'Brand created successfully.');
     }
 
@@ -85,7 +85,7 @@ class BrandController extends Controller
             'name' => $request->name,
         ]);
 
-        return redirect()->route('brands.index')
+        return redirect()->route('admin.brands.index')
             ->with('success', 'Brand updated successfully.');
     }
 
@@ -96,10 +96,10 @@ class BrandController extends Controller
     {
         try {
             $brand->delete();
-            return redirect()->route('brands.index')
+            return redirect()->route('admin.brands.index')
                 ->with('success', 'Brand deleted successfully.');
         } catch (\Exception $e) {
-            return redirect()->route('brands.index')
+            return redirect()->route('admin.brands.index')
                 ->with('error', 'Cannot delete brand. It may have associated products.');
         }
     }

@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class UserManagementController extends Controller
 {
@@ -49,7 +51,8 @@ class UserManagementController extends Controller
             'username' => 'required|string|max:255|unique:users',
             'email' => 'required|email|max:255|unique:user_profiles,email',
             'password' => 'required|string|min:8|confirmed',
-            'account_type' => 'required|in:provider,user',
+            'account_type' => 'required|in:Provider,User',
+            'role' => 'required|in:admin,user',
             'email_verified' => 'boolean',
             'company_id' => 'required|exists:companies,id',
 
@@ -61,19 +64,21 @@ class UserManagementController extends Controller
         ], [
             'birthday.before_or_equal' => 'User must be at least 18 years old.',
             'account_type.in' => 'Account type must be either Provider or User.',
+            'role.in' => 'Role must be either Admin or User.',
         ]);
 
-        // Determine role based on account_type
-        $role = $request->account_type === 'provider' ? 'admin' : 'user';
+        // Auto-assign account_type based on company if not provided
+        $company = Company::find($request->company_id);
+        $accountType = $request->account_type ?: $company->account_type;
 
         // Create user
         $userData = [
             'username' => $request->username,
             'email' => $request->email,
             'password' => Hash::make($request->password),
-            'account_type' => $request->account_type,
-            'role' => $role,
-            'is_admin' => $request->account_type === 'provider' ? true : false,
+            'account_type' => $accountType,
+            'role' => $request->role,
+            'is_admin' => $request->role === 'admin',
             'email_verified' => $request->boolean('email_verified'),
             'company_id' => $request->company_id,
         ];
@@ -103,6 +108,43 @@ class UserManagementController extends Controller
         }
 
         UserProfile::create($profileData);
+
+        // Send email based on verification status
+        try {
+            if ($user->email_verified) {
+                // Send registration success email
+                Mail::send('emails.registrationSuccess', [
+                    'name' => $request->full_name,
+                    'email' => $request->email,
+                    'account_type' => $accountType,
+                    'login_url' => route('login')
+                ], function ($message) use ($request) {
+                    $message->to($request->email);
+                    $message->subject('Welcome to ProSub Marketplace - Account Created Successfully');
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
+                });
+            } else {
+                // Send verification email
+                $token = Str::random(30);
+                $user->update(['token' => $token]);
+
+                Mail::send('emails.verificationEmail', [
+                    'token' => $token,
+                    'username' => $request->username
+                ], function ($message) use ($request) {
+                    $message->to($request->email);
+                    $message->subject('Email Verification - ProSub Marketplace');
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
+                });
+            }
+        } catch (\Exception $e) {
+            // Log email sending error but don't fail the user creation
+            \Log::error('Failed to send email to user', [
+                'user_id' => $user->id,
+                'email' => $request->email,
+                'error' => $e->getMessage()
+            ]);
+        }
 
         return redirect()->route('admin.users.index')
             ->with('success', 'User created successfully.');
@@ -143,7 +185,10 @@ class UserManagementController extends Controller
                 'required',
                 'email',
                 'max:255',
-                Rule::unique('users')->ignore($user->id)
+                // Ensure uniqueness against user_profiles.email excluding current user's profile
+                Rule::unique('user_profiles', 'email')->where(function ($query) use ($user) {
+                    return $query->where('user_id', '!=', $user->id);
+                })
             ],
             'password' => 'nullable|string|min:8|confirmed',
             'account_type' => 'required|in:individual,company,provider',
@@ -186,6 +231,7 @@ class UserManagementController extends Controller
         // Update or create user profile
         $profileData = [
             'full_name' => $request->full_name,
+            'email' => $request->email,
             'mobile' => $request->mobile,
             'birthday' => $request->birthday,
         ];
@@ -334,6 +380,7 @@ class UserManagementController extends Controller
             'state' => $company->state ? $company->state->name : null,
             'phone_format' => $phoneFormat,
             'country_code' => $countryCode,
+            'account_type' => $company->account_type,
         ]);
     }
 }

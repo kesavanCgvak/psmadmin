@@ -41,7 +41,7 @@
                                 <a href="{{ route('admin.rental-jobs.show', $supplyJob->rentalJob) }}" class="btn btn-sm btn-primary">
                                     <i class="fas fa-briefcase"></i> {{ $supplyJob->rentalJob->name }}
                                 </a>
-                                <br><small class="text-muted">Job #{{ $supplyJob->rentalJob->id }}</small>
+                                <!-- <br><small class="text-muted">Job #{{ $supplyJob->rentalJob->id }}</small> -->
                             @else
                                 <span class="text-muted">N/A</span>
                             @endif

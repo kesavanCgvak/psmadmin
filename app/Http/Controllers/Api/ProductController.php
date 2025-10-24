@@ -113,9 +113,6 @@ class ProductController extends Controller
         ]);
     }
 
-    /**
-     * Create or attach product & equipment
-     */
     public function createOrAttach(CreateOrAttachRequest $request): JsonResponse
     {
         $validated = $request->validated();
@@ -148,26 +145,44 @@ class ProductController extends Controller
                 $brandId = $brand->id;
             }
 
-            /** 4️⃣ Handle Product — check for fuzzy match */
-            $normalizedName = $this->normalizeProductName($validated['name']);
-            $existingProduct = Product::all()->first(function ($p) use ($normalizedName) {
-                return $this->normalizeProductName($p->model) === $normalizedName;
-            });
+            /** 4️⃣ Handle Product — advanced duplicate detection */
+            $productName = trim($validated['name']);
+            $normalizedName = $this->normalizeProductName($productName);
+
+            // Check for existing products with similar names
+            $existingProduct = $this->findSimilarProduct($normalizedName, $brandId);
 
             if ($existingProduct) {
-                $product = $existingProduct;
-                $isVerified = $product->is_verified;
-            } else {
-                $product = Product::create([
-                    'category_id' => $categoryId,
-                    'sub_category_id' => $subCategoryId,
-                    'brand_id' => $brandId,
-                    'model' => trim($validated['name']),
-                    'psm_code' => isset($validated['psm_code']) ? trim($validated['psm_code']) : null,
-                    'is_verified' => 0,
-                ]);
-                $isVerified = 0;
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product already exists',
+                    'error' => 'A product with a similar name already exists in the system.',
+                    'data' => [
+                        'existing_product' => [
+                            'id' => $existingProduct->id,
+                            'model' => $existingProduct->model,
+                            'psm_code' => $existingProduct->psm_code,
+                            'brand' => $existingProduct->brand->name ?? 'N/A',
+                            'category' => $existingProduct->category->name ?? 'N/A',
+                        ],
+                        'suggested_action' => 'Please use the existing product or modify the name to make it unique.'
+                    ]
+                ], 409); // HTTP 409 Conflict
             }
+
+            // Generate safe next PSM code (always PSM_ format)
+            $psmCode = $validated['psm_code'] ?? $this->generateNextPsmCode();
+
+            $product = Product::create([
+                'category_id' => $categoryId,
+                'sub_category_id' => $subCategoryId,
+                'brand_id' => $brandId,
+                'model' => $productName,
+                'psm_code' => $psmCode,
+                'is_verified' => 0,
+            ]);
+
+            $isVerified = 0;
 
             /** 5️⃣ Attach or update Equipment */
             Equipment::updateOrCreate(
@@ -187,9 +202,7 @@ class ProductController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => $existingProduct
-                    ? 'Existing product found and attached successfully.'
-                    : 'New product and equipment created successfully.',
+                'message' => 'New product and equipment created successfully.',
                 'data' => [
                     'product' => $product,
                     'is_verified' => $isVerified,
@@ -207,15 +220,100 @@ class ProductController extends Controller
     }
 
     /**
-     * Normalize product names for fuzzy comparison
+     * Normalize product name for comparison
+     * Handles case-insensitive, word-order independent comparison
      */
-    private function normalizeProductName(string $name): string
+    protected function normalizeProductName(string $productName): string
     {
-        return Str::of($name)
-            ->lower()
-            ->replace(['-', '_', ' '], '')
-            ->replaceMatches('/[^a-z0-9]/', '')
-            ->value();
+        // Convert to lowercase
+        $normalized = strtolower($productName);
+
+        // Remove extra spaces and normalize whitespace
+        $normalized = preg_replace('/\s+/', ' ', trim($normalized));
+
+        // Split into words, sort them, and rejoin
+        $words = explode(' ', $normalized);
+        sort($words);
+
+        // Remove common words that don't add uniqueness
+        $commonWords = ['the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by'];
+        $words = array_filter($words, function($word) use ($commonWords) {
+            return !in_array($word, $commonWords) && strlen($word) > 1;
+        });
+
+        return implode(' ', $words);
+    }
+
+    /**
+     * Find similar products based on normalized name and brand
+     */
+    protected function findSimilarProduct(string $normalizedName, ?int $brandId): ?Product
+    {
+        // Get all products with their relationships
+        $query = Product::with(['brand', 'category', 'subCategory']);
+
+        // If brand is specified, prioritize products from the same brand
+        if ($brandId) {
+            $query->where('brand_id', $brandId);
+        }
+
+        $products = $query->get();
+
+        foreach ($products as $product) {
+            $existingNormalized = $this->normalizeProductName($product->model);
+
+            // Check for exact match after normalization
+            if ($existingNormalized === $normalizedName) {
+                return $product;
+            }
+
+            // Check for high similarity (fuzzy matching)
+            $similarity = $this->calculateSimilarity($normalizedName, $existingNormalized);
+            if ($similarity >= 0.85) { // 85% similarity threshold
+                return $product;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Calculate similarity between two normalized product names
+     */
+    protected function calculateSimilarity(string $name1, string $name2): float
+    {
+        // Convert to arrays of words
+        $words1 = explode(' ', $name1);
+        $words2 = explode(' ', $name2);
+
+        // Calculate Jaccard similarity
+        $intersection = array_intersect($words1, $words2);
+        $union = array_unique(array_merge($words1, $words2));
+
+        if (empty($union)) {
+            return 0;
+        }
+
+        return count($intersection) / count($union);
+    }
+
+    /**
+     * Generate the next sequential PSM code safely (always PSM_ format)
+     */
+    protected function generateNextPsmCode(): string
+    {
+        $latest = Product::select('psm_code')
+            ->orderBy('id', 'desc')
+            ->lockForUpdate()
+            ->first();
+
+        if ($latest && preg_match('/PSM_(\d+)/', $latest->psm_code, $matches)) {
+            $nextNumber = (int) $matches[1] + 1;
+        } else {
+            $nextNumber = 1;
+        }
+
+        return 'PSM_' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
     }
 
     public function createOrAttachOld(Request $request): JsonResponse

@@ -287,9 +287,14 @@ class AuthController extends Controller
      */
     public function profile()
     {
+        $user = auth()->user();
+        if ($user) {
+            $user->load(['profile', 'company']);
+        }
+
         return response()->json([
             'status' => 'success',
-            'user' => auth()->user()
+            'user' => new \App\Http\Resources\UserResource($user)
         ]);
     }
 

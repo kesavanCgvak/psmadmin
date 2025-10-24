@@ -177,7 +177,10 @@ class ProductController extends Controller
             return Brand::select(['id', 'name'])->orderBy('name')->get();
         });
 
-        return view('admin.products.products.create', compact('categories', 'subCategories', 'brands'));
+        // Generate the next PSM code for the form
+        $nextPsmCode = $this->generateNextPsmCode();
+
+        return view('admin.products.products.create', compact('categories', 'subCategories', 'brands', 'nextPsmCode'));
     }
 
     /**
@@ -186,11 +189,11 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'category_id' => 'required|exists:categories,id',
+            'category_id' => 'nullable|exists:categories,id',
             'sub_category_id' => 'nullable|exists:sub_categories,id',
-            'brand_id' => 'required|exists:brands,id',
+            'brand_id' => 'nullable|exists:brands,id',
             'model' => 'required|string|max:255',
-            'psm_code' => 'nullable|string|max:255',
+            'psm_code' => 'nullable|string|max:255|unique:products,psm_code',
         ]);
 
         if ($validator->fails()) {
@@ -199,7 +202,36 @@ class ProductController extends Controller
                 ->withInput();
         }
 
-        Product::create($request->all());
+        // Check for duplicate products using normalized name comparison
+        $productName = trim($request->input('model'));
+        $normalizedName = $this->normalizeProductName($productName);
+        $brandId = $request->input('brand_id');
+
+        $existingProduct = $this->findSimilarProduct($normalizedName, $brandId);
+
+        if ($existingProduct) {
+            return redirect()->back()
+                ->withErrors(['model' => 'A product with a similar name already exists: "' . $existingProduct->model . '" (ID: ' . $existingProduct->id . ')'])
+                ->withInput()
+                ->with('duplicate_product', [
+                    'id' => $existingProduct->id,
+                    'model' => $existingProduct->model,
+                    'psm_code' => $existingProduct->psm_code,
+                    'brand' => $existingProduct->brand->name ?? 'N/A',
+                    'category' => $existingProduct->category->name ?? 'N/A',
+                ]);
+        }
+
+        // Generate automatic PSM Code if not provided
+        $psmCode = $request->input('psm_code');
+        if (empty($psmCode)) {
+            $psmCode = $this->generateNextPsmCode();
+        }
+
+        $productData = $request->all();
+        $productData['psm_code'] = $psmCode;
+
+        Product::create($productData);
 
         // Clear related caches when a new product is created
         Cache::forget('categories_list');
@@ -246,11 +278,11 @@ class ProductController extends Controller
     public function update(Request $request, Product $product)
     {
         $validator = Validator::make($request->all(), [
-            'category_id' => 'required|exists:categories,id',
+            'category_id' => 'nullable|exists:categories,id',
             'sub_category_id' => 'nullable|exists:sub_categories,id',
-            'brand_id' => 'required|exists:brands,id',
+            'brand_id' => 'nullable|exists:brands,id',
             'model' => 'required|string|max:255',
-            'psm_code' => 'nullable|string|max:255',
+            'psm_code' => 'nullable|string|max:255|unique:products,psm_code,' . $product->id,
         ]);
 
         if ($validator->fails()) {
@@ -292,15 +324,108 @@ class ProductController extends Controller
     }
 
     /**
-     * Get subcategories by category (AJAX endpoint)
+     * Generate the next PSM Code automatically (always PSM_ format)
      */
-    public function getSubCategoriesByCategory($categoryId)
+    private function generateNextPsmCode()
     {
-        $subCategories = SubCategory::where('category_id', $categoryId)
-            ->orderBy('name')
-            ->get(['id', 'name']);
+        // Get the latest PSM code from the database (handle both PSM-XXX and PSM_XXX formats)
+        $latestProduct = Product::whereNotNull('psm_code')
+            ->where(function($query) {
+                $query->where('psm_code', 'like', 'PSM-%')
+                      ->orWhere('psm_code', 'like', 'PSM_%');
+            })
+            ->orderByRaw('CAST(SUBSTRING(psm_code, 5) AS UNSIGNED) DESC')
+            ->first();
 
-        return response()->json($subCategories);
+        if ($latestProduct && $latestProduct->psm_code) {
+            // Extract the number from the latest PSM code (handle both formats)
+            $latestCode = $latestProduct->psm_code;
+            if (preg_match('/PSM[-_](\d+)/', $latestCode, $matches)) {
+                $nextNumber = intval($matches[1]) + 1;
+                return 'PSM_' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
+            }
+        }
+
+        // If no existing PSM codes or format doesn't match, start with PSM_00001
+        return 'PSM_00001';
+    }
+
+    /**
+     * Normalize product name for comparison
+     * Handles case-insensitive, word-order independent comparison
+     */
+    protected function normalizeProductName(string $productName): string
+    {
+        // Convert to lowercase
+        $normalized = strtolower($productName);
+
+        // Remove extra spaces and normalize whitespace
+        $normalized = preg_replace('/\s+/', ' ', trim($normalized));
+
+        // Split into words, sort them, and rejoin
+        $words = explode(' ', $normalized);
+        sort($words);
+
+        // Remove common words that don't add uniqueness
+        $commonWords = ['the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by'];
+        $words = array_filter($words, function($word) use ($commonWords) {
+            return !in_array($word, $commonWords) && strlen($word) > 1;
+        });
+
+        return implode(' ', $words);
+    }
+
+    /**
+     * Find similar products based on normalized name and brand
+     */
+    protected function findSimilarProduct(string $normalizedName, ?int $brandId): ?Product
+    {
+        // Get all products with their relationships
+        $query = Product::with(['brand', 'category', 'subCategory']);
+
+        // If brand is specified, prioritize products from the same brand
+        if ($brandId) {
+            $query->where('brand_id', $brandId);
+        }
+
+        $products = $query->get();
+
+        foreach ($products as $product) {
+            $existingNormalized = $this->normalizeProductName($product->model);
+
+            // Check for exact match after normalization
+            if ($existingNormalized === $normalizedName) {
+                return $product;
+            }
+
+            // Check for high similarity (fuzzy matching)
+            $similarity = $this->calculateSimilarity($normalizedName, $existingNormalized);
+            if ($similarity >= 0.85) { // 85% similarity threshold
+                return $product;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Calculate similarity between two normalized product names
+     */
+    protected function calculateSimilarity(string $name1, string $name2): float
+    {
+        // Convert to arrays of words
+        $words1 = explode(' ', $name1);
+        $words2 = explode(' ', $name2);
+
+        // Calculate Jaccard similarity
+        $intersection = array_intersect($words1, $words2);
+        $union = array_unique(array_merge($words1, $words2));
+
+        if (empty($union)) {
+            return 0;
+        }
+
+        return count($intersection) / count($union);
     }
 }
 

@@ -113,7 +113,7 @@ Added to `config/adminlte.php` under "PRODUCT CATALOG MANAGEMENT" section:
 ],
 [
     'text' => 'Brands',
-    'route' => 'brands.index',
+    'route' => 'admin.brands.index',
     'icon' => 'fas fa-fw fa-copyright',
     'icon_color' => 'success',
 ],

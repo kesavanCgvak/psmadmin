@@ -118,7 +118,7 @@ class UserProfileController extends Controller
             $profileDetails = [
                 'name' => $profile->full_name,
                 'mobile' => $profile->mobile,
-                'email' => $user->email,
+                'email' => $user->preferred_email,
                 'avatar_path' => $profile->profile_picture,
             ];
 

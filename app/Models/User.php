@@ -152,13 +152,11 @@ class User extends Authenticatable implements JWTSubject
     }
 
     /**
-     * Get the user's email from profile.
-     *
-     * @return string|null
+     * Preferred email: from profile; fallback to users.email for backward compatibility.
      */
-    public function getEmail(): ?string
+    public function getPreferredEmailAttribute(): ?string
     {
-        return $this->profile?->email;
+        return $this->profile?->email ?: $this->attributes['email'] ?? null;
     }
 
     /**
@@ -178,7 +176,7 @@ class User extends Authenticatable implements JWTSubject
      */
     public function getEmailForVerification()
     {
-        return $this->profile?->email;
+        return $this->preferred_email;
     }
 
     public function rentalJobs()
