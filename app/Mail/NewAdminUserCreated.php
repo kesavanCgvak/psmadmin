@@ -52,7 +52,7 @@ class NewAdminUserCreated extends Mailable
                 'user' => $this->user,
                 'password' => $this->password,
                 'isPasswordReset' => $this->isPasswordReset,
-                'adminPanelUrl' => config('app.url') . '/login',
+                'adminPanelUrl' => env('ADMIN_PANEL_URL', config('app.url') . '/login'),
             ],
         );
     }

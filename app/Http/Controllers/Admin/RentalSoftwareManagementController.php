@@ -105,5 +105,68 @@ class RentalSoftwareManagementController extends Controller
                 ->with('error', 'Cannot delete rental software. It may be used by companies.');
         }
     }
+
+    /**
+     * Bulk delete multiple rental software.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'rental_software_ids' => 'required|array',
+            'rental_software_ids.*' => 'exists:rental_softwares,id'
+        ]);
+
+        $rentalSoftwareIds = $request->rental_software_ids;
+        $deletedCount = 0;
+        $errors = [];
+
+        foreach ($rentalSoftwareIds as $rentalSoftwareId) {
+            $rentalSoftware = RentalSoftware::find($rentalSoftwareId);
+
+            if (!$rentalSoftware) {
+                continue;
+            }
+
+            try {
+                $rentalSoftware->delete();
+                $deletedCount++;
+            } catch (\Exception $e) {
+                $errors[] = "Failed to delete rental software: {$rentalSoftware->name} - " . $e->getMessage();
+            }
+        }
+
+        if ($deletedCount > 0) {
+            $message = "Successfully deleted {$deletedCount} rental software.";
+            if (!empty($errors)) {
+                $message .= " Errors: " . implode(', ', $errors);
+            }
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'deleted_count' => $deletedCount,
+                    'errors' => $errors
+                ]);
+            }
+
+            return redirect()->route('admin.rental-software.index')
+                ->with('success', $message);
+        } else {
+            $message = 'No rental software were deleted. ' . (!empty($errors) ? implode(', ', $errors) : '');
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'deleted_count' => 0,
+                    'errors' => $errors
+                ]);
+            }
+
+            return redirect()->route('admin.rental-software.index')
+                ->with('error', $message);
+        }
+    }
 }
 

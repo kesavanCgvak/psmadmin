@@ -134,6 +134,78 @@ class EquipmentManagementController extends Controller
     }
 
     /**
+     * Bulk delete multiple equipment.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'equipment_ids' => 'required|array',
+            'equipment_ids.*' => 'exists:equipment,id'
+        ]);
+
+        $equipmentIds = $request->equipment_ids;
+        $deletedCount = 0;
+        $errors = [];
+
+        foreach ($equipmentIds as $equipmentId) {
+            $equipment = Equipment::find($equipmentId);
+
+            if (!$equipment) {
+                continue;
+            }
+
+            try {
+                // Delete associated images
+                foreach ($equipment->images as $image) {
+                    $imagePath = public_path($image->image_path);
+                    if (file_exists($imagePath)) {
+                        unlink($imagePath);
+                    }
+                    $image->delete();
+                }
+
+                $equipment->delete();
+                $deletedCount++;
+            } catch (\Exception $e) {
+                $errors[] = "Failed to delete equipment ID {$equipment->id} - " . $e->getMessage();
+            }
+        }
+
+        if ($deletedCount > 0) {
+            $message = "Successfully deleted {$deletedCount} equipment.";
+            if (!empty($errors)) {
+                $message .= " Errors: " . implode(', ', $errors);
+            }
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'deleted_count' => $deletedCount,
+                    'errors' => $errors
+                ]);
+            }
+
+            return redirect()->route('admin.equipment.index')
+                ->with('success', $message);
+        } else {
+            $message = 'No equipment were deleted. ' . (!empty($errors) ? implode(', ', $errors) : '');
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'deleted_count' => 0,
+                    'errors' => $errors
+                ]);
+            }
+
+            return redirect()->route('admin.equipment.index')
+                ->with('error', $message);
+        }
+    }
+
+    /**
      * Get users by company (AJAX endpoint)
      */
     public function getUsersByCompany($companyId)

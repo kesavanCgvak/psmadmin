@@ -7,6 +7,8 @@ use App\Models\City;
 use App\Models\Country;
 use App\Models\StateProvince;
 use App\Models\Region;
+use App\Models\Company;
+use App\Services\BulkDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -107,14 +109,77 @@ class CityController extends Controller
      */
     public function destroy(City $city)
     {
+        // Relation checks before deletion
+        if (\App\Models\Company::where('city_id', $city->id)->exists()) {
+            return redirect()->route('cities.index')
+                ->with('error', 'Cannot delete — this city is used by one or more companies.');
+        }
+
         try {
             $city->delete();
             return redirect()->route('cities.index')
                 ->with('success', 'City deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->route('cities.index')
-                ->with('error', 'Cannot delete city. It may be associated with companies or other records.');
+                ->with('error', 'Cannot delete city. ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Bulk delete multiple cities.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'city_ids' => 'required|array',
+            'city_ids.*' => 'exists:cities,id'
+        ]);
+
+        $cities = City::whereIn('id', $request->city_ids)->get();
+        $service = new BulkDeletionService();
+
+        $result = $service->deleteWithChecks($cities->all(), [
+            function (City $city) {
+                if (Company::where('city_id', $city->id)->exists()) {
+                    return 'Cannot delete — this city is used by one or more companies.';
+                }
+                return null;
+            },
+        ]);
+
+        $deletedCount = $result['deleted_count'];
+        $errors = $result['errors'];
+        $blocked = $result['blocked'];
+
+        $messageParts = [];
+        if ($deletedCount > 0) {
+            $messageParts[] = "Successfully deleted {$deletedCount} city/cities.";
+        }
+        if (!empty($blocked)) {
+            $blockedList = array_map(function ($b) {
+                return $b['label'] . ' — ' . $b['reason'];
+            }, $blocked);
+            $messageParts[] = 'Skipped: ' . implode('; ', $blockedList);
+        }
+        if (!empty($errors)) {
+            $messageParts[] = 'Errors: ' . implode('; ', $errors);
+        }
+
+        $message = implode(' ', $messageParts) ?: 'No cities were deleted.';
+        $success = $deletedCount > 0;
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => $success,
+                'message' => $message,
+                'deleted_count' => $deletedCount,
+                'blocked' => $blocked,
+                'errors' => $errors
+            ]);
+        }
+
+        return redirect()->route('cities.index')
+            ->with($success ? 'success' : 'error', $message);
     }
 
     /**

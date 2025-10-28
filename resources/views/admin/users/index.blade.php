@@ -22,6 +22,9 @@
                 <div class="card-header">
                     <h3 class="card-title mb-0">Users List</h3>
                     <div class="card-tools d-none d-md-block">
+                        <button type="button" id="bulkDeleteBtn" class="btn btn-danger btn-sm" style="display: none;">
+                            <i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>
+                        </button>
                         <a href="{{ route('admin.users.create') }}" class="btn btn-primary btn-sm">
                             <i class="fas fa-plus"></i> <span class="d-none d-lg-inline">Add New User</span><span class="d-lg-none">Add</span>
                         </a>
@@ -32,6 +35,9 @@
                         <table id="users-table" class="table table-bordered table-striped">
                         <thead>
                             <tr>
+                                <th style="width: 40px;">
+                                    <input type="checkbox" id="selectAll" title="Select All">
+                                </th>
                                 <th>ID</th>
                                 <th>Profile Picture</th>
                                 <th>Username</th>
@@ -48,6 +54,10 @@
                         <tbody>
                             @foreach($users as $user)
                                 <tr>
+                                    <td>
+                                        <input type="checkbox" class="row-checkbox" name="user_ids[]" value="{{ $user->id }}"
+                                               data-username="{{ $user->username }}">
+                                    </td>
                                     <td>{{ $user->id }}</td>
                                     <td>
                                         <div class="profile-picture-container">
@@ -568,29 +578,37 @@
                 "columnDefs": [
                     {
                         "orderable": false,
-                        "targets": [1, 10]
+                        "targets": [0, 1, 11] // Checkbox, ID, Actions
                     },
                     {
                         "searchable": false,
-                        "targets": [1, 10]
+                        "targets": [0, 1, 2, 11] // Checkbox, ID, Profile Picture, Actions
                     },
                     {
                         "responsivePriority": 1,
-                        "targets": 2 // Username - always visible
+                        "targets": 3 // Username - always visible
                     },
                     {
                         "responsivePriority": 2,
-                        "targets": 10 // Actions - always visible
+                        "targets": 11 // Actions - always visible
                     },
                     {
                         "responsivePriority": 3,
-                        "targets": [5, 6] // Email and Account Type
+                        "targets": [6, 7] // Email and Account Type
                     }
                 ],
                 "dom": '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>' +
                        '<"row"<"col-sm-12"tr>>' +
                        '<"row"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
                 "pagingType": "simple_numbers",
+                "stateSave": true,
+                "stateSaveCallback": function (settings, data) {
+                    localStorage.setItem('DataTables_users-table', JSON.stringify(data));
+                },
+                "stateLoadCallback": function (settings) {
+                    var state = localStorage.getItem('DataTables_users-table');
+                    return state ? JSON.parse(state) : null;
+                },
                 "drawCallback": function() {
                     // Ensure buttons are properly aligned
                     $('.btn-group').each(function() {
@@ -609,6 +627,92 @@
                 var $cell = $(this);
                 if (this.offsetWidth < this.scrollWidth && !$cell.attr('title')) {
                     $cell.attr('title', $cell.text());
+                }
+            });
+
+            // Bulk delete functionality
+            var selectedUsers = [];
+
+            // Select All checkbox
+            $('#selectAll').on('change', function() {
+                $('.row-checkbox').prop('checked', $(this).prop('checked'));
+                updateBulkDeleteButton();
+            });
+
+            // Individual checkbox change
+            $(document).on('change', '.row-checkbox', function() {
+                updateBulkDeleteButton();
+                // Update select all checkbox state
+                var totalCheckboxes = $('.row-checkbox').length;
+                var checkedCheckboxes = $('.row-checkbox:checked').length;
+                $('#selectAll').prop('checked', totalCheckboxes === checkedCheckboxes);
+            });
+
+            function updateBulkDeleteButton() {
+                var checked = $('.row-checkbox:checked');
+                if (checked.length > 0) {
+                    $('#bulkDeleteBtn').show().text('Delete Selected (' + checked.length + ')');
+                } else {
+                    $('#bulkDeleteBtn').hide();
+                }
+            }
+
+            // Bulk delete button click
+            $('#bulkDeleteBtn').on('click', function() {
+                var selectedIds = [];
+                var selectedNames = [];
+                $('.row-checkbox:checked').each(function() {
+                    selectedIds.push($(this).val());
+                    selectedNames.push($(this).data('username'));
+                });
+
+                if (selectedIds.length === 0) {
+                    alert('Please select at least one user to delete.');
+                    return;
+                }
+
+                // Confirmation dialog
+                var message = 'Are you sure you want to delete ' + selectedIds.length + ' user(s)?\n\n';
+                message += 'Users to be deleted:\n';
+                selectedNames.forEach(function(name, index) {
+                    message += (index + 1) + '. ' + name + '\n';
+                });
+                message += '\nThis action cannot be undone!';
+
+                if (confirm(message)) {
+                    // Show loading state
+                    $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Deleting...');
+
+                    // Submit bulk delete
+                    $.ajax({
+                        url: '{{ route("admin.users.bulk-delete") }}',
+                        method: 'POST',
+                        data: {
+                            _token: '{{ csrf_token() }}',
+                            user_ids: selectedIds
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                // Show success message
+                                alert('Successfully deleted ' + response.deleted_count + ' user(s).');
+                                // Reload the page to refresh the table
+                                location.reload();
+                            } else {
+                                alert('Error: ' + (response.message || 'Failed to delete users.'));
+                            }
+                        },
+                        error: function(xhr) {
+                            var message = 'An error occurred while deleting users.';
+                            if (xhr.responseJSON && xhr.responseJSON.message) {
+                                message = xhr.responseJSON.message;
+                            }
+                            alert(message);
+                        },
+                        complete: function() {
+                            // Restore button state
+                            $('#bulkDeleteBtn').prop('disabled', false).html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>');
+                        }
+                    });
                 }
             });
         });

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Services\BulkDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -94,14 +95,84 @@ class CategoryController extends Controller
      */
     public function destroy(Category $category)
     {
+        // Relation checks before deletion
+        if ($category->subCategories()->exists()) {
+            return redirect()->route('categories.index')
+                ->with('error', 'Cannot delete — this category has sub-categories.');
+        }
+        if ($category->products()->exists()) {
+            return redirect()->route('categories.index')
+                ->with('error', 'Cannot delete — this category has products.');
+        }
+
         try {
             $category->delete();
             return redirect()->route('categories.index')
                 ->with('success', 'Category deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->route('categories.index')
-                ->with('error', 'Cannot delete category. It may have associated sub-categories or products.');
+                ->with('error', 'Cannot delete category. ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Bulk delete multiple categories.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'category_ids' => 'required|array',
+            'category_ids.*' => 'exists:categories,id'
+        ]);
+
+        $categories = Category::whereIn('id', $request->category_ids)->get();
+        $service = new BulkDeletionService();
+
+        $result = $service->deleteWithChecks($categories->all(), [
+            function (Category $category) {
+                if ($category->subCategories()->exists()) {
+                    return 'Cannot delete — this category has sub-categories.';
+                }
+                if ($category->products()->exists()) {
+                    return 'Cannot delete — this category has products.';
+                }
+                return null;
+            },
+        ]);
+
+        $deletedCount = $result['deleted_count'];
+        $errors = $result['errors'];
+        $blocked = $result['blocked'];
+
+        $messageParts = [];
+        if ($deletedCount > 0) {
+            $messageParts[] = "Successfully deleted {$deletedCount} category/categories.";
+        }
+        if (!empty($blocked)) {
+            $blockedList = array_map(function ($b) {
+                return $b['label'] . ' — ' . $b['reason'];
+            }, $blocked);
+            $messageParts[] = 'Skipped: ' . implode('; ', $blockedList);
+        }
+        if (!empty($errors)) {
+            $messageParts[] = 'Errors: ' . implode('; ', $errors);
+        }
+
+        $message = implode(' ', $messageParts) ?: 'No categories were deleted.';
+        $success = $deletedCount > 0;
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => $success,
+                'message' => $message,
+                'deleted_count' => $deletedCount,
+                'blocked' => $blocked,
+                'errors' => $errors
+            ]);
+        }
+
+        return redirect()->route('admin.categories.index')
+            ->with($success ? 'success' : 'error', $message);
     }
 }
 

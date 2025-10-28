@@ -29,6 +29,9 @@
         <div class="card-header">
             <h3 class="card-title">All Currencies</h3>
             <div class="card-tools">
+                <button type="button" id="bulkDeleteBtn" class="btn btn-danger btn-sm" style="display: none; margin-right: 5px;">
+                    <i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>
+                </button>
                 <a href="{{ route('admin.currencies.create') }}" class="btn btn-success btn-sm">
                     <i class="fas fa-plus"></i> Add New Currency
                 </a>
@@ -38,6 +41,9 @@
             <table id="currenciesTable" class="table table-bordered table-striped">
                 <thead>
                     <tr>
+                        <th style="width: 40px;">
+                            <input type="checkbox" id="selectAll" title="Select All">
+                        </th>
                         <th>ID</th>
                         <th>Code</th>
                         <th>Name</th>
@@ -50,6 +56,10 @@
                 <tbody>
                     @foreach($currencies as $currency)
                         <tr>
+                            <td>
+                                <input type="checkbox" class="row-checkbox" name="currency_ids[]" value="{{ $currency->id }}"
+                                       data-name="{{ $currency->name }}">
+                            </td>
                             <td>{{ $currency->id }}</td>
                             <td><span class="badge badge-primary">{{ $currency->code }}</span></td>
                             <td><strong>{{ $currency->name }}</strong></td>
@@ -87,12 +97,87 @@
     @include('partials.responsive-js')
     <script>
         $(document).ready(function() {
-            initResponsiveDataTable('currenciesTable', {
+            var table = initResponsiveDataTable('currenciesTable', {
                 "columnDefs": [
-                    { "orderable": false, "targets": -1 },
-                    { "responsivePriority": 1, "targets": 1 },
+                    { "orderable": false, "targets": [0, -1] },
+                    { "searchable": false, "targets": [0, -1] },
+                    { "responsivePriority": 1, "targets": 3 },
                     { "responsivePriority": 2, "targets": -1 }
                 ]
+            });
+
+            // Bulk delete functionality
+            $('#selectAll').on('change', function() {
+                $('.row-checkbox').prop('checked', $(this).prop('checked'));
+                updateBulkDeleteButton();
+            });
+
+            $(document).on('change', '.row-checkbox', function() {
+                updateBulkDeleteButton();
+                var totalCheckboxes = $('.row-checkbox').length;
+                var checkedCheckboxes = $('.row-checkbox:checked').length;
+                $('#selectAll').prop('checked', totalCheckboxes === checkedCheckboxes);
+            });
+
+            function updateBulkDeleteButton() {
+                var checked = $('.row-checkbox:checked');
+                if (checked.length > 0) {
+                    $('#bulkDeleteBtn').show().html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected (' + checked.length + ')</span><span class="d-lg-none">Delete</span>');
+                } else {
+                    $('#bulkDeleteBtn').hide();
+                }
+            }
+
+            $('#bulkDeleteBtn').on('click', function() {
+                var selectedIds = [];
+                var selectedNames = [];
+                $('.row-checkbox:checked').each(function() {
+                    selectedIds.push($(this).val());
+                    selectedNames.push($(this).data('name'));
+                });
+
+                if (selectedIds.length === 0) {
+                    alert('Please select at least one currency to delete.');
+                    return;
+                }
+
+                var message = 'Are you sure you want to delete ' + selectedIds.length + ' currency/currencies?\n\n';
+                message += 'Currencies to be deleted:\n';
+                selectedNames.forEach(function(name, index) {
+                    message += (index + 1) + '. ' + name + '\n';
+                });
+                message += '\nThis action cannot be undone!';
+
+                if (confirm(message)) {
+                    $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Deleting...');
+
+                    $.ajax({
+                        url: '{{ route("admin.admin.currencies.bulk-delete") }}',
+                        method: 'POST',
+                        data: {
+                            _token: '{{ csrf_token() }}',
+                            currency_ids: selectedIds
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                alert('Successfully deleted ' + response.deleted_count + ' currency/currencies.');
+                                location.reload();
+                            } else {
+                                alert('Error: ' + (response.message || 'Failed to delete currencies.'));
+                            }
+                        },
+                        error: function(xhr) {
+                            var message = 'An error occurred while deleting currencies.';
+                            if (xhr.responseJSON && xhr.responseJSON.message) {
+                                message = xhr.responseJSON.message;
+                            }
+                            alert(message);
+                        },
+                        complete: function() {
+                            $('#bulkDeleteBtn').prop('disabled', false).html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>');
+                        }
+                    });
+                }
             });
         });
     </script>

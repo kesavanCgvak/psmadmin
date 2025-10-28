@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
+use Illuminate\Validation\Rule;
+
 
 class UserProfileController extends Controller
 {
@@ -117,8 +119,9 @@ class UserProfileController extends Controller
 
             $profileDetails = [
                 'name' => $profile->full_name,
+                'username' => $user->username,
                 'mobile' => $profile->mobile,
-                'email' => $user->preferred_email,
+                'email' => $profile->email,
                 'avatar_path' => $profile->profile_picture,
             ];
 
@@ -134,6 +137,68 @@ class UserProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Unable to fetch user profile details.'
+            ], 500);
+        }
+    }
+
+    /**
+     * Update authenticated user's username
+     */
+    public function updateUsername(Request $request)
+    {
+        try {
+            // ✅ Authenticate user via JWT
+            $user = JWTAuth::parseToken()->authenticate();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            // ✅ Validate request (ensure username is unique except for current user)
+            $validator = Validator::make($request->all(), [
+                'username' => [
+                    'required',
+                    'string',
+                    'max:255',
+                    Rule::unique('users', 'name')->ignore($user->id)
+                ]
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // ✅ Update username in users table
+            $user->update(['name' => $request->username]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Username updated successfully',
+                'data' => ['username' => $user->name]
+            ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found'
+            ], 404);
+
+        } catch (\Throwable $e) {
+            Log::error('Failed to update username', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to update username'
             ], 500);
         }
     }

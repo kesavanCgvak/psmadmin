@@ -145,7 +145,15 @@ class CompanyManagementController extends Controller
 
         $company->update($request->all());
 
-        return redirect()->route('admin.companies.index')
+        // Preserve filter parameters from the request if they exist
+        $filterParams = $request->only(['country', 'city', 'state', 'region', 'search', 'page']);
+        $redirectUrl = route('admin.companies.index');
+
+        if (!empty(array_filter($filterParams))) {
+            $redirectUrl .= '?' . http_build_query(array_filter($filterParams));
+        }
+
+        return redirect($redirectUrl)
             ->with('success', 'Company updated successfully.');
     }
 
@@ -154,13 +162,87 @@ class CompanyManagementController extends Controller
      */
     public function destroy(Company $company)
     {
+        // Relation checks before deletion
+        if ($company->users()->exists()) {
+            return redirect()->route('admin.companies.index')
+                ->with('error', 'Cannot delete — this company has users.');
+        }
+        if ($company->equipments()->exists()) {
+            return redirect()->route('admin.companies.index')
+                ->with('error', 'Cannot delete — this company has equipment.');
+        }
+
         try {
             $company->delete();
             return redirect()->route('admin.companies.index')
                 ->with('success', 'Company deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->route('admin.companies.index')
-                ->with('error', 'Cannot delete company. It may have associated users or equipment.');
+                ->with('error', 'Cannot delete company. ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Bulk delete multiple companies.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'company_ids' => 'required|array',
+            'company_ids.*' => 'exists:companies,id'
+        ]);
+
+        $companyIds = $request->company_ids;
+        $deletedCount = 0;
+        $errors = [];
+
+        foreach ($companyIds as $companyId) {
+            $company = Company::find($companyId);
+
+            if (!$company) {
+                continue;
+            }
+
+            try {
+                // Company deletion will cascade delete users and equipment
+                $company->delete();
+                $deletedCount++;
+            } catch (\Exception $e) {
+                $errors[] = "Failed to delete company: {$company->name} - " . $e->getMessage();
+            }
+        }
+
+        if ($deletedCount > 0) {
+            $message = "Successfully deleted {$deletedCount} company/companies.";
+            if (!empty($errors)) {
+                $message .= " Errors: " . implode(', ', $errors);
+            }
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'deleted_count' => $deletedCount,
+                    'errors' => $errors
+                ]);
+            }
+
+            return redirect()->route('admin.companies.index')
+                ->with('success', $message);
+        } else {
+            $message = 'No companies were deleted. ' . (!empty($errors) ? implode(', ', $errors) : '');
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'deleted_count' => 0,
+                    'errors' => $errors
+                ]);
+            }
+
+            return redirect()->route('admin.companies.index')
+                ->with('error', $message);
         }
     }
 

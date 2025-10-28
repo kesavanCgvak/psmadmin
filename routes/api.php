@@ -76,6 +76,7 @@ Route::middleware('jwt.verify')->group(function () {
     Route::post('/profile/change-password', [UserProfileController::class, 'changePassword']);
 
     // Individual profile field updates
+    Route::patch('/profile/update-username', [UserProfileController::class, 'updateUsername']);
     Route::patch('/profile/update-name', [UserProfileController::class, 'updateName']);
     Route::patch('/profile/update-email', [UserProfileController::class, 'updateEmail']);
     Route::patch('/profile/update-mobile', [UserProfileController::class, 'updateMobile']);

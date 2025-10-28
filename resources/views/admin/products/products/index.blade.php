@@ -25,6 +25,9 @@
         <div class="card-header">
             <h3 class="card-title">All Products</h3>
             <div class="card-tools">
+                <button type="button" id="bulkDeleteBtn" class="btn btn-danger btn-sm" style="display: none; margin-right: 5px;">
+                    <i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>
+                </button>
                 <a href="{{ route('admin.products.create') }}" class="btn btn-primary btn-sm">
                     <i class="fas fa-plus"></i> Add New Product
                 </a>
@@ -34,6 +37,9 @@
             <table id="productsTable" class="table table-bordered table-striped">
                 <thead>
                     <tr>
+                        <th style="width: 40px;">
+                            <input type="checkbox" id="selectAll" title="Select All">
+                        </th>
                         <th>ID</th>
                         <th>Brand</th>
                         <th>Model</th>
@@ -60,7 +66,7 @@
     @include('partials.responsive-js')
     <script>
         $(document).ready(function() {
-            initResponsiveDataTable('productsTable', {
+            var productsTable = initResponsiveDataTable('productsTable', {
                 "processing": true,
                 "serverSide": true,
                 "ajax": {
@@ -72,6 +78,15 @@
                     }
                 },
                 "columns": [
+                    {
+                        "data": "checkbox",
+                        "name": "checkbox",
+                        "orderable": false,
+                        "searchable": false,
+                        "render": function(data, type, row) {
+                            return '<input type="checkbox" class="row-checkbox" name="product_ids[]" value="' + row.id + '" data-name="' + row.model + '">';
+                        }
+                    },
                     { "data": "id", "name": "id" },
                     {
                         "data": "brand",
@@ -114,14 +129,92 @@
                     }
                 ],
                 "columnDefs": [
-                    { "orderable": false, "targets": [7] }, // Actions column
-                    { "responsivePriority": 1, "targets": 1 }, // Brand
-                    { "responsivePriority": 2, "targets": 7 }, // Actions
-                    { "responsivePriority": 3, "targets": [2, 3] } // Model and Category
+                    { "orderable": false, "targets": [0, 8] }, // Checkbox and Actions columns
+                    { "searchable": false, "targets": [0, 8] }, // Checkbox and Actions columns
+                    { "responsivePriority": 1, "targets": 3 }, // Brand
+                    { "responsivePriority": 2, "targets": 8 }, // Actions
+                    { "responsivePriority": 3, "targets": [3, 4] } // Model and Category
                 ],
-                "order": [[0, "desc"]], // Sort by ID descending by default
+                "order": [[1, "desc"]], // Sort by ID descending by default
                 "pageLength": 25,
                 "lengthMenu": [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]]
+            });
+
+            // Bulk delete functionality for server-side DataTable
+            $('#selectAll').on('change', function() {
+                $('.row-checkbox').prop('checked', $(this).prop('checked'));
+                updateBulkDeleteButton();
+            });
+
+            $(document).on('change', '.row-checkbox', function() {
+                updateBulkDeleteButton();
+                var totalCheckboxes = $('.row-checkbox').length;
+                var checkedCheckboxes = $('.row-checkbox:checked').length;
+                $('#selectAll').prop('checked', totalCheckboxes === checkedCheckboxes && totalCheckboxes > 0);
+            });
+
+            function updateBulkDeleteButton() {
+                var checked = $('.row-checkbox:checked');
+                if (checked.length > 0) {
+                    $('#bulkDeleteBtn').show().html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected (' + checked.length + ')</span><span class="d-lg-none">Delete</span>');
+                } else {
+                    $('#bulkDeleteBtn').hide();
+                }
+            }
+
+            $('#bulkDeleteBtn').on('click', function() {
+                var selectedIds = [];
+                var selectedNames = [];
+                $('.row-checkbox:checked').each(function() {
+                    selectedIds.push($(this).val());
+                    selectedNames.push($(this).data('name'));
+                });
+
+                if (selectedIds.length === 0) {
+                    alert('Please select at least one product to delete.');
+                    return;
+                }
+
+                var message = 'Are you sure you want to delete ' + selectedIds.length + ' product/products?\n\n';
+                message += 'Products to be deleted:\n';
+                selectedNames.forEach(function(name, index) {
+                    message += (index + 1) + '. ' + name + '\n';
+                });
+                message += '\nThis action cannot be undone!';
+
+                if (confirm(message)) {
+                    $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Deleting...');
+
+                    $.ajax({
+                        url: '{{ route("admin.products.bulk-delete") }}',
+                        method: 'POST',
+                        data: {
+                            _token: '{{ csrf_token() }}',
+                            product_ids: selectedIds
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                alert('Successfully deleted ' + response.deleted_count + ' product/products.');
+                                // Refresh DataTable
+                                $('#productsTable').DataTable().ajax.reload();
+                                // Reset select all checkbox
+                                $('#selectAll').prop('checked', false);
+                            } else {
+                                alert('Error: ' + (response.message || 'Failed to delete products.'));
+                            }
+                        },
+                        error: function(xhr) {
+                            var message = 'An error occurred while deleting products.';
+                            if (xhr.responseJSON && xhr.responseJSON.message) {
+                                message = xhr.responseJSON.message;
+                            }
+                            alert(message);
+                        },
+                        complete: function() {
+                            $('#bulkDeleteBtn').prop('disabled', false).html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>');
+                        }
+                    });
+                }
             });
         });
     </script>

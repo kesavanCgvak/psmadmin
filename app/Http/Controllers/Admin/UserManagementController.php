@@ -256,7 +256,15 @@ class UserManagementController extends Controller
             UserProfile::create($profileData);
         }
 
-        return redirect()->route('admin.users.index')
+        // Preserve filter parameters from the request if they exist
+        $filterParams = $request->only(['country', 'city', 'state', 'search', 'page']);
+        $redirectUrl = route('admin.users.index');
+
+        if (!empty(array_filter($filterParams))) {
+            $redirectUrl .= '?' . http_build_query(array_filter($filterParams));
+        }
+
+        return redirect($redirectUrl)
             ->with('success', 'User updated successfully.');
     }
 
@@ -265,6 +273,18 @@ class UserManagementController extends Controller
      */
     public function destroy(User $user)
     {
+        // Prevent deleting super admins
+        if ($user->role === 'super_admin') {
+            return redirect()->route('admin.users.index')
+                ->with('error', 'Super admin users cannot be deleted.');
+        }
+
+        // Prevent deleting own account
+        if ($user->id === auth()->id()) {
+            return redirect()->route('admin.users.index')
+                ->with('error', 'You cannot delete your own account.');
+        }
+
         // Delete profile picture
         if ($user->profile && $user->profile->profile_picture) {
             Storage::disk('public')->delete($user->profile->profile_picture);
@@ -278,6 +298,90 @@ class UserManagementController extends Controller
 
         return redirect()->route('admin.users.index')
             ->with('success', 'User deleted successfully.');
+    }
+
+    /**
+     * Bulk delete multiple users.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'user_ids' => 'required|array',
+            'user_ids.*' => 'exists:users,id'
+        ]);
+
+        $userIds = $request->user_ids;
+        $deletedCount = 0;
+        $errors = [];
+
+        foreach ($userIds as $userId) {
+            $user = User::find($userId);
+
+            if (!$user) {
+                continue;
+            }
+
+            // Prevent deleting super admins
+            if ($user->role === 'super_admin') {
+                $errors[] = "Cannot delete super admin: {$user->username}";
+                continue;
+            }
+
+            // Prevent deleting own account
+            if ($user->id === auth()->id()) {
+                $errors[] = "Cannot delete your own account: {$user->username}";
+                continue;
+            }
+
+            try {
+                // Delete profile picture
+                if ($user->profile && $user->profile->profile_picture) {
+                    Storage::disk('public')->delete($user->profile->profile_picture);
+                }
+
+                // Delete user profile
+                $user->profile()->delete();
+
+                // Delete user
+                $user->delete();
+                $deletedCount++;
+            } catch (\Exception $e) {
+                $errors[] = "Failed to delete user: {$user->username} - " . $e->getMessage();
+            }
+        }
+
+        if ($deletedCount > 0) {
+            $message = "Successfully deleted {$deletedCount} user(s).";
+            if (!empty($errors)) {
+                $message .= " Errors: " . implode(', ', $errors);
+            }
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'deleted_count' => $deletedCount,
+                    'errors' => $errors
+                ]);
+            }
+
+            return redirect()->route('admin.users.index')
+                ->with('success', $message);
+        } else {
+            $message = 'No users were deleted. ' . (!empty($errors) ? implode(', ', $errors) : '');
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'deleted_count' => 0,
+                    'errors' => $errors
+                ]);
+            }
+
+            return redirect()->route('admin.users.index')
+                ->with('error', $message);
+        }
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\SubCategory;
 use App\Models\Category;
+use App\Services\BulkDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -46,7 +47,7 @@ class SubCategoryController extends Controller
 
         SubCategory::create($request->all());
 
-        return redirect()->route('subcategories.index')
+        return redirect()->route('admin.subcategories.index')
             ->with('success', 'Sub-category created successfully.');
     }
 
@@ -86,7 +87,7 @@ class SubCategoryController extends Controller
 
         $subcategory->update($request->all());
 
-        return redirect()->route('subcategories.index')
+        return redirect()->route('admin.subcategories.index')
             ->with('success', 'Sub-category updated successfully.');
     }
 
@@ -95,14 +96,77 @@ class SubCategoryController extends Controller
      */
     public function destroy(SubCategory $subcategory)
     {
+        // Relation checks before deletion
+        if ($subcategory->products()->exists()) {
+            return redirect()->route('admin.subcategories.index')
+                ->with('error', 'Cannot delete — this sub-category has products.');
+        }
+
         try {
             $subcategory->delete();
-            return redirect()->route('subcategories.index')
+            return redirect()->route('admin.subcategories.index')
                 ->with('success', 'Sub-category deleted successfully.');
         } catch (\Exception $e) {
-            return redirect()->route('subcategories.index')
-                ->with('error', 'Cannot delete sub-category. It may have associated products.');
+            return redirect()->route('admin.subcategories.index')
+                ->with('error', 'Cannot delete sub-category. ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Bulk delete multiple sub-categories.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'subcategory_ids' => 'required|array',
+            'subcategory_ids.*' => 'exists:sub_categories,id'
+        ]);
+
+        $subcategories = SubCategory::whereIn('id', $request->subcategory_ids)->get();
+        $service = new BulkDeletionService();
+
+        $result = $service->deleteWithChecks($subcategories->all(), [
+            function (SubCategory $subcategory) {
+                if ($subcategory->products()->exists()) {
+                    return 'Cannot delete — this sub-category has products.';
+                }
+                return null;
+            },
+        ]);
+
+        $deletedCount = $result['deleted_count'];
+        $errors = $result['errors'];
+        $blocked = $result['blocked'];
+
+        $messageParts = [];
+        if ($deletedCount > 0) {
+            $messageParts[] = "Successfully deleted {$deletedCount} sub-category/sub-categories.";
+        }
+        if (!empty($blocked)) {
+            $blockedList = array_map(function ($b) {
+                return $b['label'] . ' — ' . $b['reason'];
+            }, $blocked);
+            $messageParts[] = 'Skipped: ' . implode('; ', $blockedList);
+        }
+        if (!empty($errors)) {
+            $messageParts[] = 'Errors: ' . implode('; ', $errors);
+        }
+
+        $message = implode(' ', $messageParts) ?: 'No sub-categories were deleted.';
+        $success = $deletedCount > 0;
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => $success,
+                'message' => $message,
+                'deleted_count' => $deletedCount,
+                'blocked' => $blocked,
+                'errors' => $errors
+            ]);
+        }
+
+        return redirect()->route('admin.subcategories.index')
+            ->with($success ? 'success' : 'error', $message);
     }
 }
 

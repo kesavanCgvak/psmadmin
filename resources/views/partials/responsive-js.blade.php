@@ -28,6 +28,16 @@ function initResponsiveDataTable(tableId, options = {}) {
             }
         },
         "pagingType": "simple_numbers",
+        "stateSave": true,
+        "stateSaveCallback": function (settings, data) {
+            // Store the state in localStorage with a specific key
+            localStorage.setItem('DataTables_' + settings.nTable.id, JSON.stringify(data));
+        },
+        "stateLoadCallback": function (settings) {
+            // Load the state from localStorage
+            var state = localStorage.getItem('DataTables_' + settings.nTable.id);
+            return state ? JSON.parse(state) : null;
+        },
         "drawCallback": function() {
             // Ensure buttons are properly aligned
             $('.btn-group').each(function() {

@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\SubCategory;
 use App\Models\Brand;
+use App\Services\BulkDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
@@ -103,6 +104,7 @@ class ProductController extends Controller
         $data = [];
         foreach ($products as $product) {
             $data[] = [
+                'checkbox' => '', // Placeholder for checkbox column (rendered client-side)
                 'id' => $product->id,
                 'brand' => $product->brand ? $product->brand->name : '—',
                 'model' => $product->model,
@@ -307,6 +309,20 @@ class ProductController extends Controller
      */
     public function destroy(Product $product)
     {
+        // Relation checks before deletion
+        if ($product->equipments()->exists()) {
+            return redirect()->route('admin.products.index')
+                ->with('error', 'Cannot delete — this product is linked to equipment.');
+        }
+        if ($product->rentalJobProducts()->exists()) {
+            return redirect()->route('admin.products.index')
+                ->with('error', 'Cannot delete — this product is used in rental jobs.');
+        }
+        if ($product->supplyJobProducts()->exists()) {
+            return redirect()->route('admin.products.index')
+                ->with('error', 'Cannot delete — this product is used in supply jobs.');
+        }
+
         try {
             $product->delete();
 
@@ -319,7 +335,7 @@ class ProductController extends Controller
                 ->with('success', 'Product deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->route('admin.products.index')
-                ->with('error', 'Cannot delete product. It may have associated equipment or be used in rental jobs.');
+                ->with('error', 'Cannot delete product. ' . $e->getMessage());
         }
     }
 
@@ -426,6 +442,69 @@ class ProductController extends Controller
         }
 
         return count($intersection) / count($union);
+    }
+
+    /**
+     * Bulk delete multiple products.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'product_ids' => 'required|array',
+            'product_ids.*' => 'exists:products,id'
+        ]);
+
+        $products = Product::whereIn('id', $request->product_ids)->get();
+        $service = new BulkDeletionService();
+
+        $result = $service->deleteWithChecks($products->all(), [
+            function (Product $product) {
+                if ($product->equipments()->exists()) {
+                    return 'Cannot delete — this product is linked to equipment.';
+                }
+                if ($product->rentalJobProducts()->exists()) {
+                    return 'Cannot delete — this product is used in rental jobs.';
+                }
+                if ($product->supplyJobProducts()->exists()) {
+                    return 'Cannot delete — this product is used in supply jobs.';
+                }
+                return null;
+            },
+        ]);
+
+        $deletedCount = $result['deleted_count'];
+        $errors = $result['errors'];
+        $blocked = $result['blocked'];
+
+        $messageParts = [];
+        if ($deletedCount > 0) {
+            $messageParts[] = "Successfully deleted {$deletedCount} product/products.";
+        }
+        if (!empty($blocked)) {
+            $blockedList = array_map(function ($b) {
+                return $b['label'] . ' — ' . $b['reason'];
+            }, $blocked);
+            $messageParts[] = 'Skipped: ' . implode('; ', $blockedList);
+        }
+        if (!empty($errors)) {
+            $messageParts[] = 'Errors: ' . implode('; ', $errors);
+        }
+
+        $message = implode(' ', $messageParts) ?: 'No products were deleted.';
+        $success = $deletedCount > 0;
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => $success,
+                'message' => $message,
+                'deleted_count' => $deletedCount,
+                'blocked' => $blocked,
+                'errors' => $errors
+            ]);
+        }
+
+        return redirect()->route('admin.products.index')
+            ->with($success ? 'success' : 'error', $message);
     }
 }
 
