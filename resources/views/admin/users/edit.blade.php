@@ -63,17 +63,9 @@
                         <div class="row">
                             <div class="col-md-4">
                                 <div class="form-group">
-                                    <label for="account_type">Account Type <span class="text-danger">*</span></label>
-                                    <select class="form-control @error('account_type') is-invalid @enderror"
-                                            id="account_type" name="account_type" required>
-                                        <option value="">Select Account Type</option>
-                                        <option value="individual" {{ old('account_type', $user->account_type) === 'individual' ? 'selected' : '' }}>Individual</option>
-                                        <option value="company" {{ old('account_type', $user->account_type) === 'company' ? 'selected' : '' }}>Company</option>
-                                        <option value="provider" {{ old('account_type', $user->account_type) === 'provider' ? 'selected' : '' }}>Provider</option>
-                                    </select>
-                                    @error('account_type')
-                                        <div class="invalid-feedback">{{ $message }}</div>
-                                    @enderror
+                                    <label>Account Type</label>
+                                    <input type="text" id="account_type_display" class="form-control" value="{{ optional($user->company)->account_type ? ucfirst(optional($user->company)->account_type) : 'N/A' }}" disabled>
+                                    <small class="form-text text-muted">Derived from the associated company</small>
                                 </div>
                             </div>
                             <div class="col-md-4">
@@ -97,7 +89,7 @@
                                             id="company_id" name="company_id">
                                         <option value="">Select Company (Optional)</option>
                                         @foreach($companies as $company)
-                                            <option value="{{ $company->id }}" {{ old('company_id', $user->company_id) == $company->id ? 'selected' : '' }}>
+                                            <option value="{{ $company->id }}" data-account-type="{{ $company->account_type }}" {{ old('company_id', $user->company_id) == $company->id ? 'selected' : '' }}>
                                                 {{ $company->name }}
                                             </option>
                                         @endforeach
@@ -436,4 +428,28 @@
         }
     }
 </style>
+@stop
+
+@section('js')
+<script>
+    (function() {
+        const companySelect = document.getElementById('company_id');
+        const accountTypeDisplay = document.getElementById('account_type_display');
+
+        function toTitleCase(value) {
+            if (!value) return 'N/A';
+            return value.charAt(0).toUpperCase() + value.slice(1);
+        }
+
+        function updateAccountTypeDisplay() {
+            const selected = companySelect.options[companySelect.selectedIndex];
+            const type = selected ? selected.getAttribute('data-account-type') : '';
+            accountTypeDisplay.value = toTitleCase(type);
+        }
+
+        if (companySelect && accountTypeDisplay) {
+            companySelect.addEventListener('change', updateAccountTypeDisplay);
+        }
+    })();
+    </script>
 @stop

@@ -191,7 +191,6 @@ class UserManagementController extends Controller
                 })
             ],
             'password' => 'nullable|string|min:8|confirmed',
-            'account_type' => 'required|in:individual,company,provider',
             'role' => 'required|in:user,admin,super_admin',
             'is_admin' => 'boolean',
             'email_verified' => 'boolean',
@@ -204,16 +203,25 @@ class UserManagementController extends Controller
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ]);
 
-        // Update user
+        // Update user (account type is derived from company and not editable here)
         $userData = [
             'username' => $request->username,
             'email' => $request->email,
-            'account_type' => $request->account_type,
             'role' => $request->role,
             'is_admin' => $request->boolean('is_admin'),
             'email_verified' => $request->boolean('email_verified'),
             'company_id' => $request->company_id,
         ];
+
+        // If company is selected, derive account_type from the company; if none, clear it
+        if ($request->filled('company_id')) {
+            $companyForType = Company::find($request->company_id);
+            if ($companyForType) {
+                $userData['account_type'] = $companyForType->account_type;
+            }
+        } else {
+            $userData['account_type'] = null;
+        }
 
         if ($request->filled('password')) {
             $userData['password'] = Hash::make($request->password);
