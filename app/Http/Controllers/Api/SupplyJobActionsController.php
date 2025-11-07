@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\RentalJob;
 use App\Models\User;
 use App\Models\Company;
+use App\Models\Currency;
 use Illuminate\Support\Facades\Mail;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Log;
@@ -199,7 +200,7 @@ class SupplyJobActionsController extends Controller
                 return response()->json(['success' => false, 'message' => 'Associated rental job not found.'], 404);
             }
 
-            // 🚫 Check for already accepted / finalized status
+            // Check for already accepted / finalized status
             if (in_array($supplyJob->status, ['accepted', 'completed', 'closed'])) {
                 return response()->json([
                     'success' => false,
@@ -218,6 +219,12 @@ class SupplyJobActionsController extends Controller
                 'total_price' => $data['amount'],
                 'status' => 'pending',
             ]);
+
+            $currencySymbol = '';
+            if ($user->company && $user->company->currency_id) {
+                $currency = Currency::find($user->company->currency_id);
+                $currencySymbol = $currency ? $currency->symbol : '';
+            }
 
             // Collect emails
             $emails = [];
@@ -248,6 +255,7 @@ class SupplyJobActionsController extends Controller
                 'provider_name' => $user->company ? $user->company->name : 'A Supplier',
                 'rental_job_name' => $rentalJob->name,
                 'amount' => number_format($data['amount'], 2),
+                'currency_symbol' => $currencySymbol,
                 'version' => $nextVersion,
                 'sent_at' => now()->format('d M Y, h:i A'),
             ];

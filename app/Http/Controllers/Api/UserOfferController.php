@@ -7,6 +7,7 @@ use App\Models\RentalJob;
 use App\Models\SupplyJob;
 use App\Models\RentalJobOffer;
 use App\Models\Company;
+use App\Models\Currency;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -84,6 +85,12 @@ class UserOfferController extends Controller
              * Email Notification Section
              * ==============================
              */
+            $currencySymbol = '';
+            if ($user->company && $user->company->currency_id) {
+                $currency = Currency::find($user->company->currency_id);
+                $currencySymbol = $currency ? $currency->symbol : '';
+            }
+
             $email = '';
             $company = Company::with('defaultContact.profile')->find($data['provider_company_id']);
 
@@ -101,6 +108,7 @@ class UserOfferController extends Controller
                     'user_name' => $user->company ? $user->company->name : 'A Rental User',
                     'job_name' => $job->name,
                     'amount' => number_format($data['amount'], 2),
+                    'currency_symbol' => $currencySymbol,
                     'sent_at' => now()->format('d M Y, h:i A'),
                 ];
 

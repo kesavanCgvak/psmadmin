@@ -26,7 +26,7 @@
                 <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin: 12px 0 18px 0;">
                     <tr>
                         <td style="padding: 10px 12px; border: 1px solid #e5e7eb; background:#f9fafb; width: 40%; font-weight: 600;">Offer Amount</td>
-                        <td style="padding: 10px 12px; border: 1px solid #e5e7eb;">₹{{ $amount }}</td>
+                        <td style="padding: 10px 12px; border: 1px solid #e5e7eb;">{{ $currency_symbol }}{{ $amount }}</td>
                     </tr>
                     <tr>
                         <td style="padding: 10px 12px; border: 1px solid #e5e7eb; background:#f9fafb; font-weight: 600;">Sent At</td>
