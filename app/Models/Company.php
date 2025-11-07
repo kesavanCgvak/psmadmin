@@ -29,6 +29,7 @@ class Company extends Model
         'postal_code',
         'latitude',
         'longitude',
+        'hide_from_gear_finder',
 
     ];
 

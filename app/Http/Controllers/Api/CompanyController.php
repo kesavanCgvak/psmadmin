@@ -112,6 +112,7 @@ class CompanyController extends Controller
                 'currency_id' => $company->currency_id,
                 'date_format' => $company->date_format,
                 'pricing_scheme' => $company->pricing_scheme,
+                'hide_from_gear_finder' => $company->hide_from_gear_finder,
                 'rental_software_id' => $company->rental_software_id,
             ];
 
@@ -255,6 +256,45 @@ class CompanyController extends Controller
         }
     }
 
+    /**
+     * Update Gear Finder visibility
+     */
+    public function updateGearFinderVisibility(Request $request)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+            $company = $user->company;
+
+            $validated = $request->validate([
+                'hide_from_gear_finder' => 'required|boolean',
+            ]);
+
+            $company->hide_from_gear_finder = $validated['hide_from_gear_finder'];
+            $company->save();
+
+            $message = $validated['hide_from_gear_finder']
+                ? 'Company hidden from Gear Finder.'
+                : 'Company visible in Gear Finder.';
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error updating Gear Finder visibility', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to update Gear Finder visibility',
+            ], 500);
+        }
+    }
 
     /**
      * Get default contact
@@ -684,6 +724,7 @@ class CompanyController extends Controller
                 })
                 ->join('products', 'products.id', '=', 'equipments.product_id')
                 ->join('currencies', 'currencies.id', '=', 'companies.currency_id')
+                 ->leftJoin('rental_softwares', 'rental_softwares.id', '=', 'companies.rental_software_id')
                 // 🆕 Join city, state, and country tables for geolocation details
                 ->leftJoin('cities', 'cities.id', '=', 'companies.city_id')
                 ->leftJoin('states_provinces', 'states_provinces.id', '=', 'companies.state_id')
@@ -699,12 +740,14 @@ class CompanyController extends Controller
                     'equipments.product_id',
                     'equipments.quantity',
                     'products.model as product_name',
+                    'products.psm_code',
                     'equipments.price',
                     'equipments.software_code',
                     'currencies.id as currency_id',
                     'currencies.name as currency_name',
                     'currencies.code as currency_code',
                     'currencies.symbol as currency_symbol',
+                    'rental_softwares.name as rental_software_code',
                     // 🆕 Geolocation fields
                     'cities.name as city_name',
                     'states_provinces.name as state_name',
@@ -724,7 +767,8 @@ class CompanyController extends Controller
                     )
                 ) as distance")
                 )
-                ->where('companies.id', '!=', $user->company_id);
+                ->where('companies.id', '!=', $user->company_id)
+                ->where('companies.hide_from_gear_finder', 0);
 
             // ✅ Exclude blocked companies
             if (!empty($blockedCompanyIds)) {
@@ -754,6 +798,7 @@ class CompanyController extends Controller
                     'id' => $first->company_id,
                     'name' => $first->company_name,
                     'rating' => $first->company_rating,
+                     'rental_software_code' => $first->rental_software_code,
                     'distance' => round($first->distance, 2),
                     'location' => [ // 🆕 Added location block
                         'country' => $first->country_name,
@@ -777,6 +822,7 @@ class CompanyController extends Controller
                             'available_quantity' => (int) $availableQty,
                             'price' => number_format($item->price, 2, '.', ''),
                             'software_code' => $item->software_code,
+                            'psm_code' => $item->psm_code,
                         ];
                     })->values(),
                     'default_contact_profile' => $first->defaultContactProfile
@@ -839,7 +885,8 @@ class CompanyController extends Controller
             $productIds = explode(',', $request->product_id);
 
             // Main query with SQL-based distance calculation
-            $query = Company::with(['defaultContactProfile'])
+            $query = Company::where('hide_from_gear_finder', 0)
+                ->with(['defaultContactProfile'])
                 ->join('equipments', function ($join) use ($productIds) {
                     $join->on('companies.id', '=', 'equipments.company_id')
                         ->whereIn('equipments.product_id', $productIds);
@@ -918,7 +965,6 @@ class CompanyController extends Controller
             return response()->json(['message' => 'Something went wrong. Please try again later.'], 500);
         }
     }
-
 
     // Haversine Distance Formula
     private function calculateDistance($lat1, $lon1, $lat2, $lon2)
@@ -1084,7 +1130,6 @@ class CompanyController extends Controller
             ], 500);
         }
     }
-
 
     /**
      * Unblock a company for the logged-in user.
