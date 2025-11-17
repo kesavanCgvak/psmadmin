@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\SupplyJobController;
 use App\Http\Controllers\Api\UserProfileController;
 use App\Http\Controllers\Api\EquipmentController;
 use App\Http\Controllers\Api\UserOfferController;
+use App\Http\Controllers\Api\JobNegotiationController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
@@ -173,6 +174,9 @@ Route::middleware(['jwt.verify'])->group(function () {
 
     // Update requested product quantities
     Route::put('/rental-jobs/{id}/quantities', [RentalJobActionsController::class, 'updateRequestedQuantities']);
+
+    Route::post('/rental-jobs/{id}/cancel', [RentalJobActionsController::class, 'cancelRentalJob']);
+
 });
 
 
@@ -191,16 +195,26 @@ Route::group(['middleware' => ['jwt.verify']], function () {
     Route::post('/supply-jobs/{id}/offer', [SupplyJobActionsController::class, 'sendNewOffer']);
 
     // Handshake (accept offer)
-    Route::post('/supply-jobs/{id}/handshake', [SupplyJobActionsController::class, 'handshake']);
+    // Route::post('/supply-jobs/{id}/handshake', [SupplyJobActionsController::class, 'handshake']);
 
     // Cancel negotiation
-    Route::post('/supply-jobs/{id}/cancel', [SupplyJobActionsController::class, 'cancelNegotiation']);
+    // Route::post('/supply-jobs/{id}/cancel', [SupplyJobActionsController::class, 'cancelNegotiation']);
 
 });
 
 Route::middleware(['jwt.verify'])->group(function () {
     Route::get('/supply-jobs', [SupplyJobController::class, 'index']); // ?company_id=123
     Route::get('/supply-jobs/{id}', [SupplyJobController::class, 'show']); // ?company_id=123
+    Route::post('/supply-jobs/{supply_job_id}/cancel', [SupplyJobController::class, 'cancelSupplyJob']);
+});
+
+Route::prefix('jobs')->middleware(['jwt.verify'])->group(function () {
+    Route::post('{rental_job}/offer', [JobNegotiationController::class, 'sendOffer']);
+});
+
+Route::prefix('offers')->middleware(['jwt.verify'])->group(function () {
+    Route::post('{offer_id}/handshake', [JobNegotiationController::class, 'handshake']);
+    Route::post('{offer_id}/cancel-negotiation', [JobNegotiationController::class, 'cancelNegotiation']);
 });
 
 
@@ -215,6 +229,6 @@ Route::middleware('jwt.verify')->group(function () {
 });
 
 
-Route::middleware(['jwt.verify'])->group(function () {
-    Route::post('/rental-jobs/{jobId}/offers', [UserOfferController::class, 'sendOfferToProvider']);
-});
+// Route::middleware(['jwt.verify'])->group(function () {
+//     Route::post('/rental-jobs/{jobId}/offers', [UserOfferController::class, 'sendOfferToProvider']);
+// });
