@@ -59,62 +59,62 @@ class ProductController extends Controller
                     'brand:id,name'
                 ]);
 
-        // Handle DataTables parameters
-        $draw = $request->get('draw');
-        $start = $request->get('start', 0);
-        $length = $request->get('length', 25);
-        $searchValue = $request->get('search')['value'] ?? '';
-        $orderColumn = $request->get('order')[0]['column'] ?? 0;
-        $orderDir = $request->get('order')[0]['dir'] ?? 'desc';
+            // Handle DataTables parameters
+            $draw = $request->get('draw');
+            $start = $request->get('start', 0);
+            $length = $request->get('length', 25);
+            $searchValue = $request->get('search')['value'] ?? '';
+            $orderColumn = $request->get('order')[0]['column'] ?? 0;
+            $orderDir = $request->get('order')[0]['dir'] ?? 'desc';
 
-        // Column mapping for ordering
-        $columns = ['id', 'brand_id', 'model', 'category_id', 'sub_category_id', 'psm_code', 'created_at'];
-        $orderColumnName = $columns[$orderColumn] ?? 'created_at';
+            // Column mapping for ordering
+            $columns = ['id', 'brand_id', 'model', 'category_id', 'sub_category_id', 'psm_code', 'created_at'];
+            $orderColumnName = $columns[$orderColumn] ?? 'created_at';
 
-        // Apply search filter
-        if (!empty($searchValue)) {
-            $query->where(function($q) use ($searchValue) {
-                $q->where('model', 'like', "%{$searchValue}%")
-                  ->orWhere('psm_code', 'like', "%{$searchValue}%")
-                  ->orWhereHas('brand', function($brandQuery) use ($searchValue) {
-                      $brandQuery->where('name', 'like', "%{$searchValue}%");
-                  })
-                  ->orWhereHas('category', function($categoryQuery) use ($searchValue) {
-                      $categoryQuery->where('name', 'like', "%{$searchValue}%");
-                  })
-                  ->orWhereHas('subCategory', function($subCategoryQuery) use ($searchValue) {
-                      $subCategoryQuery->where('name', 'like', "%{$searchValue}%");
-                  });
-            });
-        }
+            // Apply search filter
+            if (!empty($searchValue)) {
+                $query->where(function ($q) use ($searchValue) {
+                    $q->where('model', 'like', "%{$searchValue}%")
+                        ->orWhere('psm_code', 'like', "%{$searchValue}%")
+                        ->orWhereHas('brand', function ($brandQuery) use ($searchValue) {
+                            $brandQuery->where('name', 'like', "%{$searchValue}%");
+                        })
+                        ->orWhereHas('category', function ($categoryQuery) use ($searchValue) {
+                            $categoryQuery->where('name', 'like', "%{$searchValue}%");
+                        })
+                        ->orWhereHas('subCategory', function ($subCategoryQuery) use ($searchValue) {
+                            $subCategoryQuery->where('name', 'like', "%{$searchValue}%");
+                        });
+                });
+            }
 
-        // Get total count before filtering
-        $totalRecords = Product::count();
+            // Get total count before filtering
+            $totalRecords = Product::count();
 
-        // Get filtered count
-        $filteredRecords = $query->count();
+            // Get filtered count
+            $filteredRecords = $query->count();
 
-        // Apply ordering and pagination
-        $products = $query->orderBy($orderColumnName, $orderDir)
-                         ->skip($start)
-                         ->take($length)
-                         ->get();
+            // Apply ordering and pagination
+            $products = $query->orderBy($orderColumnName, $orderDir)
+                ->skip($start)
+                ->take($length)
+                ->get();
 
-        // Prepare data for DataTables
-        $data = [];
-        foreach ($products as $product) {
-            $data[] = [
-                'checkbox' => '', // Placeholder for checkbox column (rendered client-side)
-                'id' => $product->id,
-                'brand' => $product->brand ? $product->brand->name : '—',
-                'model' => $product->model,
-                'category' => $product->category ? $product->category->name : '—',
-                'sub_category' => $product->subCategory ? $product->subCategory->name : '—',
-                'psm_code' => $product->psm_code ?? '—',
-                'created_at' => $product->created_at ? $product->created_at->format('M d, Y') : '—',
-                'actions' => $this->getActionButtons($product)
-            ];
-        }
+            // Prepare data for DataTables
+            $data = [];
+            foreach ($products as $product) {
+                $data[] = [
+                    'checkbox' => '', // Placeholder for checkbox column (rendered client-side)
+                    'id' => $product->id,
+                    'brand' => $product->brand ? $product->brand->name : '—',
+                    'model' => $product->model,
+                    'category' => $product->category ? $product->category->name : '—',
+                    'sub_category' => $product->subCategory ? $product->subCategory->name : '—',
+                    'psm_code' => $product->psm_code ?? '—',
+                    'created_at' => $product->created_at ? $product->created_at->format('M d, Y') : '—',
+                    'actions' => $this->getActionButtons($product)
+                ];
+            }
 
             return response()->json([
                 'draw' => intval($draw),
@@ -195,7 +195,6 @@ class ProductController extends Controller
             'sub_category_id' => 'nullable|exists:sub_categories,id',
             'brand_id' => 'nullable|exists:brands,id',
             'model' => 'required|string|max:255',
-            'psm_code' => 'nullable|string|max:255|unique:products,psm_code',
         ]);
 
         if ($validator->fails()) {
@@ -224,11 +223,8 @@ class ProductController extends Controller
                 ]);
         }
 
-        // Generate automatic PSM Code if not provided
-        $psmCode = $request->input('psm_code');
-        if (empty($psmCode)) {
-            $psmCode = $this->generateNextPsmCode();
-        }
+        // Generate automatic PSM Code
+        $psmCode = $this->generateNextPsmCode();
 
         $productData = $request->all();
         $productData['psm_code'] = $psmCode;
@@ -346,9 +342,9 @@ class ProductController extends Controller
     {
         // Get the latest PSM code from the database (handle both PSM-XXX and PSM_XXX formats)
         $latestProduct = Product::whereNotNull('psm_code')
-            ->where(function($query) {
+            ->where(function ($query) {
                 $query->where('psm_code', 'like', 'PSM-%')
-                      ->orWhere('psm_code', 'like', 'PSM_%');
+                    ->orWhere('psm_code', 'like', 'PSM_%');
             })
             ->orderByRaw('CAST(SUBSTRING(psm_code, 5) AS UNSIGNED) DESC')
             ->first();
@@ -356,7 +352,7 @@ class ProductController extends Controller
         if ($latestProduct && $latestProduct->psm_code) {
             // Extract the number from the latest PSM code (handle both formats)
             $latestCode = $latestProduct->psm_code;
-            if (preg_match('/PSM[-_](\d+)/', $latestCode, $matches)) {
+            if (preg_match('/PSM[_](\d+)/', $latestCode, $matches)) {
                 $nextNumber = intval($matches[1]) + 1;
                 return 'PSM_' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
             }
@@ -384,7 +380,7 @@ class ProductController extends Controller
 
         // Remove common words that don't add uniqueness
         $commonWords = ['the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by'];
-        $words = array_filter($words, function($word) use ($commonWords) {
+        $words = array_filter($words, function ($word) use ($commonWords) {
             return !in_array($word, $commonWords) && strlen($word) > 1;
         });
 
@@ -505,6 +501,18 @@ class ProductController extends Controller
 
         return redirect()->route('admin.products.index')
             ->with($success ? 'success' : 'error', $message);
+    }
+
+    /**
+     * Get subcategories by category (AJAX endpoint)
+     */
+    public function getSubCategoriesByCategory($categoryId)
+    {
+        $subCategories = SubCategory::where('category_id', $categoryId)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return response()->json($subCategories);
     }
 }
 

@@ -999,6 +999,7 @@ class CompanyController extends Controller
                         'id' => $company->id,
                         'name' => $company->name,
                         'country' => $company->country?->name ?? null,
+                        'company_logo' => $company->logo ? $company->logo : null,
                         'average_rating' => round($company->ratings_avg_rating, 1),
                         'user_rating' => CompanyRating::where('company_id', $company->id)
                             ->where('user_id', $user->id)

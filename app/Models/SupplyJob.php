@@ -21,12 +21,16 @@ class SupplyJob extends Model
         'packing_date',
         'delivery_date',
         'return_date',
-        'unpacking_date'
+        'unpacking_date',
+        'accepted_price',
+        'handshake_status',
+        'cancelled_by',
+        'fulfilled_quantity',
     ];
 
     public function rentalJob()
     {
-        return $this->belongsTo(RentalJob::class);
+        return $this->belongsTo(RentalJob::class, 'rental_job_id');
     }
 
     public function provider()
@@ -46,8 +50,14 @@ class SupplyJob extends Model
 
     public function offers()
     {
-        return $this->hasMany(RentalJobOffer::class);
+        return $this->hasMany(JobOffer::class, 'rental_job_id');
     }
+
+    public function supplyJobOffers()
+    {
+        return $this->hasMany(JobOffer::class, 'supply_job_id', 'id');
+    }
+
 
     public function comments()
     {

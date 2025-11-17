@@ -9,6 +9,7 @@ use App\Models\SupplyJob;
 use App\Models\SupplyJobProduct;
 use App\Models\RentalJobComment;
 use App\Models\RentalJobOffer;
+use App\Models\JobOffer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -216,7 +217,34 @@ class RentalJobController extends Controller
             })->values();
 
             // 5. Get latest offer (if exists)
-            $latestOffer = $supplyJob->offers->first();
+            $latestOffer = JobOffer::where('rental_job_id', $rentalJobId)
+                ->where('supply_job_id', $supplyJob->id)
+                ->orderByDesc('version')
+                ->first();
+            $loggedInCompany = $user->company_id;
+
+            // Default
+            $canSendOffer = false;
+            $canCancel = false;
+
+            if ($latestOffer) {
+
+                if (in_array($latestOffer->status, ['accepted', 'cancelled'])) {
+                    $canSendOffer = false;
+                    $canCancel = false;
+                } else {
+                    if ($latestOffer->sender_company_id == $loggedInCompany) {
+                        // User sent the last offer → cannot send new one
+                        $canSendOffer = false;
+                        $canCancel = false;
+                    } else {
+                        // Other company sent last offer → user can reply
+                        $canSendOffer = true;
+                        $canCancel = true;
+                    }
+                }
+            }
+
 
             // 6. Build response payload
             $provider = $supplyJob->providerCompany;
@@ -240,7 +268,13 @@ class RentalJobController extends Controller
                     'version' => (int) $latestOffer->version,
                     'total_price' => (string) $latestOffer->total_price,
                     'status' => $latestOffer->status,
+                    'sender_company_id' => $latestOffer->sender_company_id,
+                    'receiver_company_id' => $latestOffer->receiver_company_id,
                 ] : null,
+                'negotiation_controls' => [
+                    'can_send_offer' => $canSendOffer,
+                    'can_cancel_negotiation' => $canCancel,
+                ],
                 'comments_endpoint' => "/api/supply-jobs/{$supplyJob->id}/comments",
             ];
             return response()->json([

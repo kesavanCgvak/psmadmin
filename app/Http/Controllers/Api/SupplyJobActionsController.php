@@ -265,7 +265,7 @@ class SupplyJobActionsController extends Controller
                 Mail::send('emails.supplyNewOffer', $mailContent, function ($message) use ($email) {
                     $message->to($email)
                         ->subject('New Offer from Pro Subrental Marketplace')
-                        ->from('acctracking001@gmail.com', 'Pro Subrental Marketplace');
+                        ->from(config('mail.from.address'), config('mail.from.name'));
                 });
             }
 

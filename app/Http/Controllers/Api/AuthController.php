@@ -156,7 +156,7 @@ class AuthController extends Controller
                     'mobile' => $request->mobile,
                     'email' => $request->email
                 ], function ($message) use ($data) {
-                    $message->to($data['email']);
+                    $message->to(config('mail.to.addresses'));
                     $message->subject('New registration');
                     $message->from(config('mail.from.address'), config('mail.from.name'));
                 });

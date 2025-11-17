@@ -10,7 +10,9 @@ use App\Models\Company;
 use App\Models\SupplyJobProduct;
 use App\Models\RentalJobProduct;
 use App\Models\RentalJobComment;
-use App\Models\RentalJobOffer;
+use App\Models\JobOffer;
+use App\Models\Equipment;
+use App\Models\Currency;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -52,7 +54,7 @@ class RentalRequestController extends Controller
         try {
             return DB::transaction(function () use ($validated, $user) {
 
-                //Create rental job
+                // Create rental job
                 $rentalJob = RentalJob::create([
                     'user_id' => $user->id,
                     'name' => $validated['name'],
@@ -64,12 +66,35 @@ class RentalRequestController extends Controller
                     'status' => 'open'
                 ]);
 
-                Log::info('Rental job created', ['rental_job_id' => $rentalJob->id]);
+                /**
+                 * ===========================================
+                 * FIX: Aggregate products across all companies
+                 * ===========================================
+                 */
+                $productTotals = collect($validated['company_products'])
+                    ->flatMap(fn($cp) => $cp['products'])
+                    ->groupBy('product_id')
+                    ->map(fn($items) => $items->sum('requested_quantity'));
 
-                //Process each company and its products
+                foreach ($productTotals as $productId => $totalQuantity) {
+                    RentalJobProduct::create([
+                        'rental_job_id' => $rentalJob->id,
+                        'product_id' => $productId,
+                        'requested_quantity' => $totalQuantity,
+                        'fulfilled_quantity' => 0,
+                        'status' => 'pending',
+                        'company_id' => null // aggregated, so not per company
+                    ]);
+                }
+
+                /**
+                 * ===========================================
+                 * Per company supply job creation
+                 * ===========================================
+                 */
                 foreach ($validated['company_products'] as $companyData) {
 
-                    // Supply job for this company
+                    // Create supply job for this company
                     $supplyJob = SupplyJob::create([
                         'rental_job_id' => $rentalJob->id,
                         'provider_id' => $companyData['company_id'],
@@ -78,28 +103,30 @@ class RentalRequestController extends Controller
 
                     $productsForMail = [];
 
-                    // Requested products
+                    // Requested products per company
                     foreach ($companyData['products'] as $product) {
-                        // Supply job product
+
+                        // Find the equipment for this product and company
+                        $equipment = Equipment::where('company_id', $companyData['company_id'])
+                            ->where('product_id', $product['product_id'])
+                            ->first();
+
+                        // Get the price from equipment if available
+                        $pricePerUnit = $equipment ? $equipment->price : null;
+
+                        // Supply job product (per supplier)
                         SupplyJobProduct::create([
                             'supply_job_id' => $supplyJob->id,
                             'product_id' => $product['product_id'],
-                            'offered_quantity' => 0,
-                            'price_per_unit' => null
+                            'required_quantity' => $product['requested_quantity'],
+                            'offered_quantity' => $product['requested_quantity'],
+                            'price_per_unit' => $pricePerUnit,
                         ]);
 
-                        // Rental job product
-                        RentalJobProduct::create([
-                            'rental_job_id' => $rentalJob->id,
-                            'product_id' => $product['product_id'],
-                            'requested_quantity' => $product['requested_quantity'],
-                            'company_id' => $companyData['company_id']
-                        ]);
-
-                        // Prepare data for email (aggregate all product info)
+                        // Prepare data for email
                         $productData = Product::with([
                             'getEquipment' => function ($q) use ($companyData) {
-                                $q->where('company_id', '!=', $companyData['company_id']);
+                                $q->where('company_id', $companyData['company_id']);
                             }
                         ])->find($product['product_id']);
 
@@ -108,12 +135,21 @@ class RentalRequestController extends Controller
                                 'model' => $productData->model,
                                 'requested_quantity' => $product['requested_quantity'],
                                 'psm_code' => $productData->psm_code,
-                                'software_code' => optional($productData->getEquipment)->software_code
+                                'software_code' => optional($productData->getEquipment)->software_code,
+                                'price_per_unit' => $pricePerUnit,
+                                'total_price' => $pricePerUnit ? $pricePerUnit * $product['requested_quantity'] : 0,
                             ];
                         }
                     }
 
-                    // Private message (per-company)
+                    //Calculate total quote price for this supply job
+                    $totalQuotePrice = collect($productsForMail)->sum('total_price');
+
+                    //Update supply job with quote price
+                    $supplyJob->update(['quote_price' => $totalQuotePrice]);
+
+
+                    // Private message per supplier
                     if (!empty($companyData['private_message'])) {
                         RentalJobComment::create([
                             'rental_job_id' => $rentalJob->id,
@@ -125,16 +161,38 @@ class RentalRequestController extends Controller
                     }
 
                     // Initial offer
-                    if (isset($companyData['initial_offer'])) {
-                        RentalJobOffer::create([
+                    if (array_key_exists('initial_offer', $companyData) || $totalQuotePrice > 0) {
+                        $receiverCurrency = Company::find($companyData['company_id'])->currency_id ?? null;
+                        $totalPrice = $companyData['initial_offer'] ?? null;
+                        $totalPrice = ($totalPrice && $totalPrice > 0) ? $totalPrice : $totalQuotePrice;
+                        JobOffer::create([
+                            'rental_job_id' => $rentalJob->id,
                             'supply_job_id' => $supplyJob->id,
+                            'sender_company_id' => $user->company_id,
+                            'receiver_company_id' => $companyData['company_id'],
                             'version' => 1,
-                            'total_price' => $companyData['initial_offer'],
+                            'total_price' => $totalPrice,
+                            'currency_id' => $receiverCurrency ?? null,
+                            'last_offer_by' => $user->company_id,
                             'status' => 'pending'
                         ]);
                     }
 
-                    // Send notification email (only once per company)
+                    // Currency symbol
+                    $currencySymbol = '';
+                    // if ($user->company->currency_id) {
+                    //     $currency = Currency::find($user->company->currency_id);
+                    //     $currencySymbol = $currency ? $currency->symbol : '';
+                    // }
+                    if ($receiverCurrency) {
+                        $currency = Currency::find($receiverCurrency);
+                        $currencySymbol = $currency ? $currency->symbol : $currencySymbol;
+                    }
+                    /**
+                     * ==============================
+                     * Email Notification (per company)
+                     * ==============================
+                     */
                     $company = Company::with('getDefaultcontact')->find($companyData['company_id']);
                     if ($company && $company->getDefaultcontact) {
                         $mailContent = [
@@ -143,12 +201,23 @@ class RentalRequestController extends Controller
                             'to_date' => $validated['to_date'],
                             'delivery_address' => $validated['delivery_address'],
                             'offer_requirements' => $validated['offer_requirements'],
+                            'global_message' => $validated['global_message'] ?? null,
                             'email' => $user->email,
                             'mobile' => $user->mobile,
                             'company_name' => $company->name,
                             'private_message' => $companyData['private_message'] ?? null,
                             'initial_offer' => $companyData['initial_offer'] ?? null,
-                            'products' => $productsForMail
+                            'currency_symbol' => $currencySymbol,
+                            'products' => $productsForMail,
+
+                            // Requesting user details
+                            'user_name' => $user->profile->full_name ?? $user->name ?? 'Unknown User',
+                            'user_email' => $user->profile->email ?? null,
+                            'user_mobile' => $user->profile->mobile ?? null,
+                            'user_company' => $user->company->name ?? 'N/A',
+
+                            // Supplier company details
+                            'supplier_company_name' => $company->name,
                         ];
 
                         Mail::send('emails.quoteRequest', $mailContent, function ($message) use ($company, $validated) {
@@ -165,9 +234,7 @@ class RentalRequestController extends Controller
                     'data' => [
                         'rental_job_id' => $rentalJob->id,
                         'companies_involved' => count($validated['company_products']),
-                        'total_products' => collect($validated['company_products'])
-                            ->flatMap(fn($cp) => $cp['products'])
-                            ->count()
+                        'total_products' => $productTotals->count()
                     ]
                 ], 201);
             });
@@ -185,5 +252,6 @@ class RentalRequestController extends Controller
             ], 500);
         }
     }
+
 
 }

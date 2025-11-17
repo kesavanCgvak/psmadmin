@@ -121,6 +121,7 @@ class EquipmentController extends Controller
                     'quantity' => $equipment->quantity,
                     'price' => $equipment->price,
                     'description' => $equipment->description,
+                    'is_verified' => $equipment->product->is_verified,
                     'images' => $equipment->images->map(function ($img) {
                         return [
                             'id' => $img->id,

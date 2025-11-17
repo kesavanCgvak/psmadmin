@@ -43,10 +43,16 @@ class Product extends Model
     /**
      * A product has many equipments.
      */
+    // public function equipments()
+    // {
+    //     return $this->hasMany(Equipment::class);
+    // }
+
     public function equipments()
     {
-        return $this->hasMany(Equipment::class);
+        return $this->hasMany(Equipment::class, 'product_id', 'id');
     }
+
 
     public function rentalJobProducts()
     {
@@ -58,7 +64,8 @@ class Product extends Model
         return $this->hasMany(SupplyJobProduct::class);
     }
 
-     public function getEquipment() {
+    public function getEquipment()
+    {
         return $this->belongsTo('App\Models\Equipment', 'id', 'product_id');
     }
 }

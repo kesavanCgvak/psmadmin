@@ -115,7 +115,7 @@ class UserOfferController extends Controller
                 Mail::send('emails.rentalJobOffer', $mailContent, function ($message) use ($email) {
                     $message->to($email)
                         ->subject('New Offer Received from Pro Subrental Marketplace')
-                        ->from('acctracking001@gmail.com', 'Pro Subrental Marketplace');
+                       ->from(config('mail.from.address'), config('mail.from.name'));
                 });
             }
 

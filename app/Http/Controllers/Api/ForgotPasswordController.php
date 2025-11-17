@@ -50,7 +50,7 @@ class ForgotPasswordController extends Controller
             Mail::send('emails.forgotPassword', $mail_content, function ($message) use ($to_name, $to_email) {
                 $message->to($to_email, $to_name)
                     ->subject('Password Reset - Pro Subrental Marketplace');
-                $message->from('acctracking001@gmail.com', 'Pro Subrental Marketplace');
+                $message->from(config('mail.from.address'), config('mail.from.name'));
             });
 
             return response()->json([

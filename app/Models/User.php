@@ -23,7 +23,7 @@ use App\Models\RentalJobComment;
 class User extends Authenticatable implements JWTSubject
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use  HasFactory, Notifiable;
+    use HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -229,4 +229,10 @@ class User extends Authenticatable implements JWTSubject
     {
         return route('profile.edit');
     }
+
+    public function getAccountTypeAttribute()
+    {
+        return $this->company->account_type ?? null;
+    }
+
 }

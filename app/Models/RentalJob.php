@@ -23,7 +23,9 @@ class RentalJob extends Model
         'delivery_address',
         'offer_requirements',
         'global_message',
-        'status'
+        'status',
+        'cancelled_by',
+        'notes',
     ];
 
     public function user()
@@ -46,9 +48,24 @@ class RentalJob extends Model
         return $this->hasMany(RentalJobComment::class);
     }
 
-    public function supplyOffers()
+    public function offers()
     {
-        return $this->hasMany(SupplyJobOffer::class, 'rental_job_id');
+        return $this->hasMany(JobOffer::class, 'rental_job_id');
+    }
+
+    public function getTotalRequestedQuantityAttribute()
+    {
+        return $this->products->sum('requested_quantity');
+    }
+
+    // public function supplyOffers()
+    // {
+    //     return $this->hasMany(SupplyJobOffer::class, 'rental_job_id');
+    // }
+
+    public function requesterCompany()
+    {
+        return $this->belongsTo(Company::class, 'requester_company_id');
     }
 
 }
