@@ -43,6 +43,9 @@ class SupplyJobController extends Controller
             'products.product.brand',
             'products.product.category',
             'products.product.subCategory',
+            'supplyJobOffers.senderCompany',
+            'supplyJobOffers.receiverCompany',
+            'supplyJobOffers.currency',
             'comments.sender.profile',
             'comments.recipient.profile'
         ]);

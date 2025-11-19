@@ -12,6 +12,11 @@ use App\Models\SubCategory;
 use App\Models\Equipment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Tymon\JWTAuth\Facades\JWTAuth;
+use Illuminate\Support\Facades\Notification;
+use App\Notifications\NewProductCreated;
+use Illuminate\Support\Facades\Validator;
+use App\Notifications\DuplicateProductMerged;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Log;
 use App\Models\SavedProduct;
@@ -114,6 +119,133 @@ class ProductController extends Controller
     }
 
     public function createOrAttach(CreateOrAttachRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+        $user = JWTAuth::parseToken()->authenticate();
+
+        if (!$user->company_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User does not belong to any company.'
+            ], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'brand_id' => 'nullable|exists:brands,id',
+            'category_id' => 'nullable|exists:categories,id',
+            'sub_category_id' => 'nullable|exists:sub_categories,id',
+            'quantity' => 'nullable|integer|min:1',
+            'price' => 'nullable|numeric|min:0',
+            'rental_software_code' => 'nullable|string|max:255',
+        ]);
+
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $validated = $validator->validated();
+
+        DB::beginTransaction();
+
+        try {
+            /** ---------------------------------------------------------
+             * 1️⃣ Use Only Existing IDs (No Auto-Create)
+             * --------------------------------------------------------- */
+            $categoryId = $validated['category_id'] ?? null;
+            $subCategoryId = $validated['sub_category_id'] ?? null;
+            $brandId = $validated['brand_id'] ?? null;
+
+            /** ---------------------------------------------------------
+             * 2️⃣ Always Create a New Product
+             * --------------------------------------------------------- */
+            $productName = trim($validated['name']);
+            $psmCode = $validated['psm_code'] ?? $this->generateNextPsmCode();
+
+            $product = Product::create([
+                'category_id' => $categoryId,
+                'sub_category_id' => $subCategoryId,
+                'brand_id' => $brandId,
+                'model' => $productName,
+                'psm_code' => $psmCode,
+                'is_verified' => 0,
+            ]);
+
+            /** ---------------------------------------------------------
+             * 3️⃣ Create or Update Equipment for User's Company
+             * --------------------------------------------------------- */
+            Equipment::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'company_id' => $user->company_id,
+                    'product_id' => $product->id,
+                ],
+                [
+                    'quantity' => $validated['quantity'],
+                    'price' => $validated['price'],
+                    'software_code' => $validated['rental_software_code'],
+                ]
+            );
+
+            DB::commit();
+
+            /** ---------------------------------------------------------
+             * 4️⃣ Send Email to App Admin
+             * --------------------------------------------------------- */
+
+            Notification::route('mail', config('mail.admin.address'))
+                ->notify(new NewProductCreated($product, $user));
+
+
+            return response()->json([
+                'success' => true,
+                'message' => 'New product and equipment created successfully.',
+                'data' => [
+                    'product' => $product,
+                    'is_verified' => 0,
+                ],
+            ], 201);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create product',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    private function mergeDuplicateProductIntoOriginal(Product $duplicate, Product $original)
+    {
+        // All tables referencing product_id
+        $tables = $this->tablesReferencingProduct();
+
+        foreach ($tables as $table => $column) {
+            DB::table($table)
+                ->where($column, $duplicate->id)
+                ->update([$column => $original->id]);
+        }
+
+        $duplicate->delete();
+    }
+
+    private function tablesReferencingProduct()
+    {
+        return [
+            'equipments' => 'product_id',
+            'rental_job_products' => 'product_id',
+            'supply_job_products' => 'product_id',
+            // Add more tables if required
+        ];
+    }
+
+    public function createOrAttachOld(CreateOrAttachRequest $request): JsonResponse
     {
         $validated = $request->validated();
         $user = Auth::user();
@@ -237,7 +369,7 @@ class ProductController extends Controller
 
         // Remove common words that don't add uniqueness
         $commonWords = ['the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by'];
-        $words = array_filter($words, function($word) use ($commonWords) {
+        $words = array_filter($words, function ($word) use ($commonWords) {
             return !in_array($word, $commonWords) && strlen($word) > 1;
         });
 
@@ -316,7 +448,7 @@ class ProductController extends Controller
         return 'PSM_' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
     }
 
-    public function createOrAttachOld(Request $request): JsonResponse
+    public function createOrAttachOld1(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],

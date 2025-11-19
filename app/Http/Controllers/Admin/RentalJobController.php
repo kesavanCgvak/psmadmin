@@ -41,6 +41,10 @@ class RentalJobController extends Controller
             'products.company',
             'supplyJobs.provider',
             'supplyJobs.products.product.brand',
+            'supplyJobs.supplyJobOffers.senderCompany',
+            'supplyJobs.supplyJobOffers.receiverCompany',
+            'offers.senderCompany',
+            'offers.receiverCompany',
             'comments.sender.profile',
             'comments.recipient.profile'
         ]);

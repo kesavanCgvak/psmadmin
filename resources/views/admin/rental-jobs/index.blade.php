@@ -95,14 +95,18 @@
                                 <td>
                                     @php
                                         $statusColors = [
-                                            'pending' => 'warning',
-                                            'active' => 'primary',
-                                            'completed' => 'success',
+                                            'open' => 'info',
+                                            'in_negotiation' => 'primary',
+                                            'partially_accepted' => 'warning',
+                                            'accepted' => 'success',
+                                            'closed' => 'secondary',
                                             'cancelled' => 'danger',
+                                            'completed' => 'success',
                                         ];
                                         $statusColor = $statusColors[$job->status] ?? 'secondary';
+                                        $statusDisplay = ucfirst(str_replace('_', ' ', $job->status ?? 'N/A'));
                                     @endphp
-                                    <span class="badge badge-{{ $statusColor }}">{{ ucfirst($job->status ?? 'N/A') }}</span>
+                                    <span class="badge badge-{{ $statusColor }}">{{ $statusDisplay }}</span>
                                 </td>
                                 <td>{{ $job->created_at?->format('M d, Y') }}</td>
                                 <td>

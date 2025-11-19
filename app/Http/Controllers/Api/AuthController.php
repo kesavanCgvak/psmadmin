@@ -34,7 +34,8 @@ class AuthController extends Controller
             'country_id' => 'required|exists:countries,id',
             'state_id' => 'required|exists:states_provinces,id',
             'city' => 'required|exists:cities,id',
-            'birthday' => 'nullable|date|before:today',
+            // 'birthday' => 'nullable|date|before:today',
+            'birthday' => 'required|string|max:255',
             'email' => 'nullable|email|max:255',
             'password' => 'required|string|min:8|confirmed', // password_confirmation required
             'mobile' => 'nullable|string|max:20',
@@ -148,6 +149,7 @@ class AuthController extends Controller
 
                 Mail::send('emails.newRegistration', [
                     'company_name' => $request->company_name,
+                    'account_type' => $request->account_type,
                     'username' => $request->username,
                     'region_name' => $company_details->getregion->name,
                     'country_name' => $company_details->getcountry->name,
@@ -280,7 +282,6 @@ class AuthController extends Controller
             ], 500);
         }
     }
-
 
     /**
      * Get logged-in user profile

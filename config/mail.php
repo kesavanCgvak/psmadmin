@@ -130,4 +130,9 @@ return [
         'addresses' => explode(',', env('MAIL_TO_NOTIFY_NEW_REGISTRATION')),
     ],
 
+    'admin' => [
+        'name' => env('MAIL_FROM_NAME', 'PSM Admin'),
+        'address' => env('MAIL_TO_ADMIN', 'noreply@prosubmarket.com'),
+    ],
+
 ];

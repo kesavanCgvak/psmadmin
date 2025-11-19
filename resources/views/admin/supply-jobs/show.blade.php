@@ -22,12 +22,16 @@
                             $statusColors = [
                                 'pending' => 'warning',
                                 'negotiating' => 'info',
+                                'partially_accepted' => 'warning',
                                 'accepted' => 'success',
+                                'closed' => 'secondary',
                                 'cancelled' => 'danger',
+                                'completed' => 'success',
                             ];
                             $statusColor = $statusColors[$supplyJob->status] ?? 'secondary';
+                            $statusDisplay = ucfirst(str_replace('_', ' ', $supplyJob->status ?? 'N/A'));
                         @endphp
-                        <span class="badge badge-{{ $statusColor }}">{{ ucfirst($supplyJob->status ?? 'N/A') }}</span>
+                        <span class="badge badge-{{ $statusColor }}">{{ $statusDisplay }}</span>
                     </div>
                 </div>
                 <div class="card-body">
@@ -105,7 +109,40 @@
 
                         <dt class="col-sm-3">Status</dt>
                         <dd class="col-sm-9">
-                            <span class="badge badge-{{ $statusColor }}">{{ ucfirst($supplyJob->status ?? 'N/A') }}</span>
+                            <span class="badge badge-{{ $statusColor }}">{{ $statusDisplay }}</span>
+                        </dd>
+
+                        <dt class="col-sm-3">Handshake Status</dt>
+                        <dd class="col-sm-9">
+                            @if($supplyJob->handshake_status)
+                                @php
+                                    $handshakeColors = [
+                                        'pending_user' => 'warning',
+                                        'pending_provider' => 'info',
+                                        'accepted' => 'success',
+                                        'cancelled' => 'danger',
+                                    ];
+                                    $handshakeColor = $handshakeColors[$supplyJob->handshake_status] ?? 'secondary';
+                                    $handshakeDisplay = ucfirst(str_replace('_', ' ', $supplyJob->handshake_status));
+                                @endphp
+                                <span class="badge badge-{{ $handshakeColor }}">{{ $handshakeDisplay }}</span>
+                            @else
+                                <span class="text-muted">N/A</span>
+                            @endif
+                        </dd>
+
+                        <dt class="col-sm-3">Accepted Price</dt>
+                        <dd class="col-sm-9">
+                            @if($supplyJob->accepted_price)
+                                <strong class="text-success">${{ number_format($supplyJob->accepted_price, 2) }}</strong>
+                            @else
+                                <span class="text-muted">N/A</span>
+                            @endif
+                        </dd>
+
+                        <dt class="col-sm-3">Fulfilled Quantity</dt>
+                        <dd class="col-sm-9">
+                            <span class="badge badge-info">{{ $supplyJob->fulfilled_quantity ?? 0 }}</span>
                         </dd>
 
                         <dt class="col-sm-3">Notes</dt>
@@ -252,7 +289,9 @@
                                         <th>Brand</th>
                                         <th>Category</th>
                                         <th>Sub-Category</th>
-                                        <th>Offered Quantity</th>
+                                        <th>Required</th>
+                                        <th>Offered</th>
+                                        <th>Accepted</th>
                                         <th>Price Per Unit</th>
                                         <th>Total Price</th>
                                     </tr>
@@ -292,7 +331,22 @@
                                                 @endif
                                             </td>
                                             <td>
-                                                <span class="badge badge-warning">{{ $supplyProduct->offered_quantity ?? 'N/A' }}</span>
+                                                @php
+                                                    $requiredQty = $supplyJob->rentalJob->products
+                                                        ->where('product_id', $supplyProduct->product_id)
+                                                        ->first()->requested_quantity ?? 0;
+                                                @endphp
+                                                <span class="badge badge-primary">{{ $requiredQty }}</span>
+                                            </td>
+                                            <td>
+                                                <span class="badge badge-warning">{{ $supplyProduct->offered_quantity ?? 0 }}</span>
+                                            </td>
+                                            <td>
+                                                @if($supplyProduct->accepted_quantity !== null)
+                                                    <span class="badge badge-success">{{ $supplyProduct->accepted_quantity }}</span>
+                                                @else
+                                                    <span class="text-muted">-</span>
+                                                @endif
                                             </td>
                                             <td>
                                                 @if($supplyProduct->price_per_unit)
@@ -314,7 +368,7 @@
                                 @if($supplyJob->products->count() > 0)
                                     <tfoot>
                                         <tr class="bg-light">
-                                            <td colspan="6" class="text-right"><strong>Total:</strong></td>
+                                            <td colspan="8" class="text-right"><strong>Total:</strong></td>
                                             <td>
                                                 <strong class="text-success">
                                                     ${{ number_format($supplyJob->products->sum(function($p) {
@@ -367,6 +421,81 @@
                                 <span class="badge badge-primary">{{ $supplyJob->rentalJob->products->count() }}</span>
                             </dd>
                         </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    <!-- Job Offers -->
+    @if($supplyJob->supplyJobOffers && $supplyJob->supplyJobOffers->count() > 0)
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title"><i class="fas fa-handshake"></i> Job Offers</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Version</th>
+                                        <th>Sender</th>
+                                        <th>Receiver</th>
+                                        <th>Total Price</th>
+                                        <th>Currency</th>
+                                        <th>Status</th>
+                                        <th>Created At</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($supplyJob->supplyJobOffers->sortByDesc('version') as $offer)
+                                        <tr>
+                                            <td><span class="badge badge-info">{{ $offer->version }}</span></td>
+                                            <td>
+                                                @if($offer->senderCompany)
+                                                    <span class="badge badge-primary">{{ $offer->senderCompany->name }}</span>
+                                                @else
+                                                    <span class="text-muted">N/A</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                @if($offer->receiverCompany)
+                                                    <span class="badge badge-secondary">{{ $offer->receiverCompany->name }}</span>
+                                                @else
+                                                    <span class="text-muted">N/A</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <strong>${{ number_format($offer->total_price, 2) }}</strong>
+                                            </td>
+                                            <td>
+                                                @if($offer->currency)
+                                                    <span class="badge badge-info">{{ $offer->currency->code }}</span>
+                                                @else
+                                                    <span class="text-muted">N/A</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                @php
+                                                    $offerStatusColors = [
+                                                        'pending' => 'warning',
+                                                        'accepted' => 'success',
+                                                        'rejected' => 'danger',
+                                                        'cancelled' => 'danger',
+                                                    ];
+                                                    $offerStatusColor = $offerStatusColors[$offer->status] ?? 'secondary';
+                                                    $offerStatusDisplay = ucfirst($offer->status ?? 'N/A');
+                                                @endphp
+                                                <span class="badge badge-{{ $offerStatusColor }}">{{ $offerStatusDisplay }}</span>
+                                            </td>
+                                            <td>{{ $offer->created_at?->format('M d, Y H:i') }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>

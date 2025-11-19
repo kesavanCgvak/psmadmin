@@ -35,6 +35,9 @@ class EquipmentController extends Controller
         if (!$user)
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
 
+        // -------------------------------
+        // 🔹 Validation
+        // -------------------------------
         $validator = Validator::make($request->all(), [
             'product_id' => 'required|exists:products,id',
             'quantity' => 'required|integer|min:1',
@@ -43,10 +46,36 @@ class EquipmentController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['success' => false, 'message' => 'Validation error', 'errors' => $validator->errors()], 422);
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
         }
 
         try {
+
+            // -------------------------------
+            // 🔹 Check Duplicate Equipment
+            // -------------------------------
+            $existing = Equipment::where('company_id', $user->company_id)
+                ->where('product_id', $request->product_id)
+                ->first();
+
+            if ($existing) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This equipment already exists for your company. Duplicate entries are not allowed.',
+                    'data' => [
+                        'existing_equipment_id' => $existing->id,
+                        'product_id' => $existing->product_id
+                    ]
+                ], 409);
+            }
+
+            // -------------------------------
+            // 🔹 Create Equipment
+            // -------------------------------
             $equipment = Equipment::create([
                 'user_id' => $user->id,
                 'company_id' => $user->company_id,
@@ -56,10 +85,22 @@ class EquipmentController extends Controller
                 'software_code' => $request->software_code,
             ]);
 
-            return response()->json(['success' => true, 'message' => 'Equipment added successfully', 'data' => $equipment], 201);
+            return response()->json([
+                'success' => true,
+                'message' => 'Equipment added successfully',
+                'data' => $equipment
+            ], 201);
+
         } catch (\Exception $e) {
-            Log::error('Equipment store failed', ['error' => $e->getMessage()]);
-            return response()->json(['success' => false, 'message' => 'Error saving equipment'], 500);
+
+            Log::error('Equipment store failed', [
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error saving equipment'
+            ], 500);
         }
     }
 
@@ -113,6 +154,7 @@ class EquipmentController extends Controller
 
                 return [
                     'id' => $equipment->id,
+                    'product_id' => $equipment->product->id,
                     'product_label' => $brandName
                         ? "{$brandName} - {$modelName}"
                         : $modelName, // show only model if brand is missing

@@ -646,27 +646,27 @@ class JobNegotiationController extends Controller
 
             // If rental job is fully cancelled, notify all involved suppliers
             $rentalJob = $offer->rentalJob;
-            if ($rentalJob && $rentalJob->status === 'cancelled') {
-                $allSuppliers = SupplyJob::with('provider.defaultContact.profile')
-                    ->where('rental_job_id', $rentalJob->id)
-                    ->get();
+            // if ($rentalJob && $rentalJob->status === 'cancelled') {
+            //     $allSuppliers = SupplyJob::with('provider.defaultContact.profile')
+            //         ->where('rental_job_id', $rentalJob->id)
+            //         ->get();
 
-                foreach ($allSuppliers as $supplier) {
-                    $email = data_get($supplier, 'provider.defaultContact.profile.email');
-                    if ($email) {
-                        $cancelMail = [
-                            'rental_job_name' => $rentalJob->name,
-                            'date' => now()->format('d M Y, h:i A'),
-                        ];
+            //     foreach ($allSuppliers as $supplier) {
+            //         $email = data_get($supplier, 'provider.defaultContact.profile.email');
+            //         if ($email) {
+            //             $cancelMail = [
+            //                 'rental_job_name' => $rentalJob->name,
+            //                 'date' => now()->format('d M Y, h:i A'),
+            //             ];
 
-                        Mail::send('emails.jobRequestCancelled', $cancelMail, function ($message) use ($email) {
-                            $message->to($email)
-                                ->subject('Rental Request Cancelled - Pro Subrental Marketplace')
-                                ->from(config('mail.from.address'), config('mail.from.name'));
-                        });
-                    }
-                }
-            }
+            //             Mail::send('emails.jobRequestCancelled', $cancelMail, function ($message) use ($email) {
+            //                 $message->to($email)
+            //                     ->subject('Rental Request Cancelled - Pro Subrental Marketplace')
+            //                     ->from(config('mail.from.address'), config('mail.from.name'));
+            //             });
+            //         }
+            //     }
+            // }
 
             return response()->json([
                 'success' => true,

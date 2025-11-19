@@ -226,21 +226,25 @@ class RentalJobController extends Controller
             // Default
             $canSendOffer = false;
             $canCancel = false;
+            $canHandshake = false;
 
             if ($latestOffer) {
 
                 if (in_array($latestOffer->status, ['accepted', 'cancelled'])) {
                     $canSendOffer = false;
                     $canCancel = false;
+                    $canHandshake = false;
                 } else {
                     if ($latestOffer->sender_company_id == $loggedInCompany) {
                         // User sent the last offer → cannot send new one
                         $canSendOffer = false;
                         $canCancel = false;
+                        $canHandshake = false;
                     } else {
                         // Other company sent last offer → user can reply
                         $canSendOffer = true;
                         $canCancel = true;
+                        $canHandshake = true;
                     }
                 }
             }
@@ -272,6 +276,7 @@ class RentalJobController extends Controller
                     'receiver_company_id' => $latestOffer->receiver_company_id,
                 ] : null,
                 'negotiation_controls' => [
+                    'can_handshake' => $canHandshake,
                     'can_send_offer' => $canSendOffer,
                     'can_cancel_negotiation' => $canCancel,
                 ],

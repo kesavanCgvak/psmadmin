@@ -203,6 +203,7 @@ class SupplyJobController extends Controller
             // Default values
             $canSendOffer = false;
             $canCancelNegotiation = false;
+            $canHandshake = false;
 
             // If we have an offer, adjust permission
             if ($latestOffer) {
@@ -211,6 +212,7 @@ class SupplyJobController extends Controller
                 if (in_array($latestOffer->status, ['accepted', 'cancelled'])) {
                     $canSendOffer = false;
                     $canCancelNegotiation = false;
+                    $canHandshake = false;
 
                 } else {
                     // Latest offer is pending
@@ -218,10 +220,12 @@ class SupplyJobController extends Controller
                         // User sent last offer -> cannot send again
                         $canSendOffer = false;
                         $canCancelNegotiation = false;
+                        $canHandshake = false;
                     } else {
                         // Other company sent the last offer -> can reply
                         $canSendOffer = true;
                         $canCancelNegotiation = true;
+                        $canHandshake = true;
                     }
                 }
             }
@@ -261,6 +265,7 @@ class SupplyJobController extends Controller
                     'currency_id' => $latestOffer->currency_id,
                 ] : null,
                 'negotiation_controls' => [
+                    'can_handshake' => $canHandshake,
                     'can_send_offer' => $canSendOffer,
                     'can_cancel_negotiation' => $canCancelNegotiation,
                 ],

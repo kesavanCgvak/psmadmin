@@ -43,5 +43,10 @@ class JobOffer extends Model
     {
         return $this->belongsTo(Company::class, 'receiver_company_id');
     }
+
+    public function currency()
+    {
+        return $this->belongsTo(Currency::class, 'currency_id');
+    }
 }
 
