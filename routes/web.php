@@ -71,12 +71,18 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     Route::post('/brands/bulk-delete', [\App\Http\Controllers\Admin\BrandController::class, 'bulkDelete'])
         ->name('brands.bulk-delete');
 
-    // Products - DataTables AJAX endpoint MUST be before resource route
+    // Products - Specific routes MUST be before resource route
     Route::get('/products/data', [\App\Http\Controllers\Admin\ProductController::class, 'getProductsData'])
         ->name('products.data');
+    Route::get('/products/search', [\App\Http\Controllers\Admin\ProductController::class, 'searchProducts'])
+        ->name('products.search');
     Route::resource('products', \App\Http\Controllers\Admin\ProductController::class);
     Route::post('/products/bulk-delete', [\App\Http\Controllers\Admin\ProductController::class, 'bulkDelete'])
         ->name('products.bulk-delete');
+    Route::post('/products/{product}/merge', [\App\Http\Controllers\Admin\ProductController::class, 'merge'])
+        ->name('products.merge');
+    Route::post('/products/bulk-verify', [\App\Http\Controllers\Admin\ProductController::class, 'bulkVerify'])
+        ->name('products.bulk-verify');
 
     // AJAX endpoint for getting subcategories by category
     Route::get('/ajax/categories/{category}/subcategories', [\App\Http\Controllers\Admin\ProductController::class, 'getSubCategoriesByCategory'])

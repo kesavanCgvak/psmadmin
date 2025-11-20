@@ -151,6 +151,7 @@ class ProductController extends Controller
 
         $validated = $validator->validated();
 
+
         DB::beginTransaction();
 
         try {
@@ -160,6 +161,33 @@ class ProductController extends Controller
             $categoryId = $validated['category_id'] ?? null;
             $subCategoryId = $validated['sub_category_id'] ?? null;
             $brandId = $validated['brand_id'] ?? null;
+
+
+            /**Handle Product — advanced duplicate detection */
+            $productName = trim($validated['name']);
+            $normalizedName = $this->normalizeProductName($productName);
+
+            // Check for existing products with similar names
+            $existingProduct = $this->findSimilarProduct($normalizedName, $brandId);
+
+            if ($existingProduct) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product already exists',
+                    'error' => 'A product with a similar name already exists in the system.',
+                    'data' => [
+                        'existing_product' => [
+                            'id' => $existingProduct->id,
+                            'model' => $existingProduct->model,
+                            'psm_code' => $existingProduct->psm_code,
+                            'brand' => $existingProduct->brand->name ?? 'N/A',
+                            'category' => $existingProduct->category->name ?? 'N/A',
+                        ],
+                        'suggested_action' => 'Please use the existing product or modify the name to make it unique.'
+                    ]
+                ], 409); // HTTP 409 Conflict
+            }
+
 
             /** ---------------------------------------------------------
              * 2️⃣ Always Create a New Product

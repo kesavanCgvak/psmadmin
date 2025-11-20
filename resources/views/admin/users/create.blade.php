@@ -84,14 +84,13 @@
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label for="account_type">Account Type <span class="text-danger">*</span></label>
-                                    <select class="form-control @error('account_type') is-invalid @enderror"
-                                            id="account_type" name="account_type" required readonly>
-                                        <option value="">Auto-assigned based on company</option>
-                                        <option value="Provider" {{ old('account_type') === 'Provider' ? 'selected' : '' }}>Provider</option>
-                                        <option value="User" {{ old('account_type') === 'User' ? 'selected' : '' }}>User</option>
-                                    </select>
+                                    <input type="text" class="form-control @error('account_type') is-invalid @enderror"
+                                           id="account_type_display" readonly
+                                           value="{{ old('account_type') ?: 'Auto-assigned based on company' }}"
+                                           style="background-color: #e9ecef; cursor: not-allowed;">
+                                    <input type="hidden" id="account_type" name="account_type" value="{{ old('account_type') }}" required>
                                     @error('account_type')
-                                        <div class="invalid-feedback">{{ $message }}</div>
+                                        <div class="invalid-feedback d-block">{{ $message }}</div>
                                     @enderror
                                     <small class="form-text text-muted">
                                         Account type is automatically assigned based on the selected company
@@ -233,6 +232,13 @@
                                                {{ old('email_verified') ? 'checked' : '' }}>
                                         <label class="form-check-label" for="email_verified">
                                             Email Verified
+                                        </label>
+                                    </div>
+                                    <div class="form-check" style="margin-top: 15px;">
+                                        <input type="checkbox" class="form-check-input" id="set_as_default_contact" name="set_as_default_contact" value="1"
+                                               {{ old('set_as_default_contact') ? 'checked' : '' }}>
+                                        <label class="form-check-label" for="set_as_default_contact">
+                                            Set as Default Contact for this Company
                                         </label>
                                     </div>
                                 </div>
@@ -502,7 +508,8 @@ $(document).ready(function() {
             email: $('#email').val(),
             mobile: $('#mobile').val(),
             birthday: $('#birthday').val(),
-            email_verified: $('#email_verified').is(':checked')
+            email_verified: $('#email_verified').is(':checked'),
+            set_as_default_contact: $('#set_as_default_contact').is(':checked')
         };
         localStorage.setItem('userFormData', JSON.stringify(formData));
     }
@@ -519,6 +526,7 @@ $(document).ready(function() {
             $('#mobile').val(formData.mobile || '');
             $('#birthday').val(formData.birthday || '');
             $('#email_verified').prop('checked', formData.email_verified || false);
+            $('#set_as_default_contact').prop('checked', formData.set_as_default_contact || false);
         }
     }
 
@@ -664,20 +672,30 @@ $(document).ready(function() {
         if (!companyId) {
             $hint.text('');
             $mobileHint.text('Select a company first to see the format');
-            $accountType.val('');
+            $('#account_type').val('');
+            $('#account_type_display').val('Auto-assigned based on company');
+            $('#account_type').removeClass('is-valid is-invalid');
             return;
         }
 
         // Auto-assign account type immediately from data attribute
-        const accountType = selectedOption.data('account-type');
+        let accountType = selectedOption.data('account-type');
         console.log('Company selected, account type from data attribute:', accountType);
 
         if (accountType) {
-            // Set the value and mark as selected
-            $accountType.val(accountType);
-            $accountType.find('option[value="' + accountType + '"]').prop('selected', true);
-            $accountType.removeClass('is-invalid').addClass('is-valid');
+            // Normalize account type to match validation requirements (Provider/User)
+            accountType = accountType.charAt(0).toUpperCase() + accountType.slice(1).toLowerCase();
+            
+            // Set the hidden input value and display value
+            $('#account_type').val(accountType);
+            $('#account_type_display').val(accountType);
+            $('#account_type').removeClass('is-invalid').addClass('is-valid');
+            $('#account_type_display').removeClass('is-invalid').addClass('is-valid');
             console.log('Account type set to:', accountType);
+        } else {
+            $('#account_type').val('');
+            $('#account_type_display').val('Auto-assigned based on company');
+            $('#account_type').removeClass('is-valid');
         }
 
         // Fetch company details and phone format
@@ -696,10 +714,13 @@ $(document).ready(function() {
 
                 // Auto-assign account type based on company (fallback from AJAX)
                 if (response.account_type && !accountType) {
-                    console.log('Setting account type from AJAX response:', response.account_type);
-                    $accountType.val(response.account_type);
-                    $accountType.find('option[value="' + response.account_type + '"]').prop('selected', true);
-                    $accountType.removeClass('is-invalid').addClass('is-valid');
+                    // Normalize account type to match validation requirements (Provider/User)
+                    let normalizedAccountType = response.account_type.charAt(0).toUpperCase() + response.account_type.slice(1).toLowerCase();
+                    console.log('Setting account type from AJAX response:', normalizedAccountType);
+                    $('#account_type').val(normalizedAccountType);
+                    $('#account_type_display').val(normalizedAccountType);
+                    $('#account_type').removeClass('is-invalid').addClass('is-valid');
+                    $('#account_type_display').removeClass('is-invalid').addClass('is-valid');
                 }
             },
             error: function(xhr) {
@@ -724,8 +745,12 @@ $(document).ready(function() {
     });
 
     // Trigger company change event on page load if a company is already selected
+    // This ensures account_type is set when company is pre-selected
     if ($('#company_id').val()) {
         $('#company_id').trigger('change');
+    } else if ($('#account_type').val()) {
+        // If account_type is set (e.g., from old() values), update display
+        $('#account_type_display').val($('#account_type').val());
     }
 
     // Trigger phone format load if company is pre-selected

@@ -13,7 +13,8 @@ class Product extends Model
         'sub_category_id',
         'brand_id',
         'model',
-        'psm_code'
+        'psm_code',
+        'is_verified'
     ];
 
     /**

@@ -732,6 +732,7 @@ class CompanyController extends Controller
                 ->select(
                     'companies.id as company_id',
                     'companies.name as company_name',
+                    'companies.logo as company_logo',
                     'companies.latitude as company_lat',
                     'companies.longitude as company_lng',
                     'companies.rating as company_rating',
@@ -797,6 +798,7 @@ class CompanyController extends Controller
                 return [
                     'id' => $first->company_id,
                     'name' => $first->company_name,
+                    'company_logo' => $first->company_logo,
                     'rating' => $first->company_rating,
                      'rental_software_code' => $first->rental_software_code,
                     'distance' => round($first->distance, 2),

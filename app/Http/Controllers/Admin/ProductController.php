@@ -11,6 +11,8 @@ use App\Services\BulkDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class ProductController extends Controller
 {
@@ -19,7 +21,7 @@ class ProductController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Product::select(['id', 'category_id', 'brand_id', 'sub_category_id', 'model', 'psm_code', 'created_at'])
+        $query = Product::select(['id', 'category_id', 'brand_id', 'sub_category_id', 'model', 'psm_code', 'is_verified', 'created_at'])
             ->with([
                 'category:id,name',
                 'subCategory:id,name',
@@ -52,7 +54,7 @@ class ProductController extends Controller
     public function getProductsData(Request $request)
     {
         try {
-            $query = Product::select(['id', 'category_id', 'brand_id', 'sub_category_id', 'model', 'psm_code', 'created_at'])
+            $query = Product::select(['id', 'category_id', 'brand_id', 'sub_category_id', 'model', 'psm_code', 'is_verified', 'created_at'])
                 ->with([
                     'category:id,name',
                     'subCategory:id,name',
@@ -68,8 +70,13 @@ class ProductController extends Controller
             $orderDir = $request->get('order')[0]['dir'] ?? 'desc';
 
             // Column mapping for ordering
-            $columns = ['id', 'brand_id', 'model', 'category_id', 'sub_category_id', 'psm_code', 'created_at'];
+            $columns = ['id', 'brand_id', 'model', 'category_id', 'sub_category_id', 'psm_code', 'is_verified', 'created_at'];
             $orderColumnName = $columns[$orderColumn] ?? 'created_at';
+
+            // Apply unverified filter if requested
+            if ($request->has('unverified_only') && $request->get('unverified_only') == '1') {
+                $query->where('is_verified', 0);
+            }
 
             // Apply search filter
             if (!empty($searchValue)) {
@@ -111,6 +118,7 @@ class ProductController extends Controller
                     'category' => $product->category ? $product->category->name : '—',
                     'sub_category' => $product->subCategory ? $product->subCategory->name : '—',
                     'psm_code' => $product->psm_code ?? '—',
+                    'is_verified' => $product->is_verified ?? 0,
                     'created_at' => $product->created_at ? $product->created_at->format('M d, Y') : '—',
                     'actions' => $this->getActionButtons($product)
                 ];
@@ -151,6 +159,9 @@ class ProductController extends Controller
                 <a href="' . $editUrl . '" class="btn btn-warning btn-sm" title="Edit">
                     <i class="fas fa-edit"></i>
                 </a>
+                <button type="button" class="btn btn-secondary btn-sm merge-product-btn" title="Merge/Replace" data-product-id="' . $product->id . '" data-product-name="' . htmlspecialchars($product->model) . '" data-psm-code="' . htmlspecialchars($product->psm_code ?? '') . '">
+                    <i class="fas fa-code-branch"></i>
+                </button>
                 <form action="' . $deleteUrl . '" method="POST" class="d-inline" onsubmit="return confirm(\'Are you sure you want to delete this product?\');">
                     ' . csrf_field() . '
                     <input type="hidden" name="_method" value="DELETE">
@@ -513,6 +524,168 @@ class ProductController extends Controller
             ->get(['id', 'name']);
 
         return response()->json($subCategories);
+    }
+
+    /**
+     * Search products for merge modal (AJAX endpoint)
+     */
+    public function searchProducts(Request $request)
+    {
+        $search = $request->get('search', '');
+        $excludeId = $request->get('exclude_id');
+
+        $query = Product::select(['id', 'model', 'psm_code', 'brand_id', 'category_id'])
+            ->with(['brand:id,name', 'category:id,name']);
+
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+
+        if (!empty($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('model', 'like', "%{$search}%")
+                    ->orWhere('psm_code', 'like', "%{$search}%");
+            });
+        }
+
+        $products = $query->orderBy('model')->limit(20)->get();
+
+        $results = [];
+        foreach ($products as $product) {
+            $results[] = [
+                'id' => $product->id,
+                'model' => $product->model,
+                'psm_code' => $product->psm_code ?? '—',
+                'brand' => $product->brand ? $product->brand->name : '—',
+                'category' => $product->category ? $product->category->name : '—',
+            ];
+        }
+
+        return response()->json($results);
+    }
+
+    /**
+     * Merge/Replace product - merge wrong product into correct product
+     */
+    public function merge(Request $request, Product $product)
+    {
+        $validator = Validator::make($request->all(), [
+            'correct_product_id' => 'required|exists:products,id|different:id'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid product selected.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $wrongProductId = $product->id;
+        $correctProductId = $request->input('correct_product_id');
+
+        if ($wrongProductId == $correctProductId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot merge a product with itself.'
+            ], 422);
+        }
+
+        $correctProduct = Product::findOrFail($correctProductId);
+
+        try {
+            DB::beginTransaction();
+
+            // Update equipments table
+            DB::table('equipments')
+                ->where('product_id', $wrongProductId)
+                ->update(['product_id' => $correctProductId]);
+
+            // Update supply_job_products table
+            DB::table('supply_job_products')
+                ->where('product_id', $wrongProductId)
+                ->update(['product_id' => $correctProductId]);
+
+            // Update rental_job_products table
+            DB::table('rental_job_products')
+                ->where('product_id', $wrongProductId)
+                ->update(['product_id' => $correctProductId]);
+
+            // Check if there are any other tables with product_id references
+            // Update job_items table if it exists
+            if (Schema::hasTable('job_items')) {
+                DB::table('job_items')
+                    ->where('product_id', $wrongProductId)
+                    ->update(['product_id' => $correctProductId]);
+            }
+
+            // Mark the wrong product as merged (we'll add a deleted_at or is_merged flag)
+            // For now, we'll delete it after moving all references
+            $product->delete();
+
+            DB::commit();
+
+            // Clear related caches
+            Cache::forget('categories_list');
+            Cache::forget('subcategories_list');
+            Cache::forget('brands_list');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Product merged successfully. All references have been updated.'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Product merge error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error merging products: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Bulk verify products
+     */
+    public function bulkVerify(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'product_ids' => 'required|array',
+            'product_ids.*' => 'exists:products,id'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid product IDs provided.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $productIds = $request->input('product_ids');
+            $updated = Product::whereIn('id', $productIds)
+                ->update(['is_verified' => 1]);
+
+            // Clear related caches
+            Cache::forget('categories_list');
+            Cache::forget('subcategories_list');
+            Cache::forget('brands_list');
+
+            return response()->json([
+                'success' => true,
+                'message' => "Successfully verified {$updated} product/products.",
+                'updated_count' => $updated
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Bulk verify error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error verifying products: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }
 

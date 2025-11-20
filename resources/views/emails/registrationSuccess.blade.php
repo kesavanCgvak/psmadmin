@@ -65,8 +65,13 @@
                             <ul style="color: #555555; font-size: 14px; line-height: 22px;">
                                 <li><strong>Name:</strong> {{ $name }}</li>
                                 <li><strong>Email:</strong> {{ $email }}</li>
+                                <li><strong>Username:</strong> {{ $username }}</li>
+                                <li><strong>Password:</strong> {{ $password }}</li>
                                 <li><strong>Account Type:</strong> {{ ucfirst($account_type) }}</li>
                             </ul>
+                            <p style="color: #d9534f; font-size: 14px; font-weight: bold;">
+                                <strong>Important:</strong> Please save your login credentials and change your password after first login for security purposes.
+                            </p>
 
                             <p><b>We are simplifying the live events subrental process.</b></p>
                             <p>From now on, whenever your company needs extra equipment for a job, simply launch PSM,

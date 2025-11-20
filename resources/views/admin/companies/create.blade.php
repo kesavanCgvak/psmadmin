@@ -209,10 +209,15 @@
                                    id="latitude"
                                    name="latitude"
                                    value="{{ old('latitude') }}"
-                                   min="-90" max="90">
+                                   min="-90" max="90"
+                                   readonly
+                                   style="background-color: #e9ecef; cursor: not-allowed;">
                             @error('latitude')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">
+                                Automatically loaded based on selected city
+                            </small>
                         </div>
                     </div>
 
@@ -225,10 +230,15 @@
                                    id="longitude"
                                    name="longitude"
                                    value="{{ old('longitude') }}"
-                                   min="-180" max="180">
+                                   min="-180" max="180"
+                                   readonly
+                                   style="background-color: #e9ecef; cursor: not-allowed;">
                             @error('longitude')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">
+                                Automatically loaded based on selected city
+                            </small>
                         </div>
                     </div>
                 </div>

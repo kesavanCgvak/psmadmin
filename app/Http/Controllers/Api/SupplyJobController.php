@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\SupplyJob;
+use App\Models\RentalJob;
 use App\Models\RentalJobProduct;
 use App\Models\JobOffer;
 use App\Models\Currency;
@@ -178,6 +179,11 @@ class SupplyJobController extends Controller
                 ];
             });
 
+            $rentalJob = RentalJob::with(['user.company'])
+                ->where('id', $supplyJob->rental_job_id)
+                ->first();
+
+
             $company = $supplyJob->providerCompany;
             $currency = $company?->currency;
             $latestOffer = JobOffer::where('rental_job_id', $supplyJob->rental_job_id)
@@ -235,6 +241,7 @@ class SupplyJobController extends Controller
                 'id' => $supplyJob->id,
                 'name' => $supplyJob->rentalJob->name,
                 'rental_job_id' => $supplyJob->rentalJob->id,
+                'renter_company_name' => optional($rentalJob->user->company)->name,
                 'start_date' => $supplyJob->rentalJob->from_date,
                 'end_date' => $supplyJob->rentalJob->to_date,
                 'packing_date' => $supplyJob->packing_date,

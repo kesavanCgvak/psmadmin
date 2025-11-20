@@ -52,6 +52,7 @@ class CompanyUserController extends Controller
                 'password' => Hash::make($request->password),
                 'company_id' => $request->company_id,
                 'role' => $request->role,
+                'email' => $request->email,
                 'is_admin' => $request->input('is_admin', false),
             ]);
 
@@ -74,6 +75,21 @@ class CompanyUserController extends Controller
                     $message->to($data['email']);
                     $message->subject('Email Verification Mail');
                     $message->from(config('mail.from.address'), config('mail.from.name')); // <-- set from here
+                });
+
+                // Send user credentials email to USER - ALL THE TIME (regardless of verification status)
+                // Email is sent TO the user's email address ($request->email)
+                Mail::send('emails.registrationSuccess', [
+                    'name' => $request->name,
+                    'email' => $request->email,
+                    'username' => $request->username,
+                    'password' => $request->password,
+                    'account_type' => $authUser->accountType,
+                    'login_url' => env('APP_URL'),
+                ], function ($message) use ($request) {
+                    $message->to($request->email); // TO: User's email address
+                    $message->subject('Welcome to ProSub Marketplace - Account Created Successfully');
+                    $message->from(config('mail.from.address'), config('mail.from.name')); // FROM: System email
                 });
 
                 Log::info('Email verification notification sent successfully', [

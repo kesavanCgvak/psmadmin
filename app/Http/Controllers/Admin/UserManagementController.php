@@ -9,7 +9,6 @@ use App\Models\Company;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
@@ -51,10 +50,11 @@ class UserManagementController extends Controller
             'username' => 'required|string|max:255|unique:users',
             'email' => 'required|email|max:255|unique:user_profiles,email',
             'password' => 'required|string|min:8|confirmed',
-            'account_type' => 'required|in:Provider,User',
+            'account_type' => 'nullable|in:Provider,User',
             'role' => 'required|in:admin,user',
             'email_verified' => 'boolean',
             'company_id' => 'required|exists:companies,id',
+            'set_as_default_contact' => 'boolean',
 
             // Profile fields
             'full_name' => 'required|string|max:255',
@@ -70,6 +70,22 @@ class UserManagementController extends Controller
         // Auto-assign account_type based on company if not provided
         $company = Company::find($request->company_id);
         $accountType = $request->account_type ?: $company->account_type;
+
+        // Normalize account type to match validation requirements (Provider/User)
+        if ($accountType) {
+            $accountType = ucfirst(strtolower($accountType)); // Ensure first letter is capitalized
+            // Validate the normalized value matches expected values
+            if (!in_array($accountType, ['Provider', 'User'])) {
+                $accountType = null; // Reset if invalid
+            }
+        }
+
+        // Validate that account type is set
+        if (!$accountType) {
+            return redirect()->back()
+                ->withErrors(['account_type' => 'Account type could not be determined. Please ensure the selected company has an account type.'])
+                ->withInput();
+        }
 
         // Create user
         $userData = [
@@ -103,28 +119,62 @@ class UserManagementController extends Controller
         if ($request->hasFile('profile_picture')) {
             $file = $request->file('profile_picture');
             $filename = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('profile_pictures', $filename, 'public');
-            $profileData['profile_picture'] = $path;
+
+            // Store in public/images/profile_pictures directory
+            $uploadPath = public_path('images/profile_pictures');
+            if (!file_exists($uploadPath)) {
+                mkdir($uploadPath, 0755, true);
+            }
+
+            // Move file to public/images/profile_pictures
+            $file->move($uploadPath, $filename);
+
+            // Store path relative to public directory
+            $profileData['profile_picture'] = 'images/profile_pictures/' . $filename;
         }
 
         UserProfile::create($profileData);
 
-        // Send email based on verification status
+        // Handle default contact assignment
+        $setAsDefaultContact = $request->boolean('set_as_default_contact');
+        $shouldSetAsDefault = false;
+
+        // Case A: Company has NO default_contact_id
+        // Automatically set the newly created user as default_contact_id (even if checkbox is not checked)
+        if (empty($company->default_contact_id)) {
+            $shouldSetAsDefault = true;
+        }
+        // Case B: Company already HAS a default_contact_id
+        // Only update if checkbox IS checked
+        elseif ($setAsDefaultContact) {
+            $shouldSetAsDefault = true;
+        }
+
+        // Update company's default_contact_id if needed
+        if ($shouldSetAsDefault) {
+            $company->default_contact_id = $user->id;
+            $company->save();
+        }
+
+        // Send emails to the newly created USER (not admin)
         try {
-            if ($user->email_verified) {
-                // Send registration success email
-                Mail::send('emails.registrationSuccess', [
-                    'name' => $request->full_name,
-                    'email' => $request->email,
-                    'account_type' => $accountType,
-                    'login_url' => route('login')
-                ], function ($message) use ($request) {
-                    $message->to($request->email);
-                    $message->subject('Welcome to ProSub Marketplace - Account Created Successfully');
-                    $message->from(config('mail.from.address'), config('mail.from.name'));
-                });
-            } else {
-                // Send verification email
+            // Send user credentials email to USER - ALL THE TIME (regardless of verification status)
+            // Email is sent TO the user's email address ($request->email)
+            Mail::send('emails.registrationSuccess', [
+                'name' => $request->full_name,
+                'email' => $request->email,
+                'username' => $request->username,
+                'password' => $request->password,
+                'account_type' => $accountType,
+                'login_url' => env('APP_URL'),
+            ], function ($message) use ($request) {
+                $message->to($request->email); // TO: User's email address
+                $message->subject('Welcome to ProSub Marketplace - Account Created Successfully');
+                $message->from(config('mail.from.address'), config('mail.from.name')); // FROM: System email
+            });
+
+            // Send verification email to USER - ONLY if Email Verified checkbox is NOT checked
+            if (!$user->email_verified) {
                 $token = Str::random(30);
                 $user->update(['token' => $token]);
 
@@ -132,16 +182,16 @@ class UserManagementController extends Controller
                     'token' => $token,
                     'username' => $request->username
                 ], function ($message) use ($request) {
-                    $message->to($request->email);
+                    $message->to($request->email); // TO: User's email address
                     $message->subject('Email Verification - ProSub Marketplace');
-                    $message->from(config('mail.from.address'), config('mail.from.name'));
+                    $message->from(config('mail.from.address'), config('mail.from.name')); // FROM: System email
                 });
             }
         } catch (\Exception $e) {
             // Log email sending error but don't fail the user creation
             \Log::error('Failed to send email to user', [
                 'user_id' => $user->id,
-                'email' => $request->email,
+                'user_email' => $request->email, // User's email where email was supposed to be sent
                 'error' => $e->getMessage()
             ]);
         }
@@ -248,13 +298,26 @@ class UserManagementController extends Controller
         if ($request->hasFile('profile_picture')) {
             // Delete old profile picture
             if ($user->profile && $user->profile->profile_picture) {
-                Storage::disk('public')->delete($user->profile->profile_picture);
+                $oldPicturePath = public_path($user->profile->profile_picture);
+                if (file_exists($oldPicturePath)) {
+                    unlink($oldPicturePath);
+                }
             }
 
             $file = $request->file('profile_picture');
             $filename = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('profile_pictures', $filename, 'public');
-            $profileData['profile_picture'] = $path;
+
+            // Store in public/images/profile_pictures directory
+            $uploadPath = public_path('images/profile_pictures');
+            if (!file_exists($uploadPath)) {
+                mkdir($uploadPath, 0755, true);
+            }
+
+            // Move file to public/images/profile_pictures
+            $file->move($uploadPath, $filename);
+
+            // Store path relative to public directory
+            $profileData['profile_picture'] = 'images/profile_pictures/' . $filename;
         }
 
         if ($user->profile) {
@@ -295,7 +358,10 @@ class UserManagementController extends Controller
 
         // Delete profile picture
         if ($user->profile && $user->profile->profile_picture) {
-            Storage::disk('public')->delete($user->profile->profile_picture);
+            $picturePath = public_path($user->profile->profile_picture);
+            if (file_exists($picturePath)) {
+                unlink($picturePath);
+            }
         }
 
         // Delete user profile
@@ -344,7 +410,10 @@ class UserManagementController extends Controller
             try {
                 // Delete profile picture
                 if ($user->profile && $user->profile->profile_picture) {
-                    Storage::disk('public')->delete($user->profile->profile_picture);
+                    $picturePath = public_path($user->profile->profile_picture);
+                    if (file_exists($picturePath)) {
+                        unlink($picturePath);
+                    }
                 }
 
                 // Delete user profile

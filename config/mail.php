@@ -127,7 +127,7 @@ return [
     */
     'to' => [
         'name' => env('MAIL_FROM_NAME', 'Pro Subrental Marketplace'),
-        'addresses' => explode(',', env('MAIL_TO_NOTIFY_NEW_REGISTRATION')),
+        'addresses' => explode(',', env('MAIL_TO_NOTIFY_NEW_REGISTRATION', '')),
     ],
 
     'admin' => [
