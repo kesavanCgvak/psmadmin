@@ -382,6 +382,11 @@
             var selectedCorrectProductId = null;
             var searchTimeout = null;
 
+            // Reset merge button when modal is shown (safety check)
+            $('#mergeProductModal').on('show.bs.modal', function() {
+                $('#confirmMergeBtn').prop('disabled', true).html('Confirm Merge');
+            });
+
             $(document).on('click', '.merge-product-btn', function() {
                 var productId = $(this).data('product-id');
                 var productName = $(this).data('product-name');
@@ -392,8 +397,10 @@
                 $('#mergeProductPsmCode').text(psmCode || 'N/A');
                 $('#productSearch').val('');
                 $('#productSearchResults').html('');
-                $('#confirmMergeBtn').prop('disabled', true);
                 selectedCorrectProductId = null;
+                
+                // Reset button to initial state
+                $('#confirmMergeBtn').prop('disabled', true).html('Confirm Merge');
 
                 $('#mergeProductModal').modal('show');
             });

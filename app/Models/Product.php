@@ -14,7 +14,8 @@ class Product extends Model
         'brand_id',
         'model',
         'psm_code',
-        'is_verified'
+        'is_verified',
+        'webpage_url',
     ];
 
     /**

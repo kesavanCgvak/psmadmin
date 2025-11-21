@@ -22,6 +22,7 @@
         <tr>
             <td style="padding: 25px;">
                 <h2 style="color: #1a73e8; margin-top: 0;">New User Registered</h2>
+                <p>Hello there,<br>A new User has been registered to the Marketplace.</p>
                 <table width="100%" cellpadding="8" cellspacing="0"
                     style="background: #f1f5fb; border-radius: 8px; margin-top: 20px;">
 
@@ -41,22 +42,30 @@
                         <td><strong>User Email:</strong></td>
                         <td> {{ $email }}</td>
                     </tr>
-                    <tr>
-                        <td><strong>Region:</strong></td>
-                        <td> {{ $region_name }}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Country:</strong></td>
-                        <td> {{ $country_name }}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>State/Province:</strong></td>
-                        <td> {{ $state_name ?? 'N/A' }}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>City:</strong></td>
-                        <td> {{ $city_name }}</td>
-                    </tr>
+                    @if(isset($region_name) && $region_name)
+                        <tr>
+                            <td><strong>Region:</strong></td>
+                            <td> {{ $region_name }}</td>
+                        </tr>
+                    @endif
+                    @if(isset($country_name) && $country_name)
+                        <tr>
+                            <td><strong>Country:</strong></td>
+                            <td> {{ $country_name }}</td>
+                        </tr>
+                    @endif
+                    @if(isset($state_name) && $state_name)
+                        <tr>
+                            <td><strong>State/Province:</strong></td>
+                            <td> {{ $state_name ?? 'N/A' }}</td>
+                        </tr>
+                    @endif
+                    @if(isset($city_name) && $city_name)
+                        <tr>
+                            <td><strong>City:</strong></td>
+                            <td> {{ $city_name }}</td>
+                        </tr>
+                    @endif
                     <tr>
                         <td><strong>Contact Phone:</strong></td>
                         <td> {{ $mobile }}</td>

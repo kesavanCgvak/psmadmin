@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Http\Request;
 use App\Models\User;
+use App\Models\Company;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Mail;
@@ -92,10 +93,26 @@ class CompanyUserController extends Controller
                     $message->from(config('mail.from.address'), config('mail.from.name')); // FROM: System email
                 });
 
+                $company = Company::find($request->company_id);
+                $companyName = $company ? $company->name : null;
+                // Mail to app admin that a new user has been created
+                Mail::send('emails.newRegistration', [
+                    'company_name' => $companyName,
+                    'account_type' => $authUser->accountType,
+                    'username' => $request->username,
+                    'mobile' => $request->mobile,
+                    'email' => $request->email
+                ], function ($message) use ($data) {
+                    $message->to(config('mail.to.addresses'));
+                    $message->subject('New registration');
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
+                });
+
                 Log::info('Email verification notification sent successfully', [
                     'user_id' => $user->id,
                     'user_email' => $request->email,
                 ]);
+
             } catch (\Exception $e) {
                 Log::error('Failed to send email verification notification', [
                     'user_id' => $user->id,

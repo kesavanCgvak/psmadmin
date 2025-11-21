@@ -83,7 +83,7 @@
 
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="model">Model <span class="text-danger">*</span></label>
+                            <label for="model">Model / Product Name<span class="text-danger">*</span></label>
                             <input type="text"
                                    class="form-control @error('model') is-invalid @enderror"
                                    id="model"
@@ -108,6 +108,20 @@
                     @error('psm_code')
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
+                </div>
+
+                <div class="form-group">
+                    <label for="webpage_url">Product Webpage URL</label>
+                    <input type="url"
+                           class="form-control @error('webpage_url') is-invalid @enderror"
+                           id="webpage_url"
+                           name="webpage_url"
+                           value="{{ old('webpage_url', $product->webpage_url) }}"
+                           placeholder="https://example.com/product-page">
+                    @error('webpage_url')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <small class="form-text text-muted">Optional. Link to the manufacturer or product detail page.</small>
                 </div>
             </div>
 

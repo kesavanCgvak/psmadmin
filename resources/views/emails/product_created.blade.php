@@ -62,6 +62,10 @@
                         <td><strong>PSM Code:</strong></td>
                         <td>{{ $product->psm_code }}</td>
                     </tr>
+                    <tr>
+                        <td><strong>WebPage Url :</strong></td>
+                        <td>{{ $webpage_url ?? 'N/A' }}</td>
+                    </tr>
                 </table>
 
             </td>

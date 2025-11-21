@@ -724,7 +724,7 @@ class CompanyController extends Controller
                 })
                 ->join('products', 'products.id', '=', 'equipments.product_id')
                 ->join('currencies', 'currencies.id', '=', 'companies.currency_id')
-                 ->leftJoin('rental_softwares', 'rental_softwares.id', '=', 'companies.rental_software_id')
+                ->leftJoin('rental_softwares', 'rental_softwares.id', '=', 'companies.rental_software_id')
                 // 🆕 Join city, state, and country tables for geolocation details
                 ->leftJoin('cities', 'cities.id', '=', 'companies.city_id')
                 ->leftJoin('states_provinces', 'states_provinces.id', '=', 'companies.state_id')
@@ -800,7 +800,7 @@ class CompanyController extends Controller
                     'name' => $first->company_name,
                     'company_logo' => $first->company_logo,
                     'rating' => $first->company_rating,
-                     'rental_software_code' => $first->rental_software_code,
+                    'rental_software_code' => $first->rental_software_code,
                     'distance' => round($first->distance, 2),
                     'location' => [ // 🆕 Added location block
                         'country' => $first->country_name,
@@ -990,38 +990,79 @@ class CompanyController extends Controller
     public function listCompanies()
     {
         try {
-            $user = JWTAuth::parseToken()->authenticate();
+            // 1️⃣ Authenticate user
+            if (!$user = JWTAuth::parseToken()->authenticate()) {
+                Log::warning('Unauthorized access attempt in listCompanies()');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized user'
+                ], 401);
+            }
 
-            $companies = Company::with('country')
+            // 2️⃣ Get all companies except user's company
+            $companies = Company::with(['country', 'state', 'city'])
                 ->withAvg('ratings', 'rating')
                 ->where('id', '!=', $user->company_id)
-                ->get()
-                ->map(function ($company) use ($user) {
-                    return [
-                        'id' => $company->id,
-                        'name' => $company->name,
-                        'country' => $company->country?->name ?? null,
-                        'company_logo' => $company->logo ? $company->logo : null,
-                        'average_rating' => round($company->ratings_avg_rating, 1),
-                        'user_rating' => CompanyRating::where('company_id', $company->id)
-                            ->where('user_id', $user->id)
-                            ->value('rating'),
-                        'is_blocked' => CompanyBlock::where('company_id', $company->id)
-                            ->where('user_id', $user->id)
-                            ->exists(),
-                    ];
-                });
+                ->get();
+
+            // 3️⃣ Fetch all ratings for these companies (single query)
+            $companyIds = $companies->pluck('id');
+
+            $userRatings = CompanyRating::whereIn('company_id', $companyIds)
+                ->where('user_id', $user->id)
+                ->pluck('rating', 'company_id'); // key = company_id, value = rating
+
+            // 4️⃣ Fetch all blocked companies (single query)
+            $blockedCompanies = CompanyBlock::whereIn('company_id', $companyIds)
+                ->where('user_id', $user->id)
+                ->pluck('company_id')
+                ->toArray();
+
+            // 5️⃣ Final response map (no queries inside)
+            $formatted = $companies->map(function ($company) use ($userRatings, $blockedCompanies) {
+                return [
+                    'id' => $company->id,
+                    'name' => $company->name,
+                    'company_logo' => $company->logo ?? null,
+
+                    // Location fields
+                    'city' => $company->city?->name ?? null,
+                    'state' => $company->state?->name ?? null,
+                    'country' => $company->country?->name ?? null,
+
+                    // Ratings
+                    'average_rating' => round($company->ratings_avg_rating ?? 0, 1),
+                    'user_rating' => $userRatings[$company->id] ?? null,
+
+                    // Block status
+                    'is_blocked' => in_array($company->id, $blockedCompanies),
+                ];
+            });
 
             return response()->json([
                 'success' => true,
-                'companies' => $companies
-            ]);
+                'companies' => $formatted
+            ], 200);
+
+        } catch (\Tymon\JWTAuth\Exceptions\TokenInvalidException $e) {
+            Log::error('Invalid token in listCompanies()', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid authentication token'
+            ], 401);
+
+        } catch (\Tymon\JWTAuth\Exceptions\TokenExpiredException $e) {
+            Log::error('Expired token in listCompanies()', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Token has expired'
+            ], 401);
 
         } catch (\Exception $e) {
             Log::error('Error fetching companies list', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
-                'message' => 'Unable to fetch companies'
+                'message' => 'Unable to fetch companies. Please try again later.'
             ], 500);
         }
     }

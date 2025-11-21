@@ -52,7 +52,17 @@
                                 <span class="text-muted">N/A</span>
                             @endif
                         </dd>
-
+                        <dt class="col-sm-4">Webpage URL</dt>
+                        <dd class="col-sm-8">
+                            <!-- <span class="badge badge-primary">{{ $product->webpage_url ?? 'N/A' }}</span>? -->
+                            @if($product->webpage_url)
+                            <a href="{{ $product->webpage_url }}" target="_blank" class="btn btn-primary btn-sm">
+                                <i class="fas fa-external-link-alt"></i> View
+                            </a>
+                            @else
+                                <span class="text-muted">N/A</span>
+                            @endif
+                        </dd>
                         <dt class="col-sm-4">Equipment Count</dt>
                         <dd class="col-sm-8">
                             <span class="badge badge-danger">{{ $product->equipments->count() }}</span>

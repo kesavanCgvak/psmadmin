@@ -206,6 +206,7 @@ class ProductController extends Controller
             'sub_category_id' => 'nullable|exists:sub_categories,id',
             'brand_id' => 'nullable|exists:brands,id',
             'model' => 'required|string|max:255',
+            'webpage_url' => 'nullable|url|max:2048',
         ]);
 
         if ($validator->fails()) {
@@ -292,6 +293,7 @@ class ProductController extends Controller
             'brand_id' => 'nullable|exists:brands,id',
             'model' => 'required|string|max:255',
             'psm_code' => 'nullable|string|max:255|unique:products,psm_code,' . $product->id,
+            'webpage_url' => 'nullable|url|max:2048',
         ]);
 
         if ($validator->fails()) {
@@ -566,6 +568,14 @@ class ProductController extends Controller
 
     /**
      * Merge/Replace product - merge wrong product into correct product
+     *
+     * Enhanced logic:
+     * 1. Check all companies that have inventory records for both Product A and Product B
+     * 2. For each company:
+     *    - If company has both: Add quantity of Product A to Product B, then delete Product A record
+     *    - If company only has Product A: Update product_id to Product B
+     * 3. After updating quantities: Delete remaining Product A inventory records
+     * 4. Finally: Delete Product A from products table
      */
     public function merge(Request $request, Product $product)
     {
@@ -581,8 +591,8 @@ class ProductController extends Controller
             ], 422);
         }
 
-        $wrongProductId = $product->id;
-        $correctProductId = $request->input('correct_product_id');
+        $wrongProductId = $product->id; // Product A (duplicate)
+        $correctProductId = $request->input('correct_product_id'); // Product B (correct)
 
         if ($wrongProductId == $correctProductId) {
             return response()->json([
@@ -596,11 +606,10 @@ class ProductController extends Controller
         try {
             DB::beginTransaction();
 
-            // Update equipments table
-            DB::table('equipments')
-                ->where('product_id', $wrongProductId)
-                ->update(['product_id' => $correctProductId]);
+            // Step 1: Handle equipments (inventory) table with quantity merging logic
+            $this->mergeEquipmentInventory($wrongProductId, $correctProductId);
 
+            // Step 2: Update other tables that reference product_id (no quantity merging needed)
             // Update supply_job_products table
             DB::table('supply_job_products')
                 ->where('product_id', $wrongProductId)
@@ -619,8 +628,7 @@ class ProductController extends Controller
                     ->update(['product_id' => $correctProductId]);
             }
 
-            // Mark the wrong product as merged (we'll add a deleted_at or is_merged flag)
-            // For now, we'll delete it after moving all references
+            // Step 3: Delete the wrong product from products table
             $product->delete();
 
             DB::commit();
@@ -643,6 +651,81 @@ class ProductController extends Controller
                 'message' => 'Error merging products: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Merge equipment inventory records by company
+     *
+     * Logic:
+     * - For companies with both Product A and Product B:
+     *   * Sum all Product A quantities for that company
+     *   * Add to the first Product B record for that company
+     *   * Delete all Product A records
+     * - For companies with only Product A: Update product_id to Product B
+     * - Delete any remaining Product A records (safety check)
+     */
+    private function mergeEquipmentInventory(int $wrongProductId, int $correctProductId)
+    {
+        // Get all equipment records for the wrong product (Product A), grouped by company
+        $wrongProductEquipments = DB::table('equipments')
+            ->where('product_id', $wrongProductId)
+            ->get()
+            ->groupBy('company_id');
+
+        // Get all companies that have equipment for the correct product (Product B)
+        $companiesWithCorrectProduct = DB::table('equipments')
+            ->where('product_id', $correctProductId)
+            ->select('company_id')
+            ->distinct()
+            ->pluck('company_id')
+            ->toArray();
+
+        // Process each company's Product A equipment records
+        foreach ($wrongProductEquipments as $companyId => $equipmentRecords) {
+            // Check if this company already has equipment for the correct product
+            if (in_array($companyId, $companiesWithCorrectProduct)) {
+                // Company has both Product A and Product B
+                // Sum all Product A quantities for this company
+                $totalQuantityToMerge = $equipmentRecords->sum(function ($record) {
+                    return $record->quantity ?? 0;
+                });
+
+                if ($totalQuantityToMerge > 0) {
+                    // Get the first Product B equipment record for this company
+                    $firstCorrectEquipment = DB::table('equipments')
+                        ->where('product_id', $correctProductId)
+                        ->where('company_id', $companyId)
+                        ->orderBy('id')
+                        ->first();
+
+                    if ($firstCorrectEquipment) {
+                        // Add the merged quantity to the first Product B record
+                        DB::table('equipments')
+                            ->where('id', $firstCorrectEquipment->id)
+                            ->increment('quantity', $totalQuantityToMerge);
+                    }
+                }
+
+                // Delete all Product A equipment records for this company
+                $equipmentIds = $equipmentRecords->pluck('id')->toArray();
+                DB::table('equipments')
+                    ->whereIn('id', $equipmentIds)
+                    ->delete();
+            } else {
+                // Company only has Product A
+                // Update all Product A records' product_id to Product B
+                $equipmentIds = $equipmentRecords->pluck('id')->toArray();
+                DB::table('equipments')
+                    ->whereIn('id', $equipmentIds)
+                    ->update(['product_id' => $correctProductId]);
+            }
+        }
+
+        // Final safety check: Delete any remaining Product A equipment records
+        // This handles edge cases where records might not have been processed above
+        DB::table('equipments')
+            ->where('product_id', $wrongProductId)
+            ->delete();
     }
 
     /**

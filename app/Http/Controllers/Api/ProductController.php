@@ -41,7 +41,7 @@ class ProductController extends Controller
             ->leftJoin('sub_categories as sc', 'p.sub_category_id', '=', 'sc.id')
             ->select(
                 'p.id as product_id',
-                DB::raw("CONCAT(b.name, ' ', p.model) as product_name"),
+                DB::raw("TRIM(CONCAT_WS(' ', b.name, p.model)) as product_name"),
                 'p.model as model_name',
                 'p.psm_code',
                 'b.id as brand_id',
@@ -138,6 +138,7 @@ class ProductController extends Controller
             'quantity' => 'nullable|integer|min:1',
             'price' => 'nullable|numeric|min:0',
             'rental_software_code' => 'nullable|string|max:255',
+            'webpage_url' => 'nullable|url|max:255',
         ]);
 
 
@@ -201,6 +202,7 @@ class ProductController extends Controller
                 'brand_id' => $brandId,
                 'model' => $productName,
                 'psm_code' => $psmCode,
+                'webpage_url' => $validated['webpage_url'] ?? null,
                 'is_verified' => 0,
             ]);
 
@@ -249,6 +251,8 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
+
     private function mergeDuplicateProductIntoOriginal(Product $duplicate, Product $original)
     {
         // All tables referencing product_id

@@ -551,6 +551,7 @@ class JobNegotiationController extends Controller
                 $supplyJob = $offer->supplyJob;
                 if ($supplyJob) {
                     $supplyJob->status = 'cancelled';
+                    $supplyJob->handshake_status = 'cancelled';
                     $supplyJob->notes = $request->reason;
                     $supplyJob->cancelled_by = $user->id;
                     $supplyJob->save();
