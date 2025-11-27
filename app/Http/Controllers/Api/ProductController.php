@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Auth;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Notification;
 use App\Notifications\NewProductCreated;
+use App\Notifications\ImportedProductsCreated;
 use Illuminate\Support\Facades\Validator;
 use App\Notifications\DuplicateProductMerged;
 use Illuminate\Validation\Rule;
@@ -22,6 +23,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\SavedProduct;
 use Illuminate\Validation\ValidationException;
 use App\Http\Requests\CreateOrAttachRequest;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Illuminate\Support\Str;
 
 class ProductController extends Controller
@@ -121,6 +123,7 @@ class ProductController extends Controller
     public function createOrAttach(CreateOrAttachRequest $request): JsonResponse
     {
         $validated = $request->validated();
+
         $user = JWTAuth::parseToken()->authenticate();
 
         if (!$user->company_id) {
@@ -129,6 +132,17 @@ class ProductController extends Controller
                 'message' => 'User does not belong to any company.'
             ], 404);
         }
+
+        if ($user->account_type !== 'provider') {
+            return response()->json([
+                'status' => 'error',
+                'error' => [
+                    'code' => 'ACCOUNT_NOT_PROVIDER',
+                    'message' => 'Only provider accounts are allowed to perform this action.'
+                ]
+            ], 403);
+        }
+
 
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
@@ -251,7 +265,6 @@ class ProductController extends Controller
             ], 500);
         }
     }
-
 
     private function mergeDuplicateProductIntoOriginal(Product $duplicate, Product $original)
     {
@@ -381,6 +394,189 @@ class ProductController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    public function importProducts(Request $request): JsonResponse
+    {
+        $user = JWTAuth::parseToken()->authenticate();
+
+        Log::info('user details : ' . json_encode($user));
+        Log::info('User account type: ' . $user->account_type);
+        if (!$user->company_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User does not belong to any company.'
+            ], 404);
+        }
+
+        if (strtolower($user->account_type) !== 'provider') {
+            return response()->json([
+                'status' => 'error',
+                'error' => [
+                    'code' => 'ACCOUNT_NOT_PROVIDER',
+                    'message' => 'Only provider accounts are allowed to perform this action.'
+                ]
+            ], 403);
+        }
+
+        // Validate file
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:20480'
+        ]);
+
+        try {
+            $file = $request->file('file');
+            $spreadsheet = IOFactory::load($file->getRealPath());
+            $sheet = $spreadsheet->getActiveSheet();
+            $rows = $sheet->toArray(null, true, true, true);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to read import file',
+                'error' => $e->getMessage()
+            ], 422);
+        }
+
+        // Counters + accumulators
+        $createdProducts = [];
+        $attachedCount = 0;
+        $duplicateCount = 0;
+        $errorRows = [];
+
+        DB::beginTransaction();
+
+        try {
+            // Start from row 2 because row 1 contains column headings
+            foreach ($rows as $index => $row) {
+                if ($index == 1) {
+                    continue;
+                }
+
+                $quantity = $row['A'];
+                $description = $row['B'];
+                $softwareCode = $row['C'];
+
+                // Skip blank rows
+                if (!$description || trim($description) == '') {
+                    continue;
+                }
+
+                $productName = trim($description);
+                $normalizedName = $this->normalizeProductName($productName);
+
+                // Detect duplicates (same method as createOrAttach)
+                $existingProduct = $this->findSimilarProduct($normalizedName, null);
+
+                if ($existingProduct) {
+                    // Attach equipment to logged-in user/company
+                    Equipment::updateOrCreate(
+                        [
+                            'user_id' => $user->id,
+                            'company_id' => $user->company_id,
+                            'product_id' => $existingProduct->id,
+                        ],
+                        [
+                            'quantity' => $quantity,
+                            'price' => null,
+                            'software_code' => $softwareCode,
+                        ]
+                    );
+
+                    $duplicateCount++;
+                    continue;
+                }
+
+                // Create new product
+                try {
+                    $psmCode = $this->generateNextPsmCode();
+
+                    Log::info('Generated PSM Code: ' . $psmCode . ' for product: ' . $productName);
+
+                    $product = Product::create([
+                        'category_id' => null,
+                        'sub_category_id' => null,
+                        'brand_id' => null,
+                        'model' => $productName,
+                        'psm_code' => $psmCode,
+                        'webpage_url' => null,
+                        'is_verified' => 0,
+                    ]);
+
+                    Log::info('products details : ' . json_encode($product));
+
+
+                    // Attach equipment
+                    Equipment::updateOrCreate(
+                        [
+                            'user_id' => $user->id,
+                            'company_id' => $user->company_id,
+                            'product_id' => $product->id,
+                        ],
+                        [
+                            'quantity' => $quantity,
+                            'price' => null,
+                            'software_code' => $softwareCode,
+                        ]
+                    );
+
+                    // Fetch equipment with software_code included
+                    $product->load([
+                        'equipments' => function ($query) use ($user) {
+                            $query->where('user_id', $user->id);
+                        }
+                    ]);
+
+                    Log::info('products details : ' . json_encode($product));
+
+                    $createdProducts[] = $product;
+
+                } catch (\Throwable $rowError) {
+                    $errorRows[] = [
+                        'row' => $index,
+                        'description' => $description,
+                        'error' => $rowError->getMessage()
+                    ];
+                    continue;
+                }
+            }
+
+            DB::commit();
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Import failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+
+        /**
+         * Send email to admin with list of newly created products.
+         * Only send if at least one new product is created
+         */
+        if (count($createdProducts) > 0) {
+            Notification::route('mail', config('mail.admin.address'))
+                ->notify(new ImportedProductsCreated(
+                    $createdProducts,    // array
+                    $user->profile->full_name ?? 'N/A',
+                    $user->email,
+                    $user->company->name ?? 'N/A',
+                ));
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Import completed.',
+            'summary' => [
+                'created' => count($createdProducts),
+                'attached' => $attachedCount,
+                'duplicates_detected' => $duplicateCount,
+                'errors' => $errorRows
+            ],
+            'created_products' => $createdProducts
+        ], 200);
     }
 
     /**

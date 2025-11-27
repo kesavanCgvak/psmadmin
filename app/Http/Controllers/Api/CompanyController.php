@@ -723,6 +723,7 @@ class CompanyController extends Controller
                         ->whereIn('equipments.product_id', $productIds);
                 })
                 ->join('products', 'products.id', '=', 'equipments.product_id')
+                ->leftJoin('brands', 'brands.id', '=', 'products.brand_id')
                 ->join('currencies', 'currencies.id', '=', 'companies.currency_id')
                 ->leftJoin('rental_softwares', 'rental_softwares.id', '=', 'companies.rental_software_id')
                 // 🆕 Join city, state, and country tables for geolocation details
@@ -740,7 +741,10 @@ class CompanyController extends Controller
                     'companies.city_id',
                     'equipments.product_id',
                     'equipments.quantity',
-                    'products.model as product_name',
+                    // 'products.model as product_name',
+                    DB::raw("CONCAT(COALESCE(brands.name, ''),
+                        CASE WHEN brands.name IS NOT NULL THEN ' - ' ELSE '' END,
+                        products.model) as product_name"),
                     'products.psm_code',
                     'equipments.price',
                     'equipments.software_code',

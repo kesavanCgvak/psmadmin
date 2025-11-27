@@ -70,5 +70,11 @@ class Product extends Model
     {
         return $this->belongsTo('App\Models\Equipment', 'id', 'product_id');
     }
+
+    public function getSoftwareCodeAttribute()
+    {
+        return $this->equipments->first()->software_code ?? null;
+    }
+
 }
 

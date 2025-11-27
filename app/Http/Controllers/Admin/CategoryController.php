@@ -46,7 +46,7 @@ class CategoryController extends Controller
             'name' => $request->name,
         ]);
 
-        return redirect()->route('categories.index')
+        return redirect()->route('admin.categories.index')
             ->with('success', 'Category created successfully.');
     }
 
@@ -86,7 +86,7 @@ class CategoryController extends Controller
             'name' => $request->name,
         ]);
 
-        return redirect()->route('categories.index')
+        return redirect()->route('admin.categories.index')
             ->with('success', 'Category updated successfully.');
     }
 
@@ -97,20 +97,20 @@ class CategoryController extends Controller
     {
         // Relation checks before deletion
         if ($category->subCategories()->exists()) {
-            return redirect()->route('categories.index')
+            return redirect()->route('admin.categories.index')
                 ->with('error', 'Cannot delete — this category has sub-categories.');
         }
         if ($category->products()->exists()) {
-            return redirect()->route('categories.index')
+            return redirect()->route('admin.categories.index')
                 ->with('error', 'Cannot delete — this category has products.');
         }
 
         try {
             $category->delete();
-            return redirect()->route('categories.index')
+            return redirect()->route('admin.categories.index')
                 ->with('success', 'Category deleted successfully.');
         } catch (\Exception $e) {
-            return redirect()->route('categories.index')
+            return redirect()->route('admin.categories.index')
                 ->with('error', 'Cannot delete category. ' . $e->getMessage());
         }
     }
