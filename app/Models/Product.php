@@ -13,7 +13,9 @@ class Product extends Model
         'sub_category_id',
         'brand_id',
         'model',
-        'psm_code'
+        'psm_code',
+        'is_verified',
+        'webpage_url',
     ];
 
     /**
@@ -43,10 +45,16 @@ class Product extends Model
     /**
      * A product has many equipments.
      */
+    // public function equipments()
+    // {
+    //     return $this->hasMany(Equipment::class);
+    // }
+
     public function equipments()
     {
-        return $this->hasMany(Equipment::class);
+        return $this->hasMany(Equipment::class, 'product_id', 'id');
     }
+
 
     public function rentalJobProducts()
     {
@@ -58,8 +66,15 @@ class Product extends Model
         return $this->hasMany(SupplyJobProduct::class);
     }
 
-     public function getEquipment() {
+    public function getEquipment()
+    {
         return $this->belongsTo('App\Models\Equipment', 'id', 'product_id');
     }
+
+    public function getSoftwareCodeAttribute()
+    {
+        return $this->equipments->first()->software_code ?? null;
+    }
+
 }
 

@@ -6,11 +6,11 @@
 </head>
 <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; color: #333;">
   <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: auto; background-color: #ffffff; border-radius: 6px; overflow: hidden; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
-    
+
     <!-- Header with Logo -->
     <tr style="background-color: #000000;">
       <td style="text-align: center; padding: 20px;">
-        <img src="https://www.secondwarehouse.com/app/assets/images/logo-header.png" alt="secondwarehouse.com" style="max-width: 200px;">
+        <img src="https://www.prosubmarket.com/app/assets/images/logo-header.png" alt="prosubmarket.com" style="max-width: 200px;">
       </td>
     </tr>
 
@@ -63,7 +63,7 @@
     <!-- Footer -->
     <tr style="background-color: #000000;">
       <td style="text-align: center; padding: 20px;">
-        <img src="https://www.secondwarehouse.com/app/assets/images/footer-logo.png" alt="Second Warehouse Footer Logo" style="max-width: 290px;margin-bottom: 10px;">
+        <img src="https://www.prosubmarket.com/app/assets/images/footer-logo.png" alt="Second Warehouse Footer Logo" style="max-width: 290px;margin-bottom: 10px;">
         <div style="color: #FFD700;font-size: 13px;font-weight: bold;">Your Rental Equipment Network</div>
       </td>
     </tr>

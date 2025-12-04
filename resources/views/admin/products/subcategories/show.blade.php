@@ -6,6 +6,10 @@
     <h1>Sub-Category Details</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="row">
         <div class="col-md-6">
@@ -39,10 +43,10 @@
                     </dl>
                 </div>
                 <div class="card-footer">
-                    <a href="{{ route('subcategories.edit', $subcategory) }}" class="btn btn-warning">
+                    <a href="{{ route('admin.subcategories.edit', $subcategory) }}" class="btn btn-warning">
                         <i class="fas fa-edit"></i> Edit
                     </a>
-                    <a href="{{ route('subcategories.index') }}" class="btn btn-default">
+                    <a href="{{ route('admin.subcategories.index') }}" class="btn btn-default">
                         <i class="fas fa-arrow-left"></i> Back to List
                     </a>
                 </div>

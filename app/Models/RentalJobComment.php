@@ -12,7 +12,7 @@ class RentalJobComment extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['rental_job_id', 'supply_job_id', 'sender_id', 'message', 'is_private'];
+    protected $fillable = ['rental_job_id', 'supply_job_id', 'sender_id', 'recipient_id', 'message', 'is_private'];
 
     public function rentalJob()
     {
@@ -27,6 +27,11 @@ class RentalJobComment extends Model
     public function sender()
     {
         return $this->belongsTo(User::class, 'sender_id');
+    }
+
+    public function recipient()
+    {
+        return $this->belongsTo(User::class, 'recipient_id');
     }
 }
 

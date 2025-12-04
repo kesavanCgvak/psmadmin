@@ -6,12 +6,16 @@
     <h1>Edit Product</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="card card-warning">
         <div class="card-header">
             <h3 class="card-title">Product Details</h3>
         </div>
-        <form action="{{ route('products.update', $product) }}" method="POST">
+        <form action="{{ route('admin.products.update', $product) }}" method="POST">
             @csrf
             @method('PUT')
             <div class="card-body">
@@ -79,7 +83,7 @@
 
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="model">Model <span class="text-danger">*</span></label>
+                            <label for="model">Model / Product Name<span class="text-danger">*</span></label>
                             <input type="text"
                                    class="form-control @error('model') is-invalid @enderror"
                                    id="model"
@@ -105,13 +109,27 @@
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
                 </div>
+
+                <div class="form-group">
+                    <label for="webpage_url">Product Webpage URL</label>
+                    <input type="url"
+                           class="form-control @error('webpage_url') is-invalid @enderror"
+                           id="webpage_url"
+                           name="webpage_url"
+                           value="{{ old('webpage_url', $product->webpage_url) }}"
+                           placeholder="https://example.com/product-page">
+                    @error('webpage_url')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <small class="form-text text-muted">Optional. Link to the manufacturer or product detail page.</small>
+                </div>
             </div>
 
             <div class="card-footer">
                 <button type="submit" class="btn btn-warning">
                     <i class="fas fa-save"></i> Update Product
                 </button>
-                <a href="{{ route('products.index') }}" class="btn btn-default">
+                <a href="{{ route('admin.products.index') }}" class="btn btn-default">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
@@ -134,7 +152,7 @@
 
                 if (categoryId) {
                     $.ajax({
-                        url: '/ajax/categories/' + categoryId + '/subcategories',
+                        url: '/admin/ajax/categories/' + categoryId + '/subcategories',
                         type: 'GET',
                         dataType: 'json',
                         success: function(data) {

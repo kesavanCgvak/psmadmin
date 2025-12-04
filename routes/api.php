@@ -1,28 +1,31 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\ProductController;
-use App\Http\Controllers\Api\GeoController;
-use App\Http\Controllers\Api\BrandController;
+// Duplicate import removed during formatting cleanup
 use App\Http\Controllers\Api\CategoryController;
-use App\Http\Controllers\Api\SubCategoryController;
-use App\Http\Controllers\Api\UserProfileController;
-use App\Http\Controllers\Api\RentalSoftwareController;
-use App\Http\Controllers\Api\CurrencyController;
+use App\Http\Controllers\Api\CityController;
+use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\CompanyUserController;
-use App\Http\Controllers\Api\EquipmentController;
-use App\Http\Controllers\Api\RentalRequestController;
-use App\Http\Controllers\Api\RentalJobController;
-use App\Http\Controllers\Api\RentalJobActionsController;
-use App\Http\Controllers\Api\SupplyJobController;
-use App\Http\Controllers\Api\SupplyJobActionsController;
-use App\Http\Controllers\Api\CommentController;
-use App\Http\Controllers\Api\UserOfferController;
+use App\Http\Controllers\Api\CurrencyController;
 use App\Http\Controllers\Api\ForgotPasswordController;
-use App\Http\Controllers\Api\StateController;
-use App\Http\Controllers\Api\CityController;
+use App\Http\Controllers\Api\GeoController;
 use App\Http\Controllers\Api\LocationController;
+use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\RegistrationCheckController;
+use App\Http\Controllers\Api\RentalJobActionsController;
+use App\Http\Controllers\Api\RentalJobController;
+use App\Http\Controllers\Api\RentalRequestController;
+use App\Http\Controllers\Api\RentalSoftwareController;
+use App\Http\Controllers\Api\StateController;
+use App\Http\Controllers\Api\BrandController;
+use App\Http\Controllers\Api\SubCategoryController;
+use App\Http\Controllers\Api\SupplyJobActionsController;
+use App\Http\Controllers\Api\SupplyJobController;
+use App\Http\Controllers\Api\UserProfileController;
+use App\Http\Controllers\Api\EquipmentController;
+use App\Http\Controllers\Api\UserOfferController;
+use App\Http\Controllers\Api\JobNegotiationController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
@@ -33,6 +36,9 @@ Route::post('/auth/verify-account', [AuthController::class, 'verifyAccount']);
 Route::post('/password/forgot', [ForgotPasswordController::class, 'sendResetLink']);
 Route::post('/reset-password/{token}', [ForgotPasswordController::class, 'reset']);
 Route::post('/auth/refresh', [AuthController::class, 'refresh']);
+
+// Registration availability checks (public, JSON body)
+Route::post('/registration/availability', [RegistrationCheckController::class, 'checkAvailability']);
 
 
 
@@ -71,6 +77,7 @@ Route::middleware('jwt.verify')->group(function () {
     Route::post('/profile/change-password', [UserProfileController::class, 'changePassword']);
 
     // Individual profile field updates
+    Route::patch('/profile/update-username', [UserProfileController::class, 'updateUsername']);
     Route::patch('/profile/update-name', [UserProfileController::class, 'updateName']);
     Route::patch('/profile/update-email', [UserProfileController::class, 'updateEmail']);
     Route::patch('/profile/update-mobile', [UserProfileController::class, 'updateMobile']);
@@ -96,6 +103,8 @@ Route::middleware('jwt.verify')->group(function () {
     // Route::put('/company/info', [CompanyController::class, 'updateInfo']);
     Route::get('/company/preferences', [CompanyController::class, 'getPreferences']);
     Route::put('/company/preferences', [CompanyController::class, 'updatePreferences']);
+    Route::put('/companies/{id}/gear-finder-visibility', [CompanyController::class, 'updateGearFinderVisibility']);
+
 
     Route::get('/company/images', [CompanyController::class, 'getImages']);
     Route::post('/company/images', [CompanyController::class, 'uploadImage']);
@@ -125,6 +134,7 @@ Route::middleware('jwt.verify')->group(function () {
 
 
 Route::middleware('jwt.verify')->post('/products/create-or-attach', [ProductController::class, 'createOrAttach']);
+Route::middleware('jwt.verify')->post('/products/import', [ProductController::class, 'importProducts']);
 
 
 Route::middleware(['jwt.verify'])->group(function () {
@@ -165,10 +175,16 @@ Route::middleware(['jwt.verify'])->group(function () {
 
     // Update requested product quantities
     Route::put('/rental-jobs/{id}/quantities', [RentalJobActionsController::class, 'updateRequestedQuantities']);
+
+    Route::post('/rental-jobs/{id}/cancel', [RentalJobActionsController::class, 'cancelRentalJob']);
+
 });
 
 
 Route::group(['middleware' => ['jwt.verify']], function () {
+
+    //uopdate supply job name
+    Route::put('/supply-jobs/{id}/name', [SupplyJobActionsController::class, 'updateName']);
 
     // Update milestone dates
     Route::put('/supply-jobs/{id}/milestones', [SupplyJobActionsController::class, 'updateMilestoneDates']);
@@ -180,16 +196,26 @@ Route::group(['middleware' => ['jwt.verify']], function () {
     Route::post('/supply-jobs/{id}/offer', [SupplyJobActionsController::class, 'sendNewOffer']);
 
     // Handshake (accept offer)
-    Route::post('/supply-jobs/{id}/handshake', [SupplyJobActionsController::class, 'handshake']);
+    // Route::post('/supply-jobs/{id}/handshake', [SupplyJobActionsController::class, 'handshake']);
 
     // Cancel negotiation
-    Route::post('/supply-jobs/{id}/cancel', [SupplyJobActionsController::class, 'cancelNegotiation']);
+    // Route::post('/supply-jobs/{id}/cancel', [SupplyJobActionsController::class, 'cancelNegotiation']);
 
 });
 
 Route::middleware(['jwt.verify'])->group(function () {
     Route::get('/supply-jobs', [SupplyJobController::class, 'index']); // ?company_id=123
     Route::get('/supply-jobs/{id}', [SupplyJobController::class, 'show']); // ?company_id=123
+    Route::post('/supply-jobs/{supply_job_id}/cancel', [SupplyJobController::class, 'cancelSupplyJob']);
+});
+
+Route::prefix('jobs')->middleware(['jwt.verify'])->group(function () {
+    Route::post('{rental_job}/offer', [JobNegotiationController::class, 'sendOffer']);
+});
+
+Route::prefix('offers')->middleware(['jwt.verify'])->group(function () {
+    Route::post('{offer_id}/handshake', [JobNegotiationController::class, 'handshake']);
+    Route::post('{offer_id}/cancel-negotiation', [JobNegotiationController::class, 'cancelNegotiation']);
 });
 
 
@@ -204,6 +230,6 @@ Route::middleware('jwt.verify')->group(function () {
 });
 
 
-Route::middleware(['jwt.verify'])->group(function () {
-    Route::post('/rental-jobs/{jobId}/offers', [UserOfferController::class, 'sendOfferToProvider']);
-});
+// Route::middleware(['jwt.verify'])->group(function () {
+//     Route::post('/rental-jobs/{jobId}/offers', [UserOfferController::class, 'sendOfferToProvider']);
+// });

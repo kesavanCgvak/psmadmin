@@ -23,7 +23,7 @@ use App\Models\RentalJobComment;
 class User extends Authenticatable implements JWTSubject
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use  HasFactory, Notifiable;
+    use HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -152,13 +152,11 @@ class User extends Authenticatable implements JWTSubject
     }
 
     /**
-     * Get the user's email from profile.
-     *
-     * @return string|null
+     * Preferred email: from profile; fallback to users.email for backward compatibility.
      */
-    public function getEmail(): ?string
+    public function getPreferredEmailAttribute(): ?string
     {
-        return $this->profile?->email;
+        return $this->profile?->email ?: $this->attributes['email'] ?? null;
     }
 
     /**
@@ -178,7 +176,7 @@ class User extends Authenticatable implements JWTSubject
      */
     public function getEmailForVerification()
     {
-        return $this->profile?->email;
+        return $this->preferred_email;
     }
 
     public function rentalJobs()
@@ -211,4 +209,30 @@ class User extends Authenticatable implements JWTSubject
     {
         return [];
     }
+
+    /**
+     * Get the user's display description for AdminLTE.
+     *
+     * @return string|null
+     */
+    public function adminlte_desc()
+    {
+        return $this->role ?? 'User';
+    }
+
+    /**
+     * Get the user's profile URL for AdminLTE.
+     *
+     * @return string
+     */
+    public function adminlte_profile_url()
+    {
+        return route('profile.edit');
+    }
+
+    public function getAccountTypeAttribute()
+    {
+        return $this->company->account_type ?? null;
+    }
+
 }

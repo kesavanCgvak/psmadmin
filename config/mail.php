@@ -113,6 +113,26 @@ return [
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'noreply@prosubmarket.com'),
         'name' => env('MAIL_FROM_NAME', 'Pro Subrental Marketplace'),
+        'to_address' => env('MAIL_TO_ADDRESS', 'k7.cgvak@gmail.com'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Global "To" Address
+    |--------------------------------------------------------------------------
+    | You may wish for all emails sent by your application to be sent to
+    | the same address. Here you may specify a name and address that is
+    | used globally for all emails that are sent by your application.
+    |
+    */
+    'to' => [
+        'name' => env('MAIL_FROM_NAME', 'Pro Subrental Marketplace'),
+        'addresses' => explode(',', env('MAIL_TO_NOTIFY_NEW_REGISTRATION', '')),
+    ],
+
+    'admin' => [
+        'name' => env('MAIL_FROM_NAME', 'PSM Admin'),
+        'address' => env('MAIL_TO_ADMIN', 'noreply@prosubmarket.com'),
     ],
 
 ];

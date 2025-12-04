@@ -24,9 +24,14 @@ class Equipment extends Model
         return $this->belongsTo(User::class);
     }
 
+    // public function product()
+    // {
+    //     return $this->belongsTo(Product::class, 'product_id');
+    // }
+
     public function product()
     {
-        return $this->belongsTo(Product::class, 'product_id');
+        return $this->belongsTo(Product::class, 'product_id', 'id');
     }
 
     public function images()

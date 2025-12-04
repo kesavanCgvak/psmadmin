@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Currency;
+use App\Services\BulkDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -94,14 +95,77 @@ class CurrencyManagementController extends Controller
      */
     public function destroy(Currency $currency)
     {
+        // Relation checks before deletion
+        if ($currency->companies()->exists()) {
+            return redirect()->route('admin.currencies.index')
+                ->with('error', 'Cannot delete — this currency is used by one or more companies.');
+        }
+
         try {
             $currency->delete();
             return redirect()->route('admin.currencies.index')
                 ->with('success', 'Currency deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->route('admin.currencies.index')
-                ->with('error', 'Cannot delete currency. It may be used by companies.');
+                ->with('error', 'Cannot delete currency. ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Bulk delete multiple currencies.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'currency_ids' => 'required|array',
+            'currency_ids.*' => 'exists:currencies,id'
+        ]);
+
+        $currencies = Currency::whereIn('id', $request->currency_ids)->get();
+        $service = new BulkDeletionService();
+
+        $result = $service->deleteWithChecks($currencies->all(), [
+            function (Currency $currency) {
+                if ($currency->companies()->exists()) {
+                    return 'Cannot delete — this currency is used by one or more companies.';
+                }
+                return null;
+            },
+        ]);
+
+        $deletedCount = $result['deleted_count'];
+        $errors = $result['errors'];
+        $blocked = $result['blocked'];
+
+        $messageParts = [];
+        if ($deletedCount > 0) {
+            $messageParts[] = "Successfully deleted {$deletedCount} currency/currencies.";
+        }
+        if (!empty($blocked)) {
+            $blockedList = array_map(function ($b) {
+                return $b['label'] . ' — ' . $b['reason'];
+            }, $blocked);
+            $messageParts[] = 'Skipped: ' . implode('; ', $blockedList);
+        }
+        if (!empty($errors)) {
+            $messageParts[] = 'Errors: ' . implode('; ', $errors);
+        }
+
+        $message = implode(' ', $messageParts) ?: 'No currencies were deleted.';
+        $success = $deletedCount > 0;
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => $success,
+                'message' => $message,
+                'deleted_count' => $deletedCount,
+                'blocked' => $blocked,
+                'errors' => $errors
+            ]);
+        }
+
+        return redirect()->route('admin.currencies.index')
+            ->with($success ? 'success' : 'error', $message);
     }
 }
 

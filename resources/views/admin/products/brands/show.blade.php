@@ -6,6 +6,10 @@
     <h1>Brand Details</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="row">
         <div class="col-md-6">
@@ -34,10 +38,10 @@
                     </dl>
                 </div>
                 <div class="card-footer">
-                    <a href="{{ route('brands.edit', $brand) }}" class="btn btn-warning">
+                    <a href="{{ route('admin.brands.edit', $brand) }}" class="btn btn-warning">
                         <i class="fas fa-edit"></i> Edit
                     </a>
-                    <a href="{{ route('brands.index') }}" class="btn btn-default">
+                    <a href="{{ route('admin.brands.index') }}" class="btn btn-default">
                         <i class="fas fa-arrow-left"></i> Back to List
                     </a>
                 </div>

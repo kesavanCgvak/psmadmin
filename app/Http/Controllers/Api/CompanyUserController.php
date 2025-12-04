@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Http\Request;
 use App\Models\User;
+use App\Models\Company;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Mail;
@@ -52,6 +53,7 @@ class CompanyUserController extends Controller
                 'password' => Hash::make($request->password),
                 'company_id' => $request->company_id,
                 'role' => $request->role,
+                'email' => $request->email,
                 'is_admin' => $request->input('is_admin', false),
             ]);
 
@@ -76,10 +78,41 @@ class CompanyUserController extends Controller
                     $message->from(config('mail.from.address'), config('mail.from.name')); // <-- set from here
                 });
 
+                // Send user credentials email to USER - ALL THE TIME (regardless of verification status)
+                // Email is sent TO the user's email address ($request->email)
+                Mail::send('emails.registrationSuccess', [
+                    'name' => $request->name,
+                    'email' => $request->email,
+                    'username' => $request->username,
+                    'password' => $request->password,
+                    'account_type' => $authUser->accountType,
+                    'login_url' => env('APP_URL'),
+                ], function ($message) use ($request) {
+                    $message->to($request->email); // TO: User's email address
+                    $message->subject('Welcome to ProSub Marketplace - Account Created Successfully');
+                    $message->from(config('mail.from.address'), config('mail.from.name')); // FROM: System email
+                });
+
+                $company = Company::find($request->company_id);
+                $companyName = $company ? $company->name : null;
+                // Mail to app admin that a new user has been created
+                Mail::send('emails.newRegistration', [
+                    'company_name' => $companyName,
+                    'account_type' => $authUser->accountType,
+                    'username' => $request->username,
+                    'mobile' => $request->mobile,
+                    'email' => $request->email
+                ], function ($message) use ($data) {
+                    $message->to(config('mail.to.addresses'));
+                    $message->subject('New registration');
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
+                });
+
                 Log::info('Email verification notification sent successfully', [
                     'user_id' => $user->id,
                     'user_email' => $request->email,
                 ]);
+
             } catch (\Exception $e) {
                 Log::error('Failed to send email verification notification', [
                     'user_id' => $user->id,

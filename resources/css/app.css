@@ -1,3 +1,73 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* AdminLTE Sidebar Brand Fix */
+.brand-link {
+    padding: 0.8125rem 0.3rem !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+}
+
+.brand-text {
+    font-size: 1.25rem !important;
+    font-weight: 600 !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    max-width: none !important;
+}
+
+.sidebar .brand-text {
+    display: block !important;
+    max-width: none !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: initial !important;
+}
+
+/* Ensure sidebar has enough width for brand text */
+.sidebar-dark-primary .brand-link {
+    min-width: 250px !important;
+}
+
+/* Fix for AdminLTE sidebar brand container */
+.main-sidebar .brand-link {
+    width: auto !important;
+    min-width: 250px !important;
+    padding: 0.8125rem 0.3rem !important;
+}
+
+/* Additional fix for brand text overflow */
+.main-sidebar .brand-text {
+    max-width: none !important;
+    overflow: visible !important;
+    text-overflow: initial !important;
+}
+
+/* Specific AdminLTE brand fixes */
+.nav-sidebar .brand-link .brand-text {
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: initial !important;
+    max-width: none !important;
+    width: auto !important;
+}
+
+/* Ensure the sidebar brand container doesn't clip text */
+.sidebar-dark-primary .brand-link,
+.sidebar-dark-primary .brand-text {
+    overflow: visible !important;
+    white-space: nowrap !important;
+    text-overflow: initial !important;
+}
+
+/* Fix for AdminLTE sidebar width constraints */
+.main-sidebar.sidebar-dark-primary {
+    min-width: 250px !important;
+}
+
+.main-sidebar.sidebar-dark-primary .brand-link {
+    min-width: 250px !important;
+    width: 250px !important;
+    padding: 0.8125rem 0.3rem !important;
+}

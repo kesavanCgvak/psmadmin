@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\StateProvince;
 use App\Models\Country;
+use App\Models\Region;
+use App\Models\Company;
+use App\Services\BulkDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -24,9 +27,10 @@ class StateProvinceController extends Controller
      */
     public function create()
     {
-        $countries = Country::orderBy('name')->get();
+        $regions = Region::orderBy('name')->get();
+        $countries = collect(); // Empty collection - will load via AJAX
         $types = ['state', 'province', 'territory', 'region', 'district', 'federal_entity'];
-        return view('admin.geography.states.create', compact('countries', 'types'));
+        return view('admin.geography.states.create', compact('regions', 'countries', 'types'));
     }
 
     /**
@@ -67,9 +71,10 @@ class StateProvinceController extends Controller
      */
     public function edit(StateProvince $state)
     {
-        $countries = Country::orderBy('name')->get();
+        $regions = Region::orderBy('name')->get();
+        $countries = Country::where('region_id', $state->country->region_id ?? null)->orderBy('name')->get();
         $types = ['state', 'province', 'territory', 'region', 'district', 'federal_entity'];
-        return view('admin.geography.states.edit', compact('state', 'countries', 'types'));
+        return view('admin.geography.states.edit', compact('state', 'regions', 'countries', 'types'));
     }
 
     /**
@@ -101,14 +106,96 @@ class StateProvinceController extends Controller
      */
     public function destroy(StateProvince $state)
     {
+        // Relation checks before deletion
+        if ($state->cities()->exists()) {
+            return redirect()->route('states.index')
+                ->with('error', 'Cannot delete — this state/province has associated cities.');
+        }
+        if (\App\Models\Company::where('state_id', $state->id)->exists()) {
+            return redirect()->route('states.index')
+                ->with('error', 'Cannot delete — this state/province is used by one or more companies.');
+        }
+
         try {
             $state->delete();
             return redirect()->route('states.index')
                 ->with('success', 'State/Province deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->route('states.index')
-                ->with('error', 'Cannot delete state/province. It may have associated cities.');
+                ->with('error', 'Cannot delete state/province. ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Bulk delete multiple states/provinces.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'state_ids' => 'required|array',
+            'state_ids.*' => 'exists:states_provinces,id'
+        ]);
+
+        $states = StateProvince::whereIn('id', $request->state_ids)->get();
+        $service = new BulkDeletionService();
+
+        $result = $service->deleteWithChecks($states->all(), [
+            function (StateProvince $state) {
+                if ($state->cities()->exists()) {
+                    return 'Cannot delete — this state/province has associated cities.';
+                }
+                if (Company::where('state_id', $state->id)->exists()) {
+                    return 'Cannot delete — this state/province is used by one or more companies.';
+                }
+                return null;
+            },
+        ]);
+
+        $deletedCount = $result['deleted_count'];
+        $errors = $result['errors'];
+        $blocked = $result['blocked'];
+
+        $messageParts = [];
+        if ($deletedCount > 0) {
+            $messageParts[] = "Successfully deleted {$deletedCount} state/province(s).";
+        }
+        if (!empty($blocked)) {
+            $blockedList = array_map(function ($b) {
+                return $b['label'] . ' — ' . $b['reason'];
+            }, $blocked);
+            $messageParts[] = 'Skipped: ' . implode('; ', $blockedList);
+        }
+        if (!empty($errors)) {
+            $messageParts[] = 'Errors: ' . implode('; ', $errors);
+        }
+
+        $message = implode(' ', $messageParts) ?: 'No states/provinces were deleted.';
+        $success = $deletedCount > 0;
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => $success,
+                'message' => $message,
+                'deleted_count' => $deletedCount,
+                'blocked' => $blocked,
+                'errors' => $errors
+            ]);
+        }
+
+        return redirect()->route('states.index')
+            ->with($success ? 'success' : 'error', $message);
+    }
+
+    /**
+     * Get countries by region (AJAX endpoint)
+     */
+    public function getCountriesByRegion($regionId)
+    {
+        $countries = Country::where('region_id', $regionId)
+            ->orderBy('name')
+            ->get(['id', 'name', 'iso_code']);
+
+        return response()->json($countries);
     }
 }
 

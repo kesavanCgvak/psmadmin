@@ -8,6 +8,7 @@ class Company extends Model
 {
     protected $fillable = [
         'name',
+        'account_type',
         'description',
         'logo',
         'image1',
@@ -28,6 +29,7 @@ class Company extends Model
         'postal_code',
         'latitude',
         'longitude',
+        'hide_from_gear_finder',
 
     ];
 

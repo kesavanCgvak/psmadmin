@@ -19,6 +19,11 @@ class CompanyResource extends JsonResource
             'image3' => $this->image3,
             'currency_id' => $this->currency_id,
             'rental_software_id' => $this->rental_software_id,
+            'date_format' => $this->date_format,
+            'pricing_scheme' => $this->pricing_scheme,
+            'address_line_1' => $this->address_line_1,
+            'address_line_2' => $this->address_line_2,
+            'postal_code' => $this->postal_code,
 
             // Relations (only if loaded)
             'currency' => new CurrencyResource($this->whenLoaded('currency')),

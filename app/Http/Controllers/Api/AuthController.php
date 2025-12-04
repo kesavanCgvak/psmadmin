@@ -34,7 +34,8 @@ class AuthController extends Controller
             'country_id' => 'required|exists:countries,id',
             'state_id' => 'required|exists:states_provinces,id',
             'city' => 'required|exists:cities,id',
-            'birthday' => 'nullable|date|before:today',
+            // 'birthday' => 'nullable|date|before:today',
+            'birthday' => 'required|string|max:255',
             'email' => 'nullable|email|max:255',
             'password' => 'required|string|min:8|confirmed', // password_confirmation required
             'mobile' => 'nullable|string|max:20',
@@ -44,7 +45,7 @@ class AuthController extends Controller
             'account_type.in' => 'Account type must be provider, customer or user.',
             'company_name.unique' => 'This company name is already registered.',
             'username.unique' => 'This username is already taken.',
-            'email.unique' => 'This email is already in use.',
+            // 'email.unique' => 'This email is already in use.',
             'terms_accepted.accepted' => 'You must accept the terms to register.',
         ]);
         Log::info('User account verified successfully.', [
@@ -76,6 +77,7 @@ class AuthController extends Controller
             //Create company
             $company = Company::create([
                 'name' => $request->company_name,
+                'account_type' => $request->account_type,
                 'region_id' => $request->region,
                 'country_id' => $request->country_id,
                 'city_id' => $request->city,
@@ -147,6 +149,7 @@ class AuthController extends Controller
 
                 Mail::send('emails.newRegistration', [
                     'company_name' => $request->company_name,
+                    'account_type' => $request->account_type,
                     'username' => $request->username,
                     'region_name' => $company_details->getregion->name,
                     'country_name' => $company_details->getcountry->name,
@@ -155,7 +158,7 @@ class AuthController extends Controller
                     'mobile' => $request->mobile,
                     'email' => $request->email
                 ], function ($message) use ($data) {
-                    $message->to($data['email']);
+                    $message->to(config('mail.to.addresses'));
                     $message->subject('New registration');
                     $message->from(config('mail.from.address'), config('mail.from.name'));
                 });
@@ -280,15 +283,19 @@ class AuthController extends Controller
         }
     }
 
-
     /**
      * Get logged-in user profile
      */
     public function profile()
     {
+        $user = auth()->user();
+        if ($user) {
+            $user->load(['profile', 'company']);
+        }
+
         return response()->json([
             'status' => 'success',
-            'user' => auth()->user()
+            'user' => new \App\Http\Resources\UserResource($user)
         ]);
     }
 
