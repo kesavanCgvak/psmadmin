@@ -43,9 +43,6 @@ class UserManagementController extends Controller
      */
     public function store(Request $request)
     {
-        // Validate birthday to ensure user is at least 18 years old
-        $eighteenYearsAgo = now()->subYears(18)->format('Y-m-d');
-
         $request->validate([
             'username' => 'required|string|max:255|unique:users',
             'email' => 'required|email|max:255|unique:user_profiles,email',
@@ -59,12 +56,12 @@ class UserManagementController extends Controller
             // Profile fields
             'full_name' => 'required|string|max:255',
             'mobile' => 'required|string|max:20',
-            'birthday' => "required|date|before_or_equal:$eighteenYearsAgo",
+            'birthday' => 'nullable|string|max:255|regex:/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/',
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ], [
-            'birthday.before_or_equal' => 'User must be at least 18 years old.',
             'account_type.in' => 'Account type must be either Provider or User.',
             'role.in' => 'Role must be either Admin or User.',
+            'birthday.regex' => 'Birthday must be in MM-DD format (e.g., 12-25).',
         ]);
 
         // Auto-assign account_type based on company if not provided
@@ -249,8 +246,10 @@ class UserManagementController extends Controller
             // Profile fields
             'full_name' => 'nullable|string|max:255',
             'mobile' => 'nullable|string|max:20',
-            'birthday' => 'nullable|date',
+            'birthday' => 'nullable|string|max:255|regex:/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/',
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+        ], [
+            'birthday.regex' => 'Birthday must be in MM-DD format (e.g., 12-25).',
         ]);
 
         // Update user (account type is derived from company and not editable here)

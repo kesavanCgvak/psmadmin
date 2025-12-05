@@ -19,10 +19,11 @@
             @csrf
             <div class="card-body">
                 <div class="form-group">
-                    <label for="region_id">Region</label>
+                    <label for="region_id">Region <span class="text-danger">*</span></label>
                     <select class="form-control @error('region_id') is-invalid @enderror"
                             id="region_id"
-                            name="region_id">
+                            name="region_id"
+                            required>
                         <option value="">-- Select Region --</option>
                         @foreach($regions as $region)
                             <option value="{{ $region->id }}" {{ old('region_id') == $region->id ? 'selected' : '' }}>
@@ -160,10 +161,11 @@ $(document).ready(function() {
     $('#country_id').prop('disabled', true);
     $('#state_id').prop('disabled', true);
 
-    // Enable dropdowns if parent is selected
+    // Enable country dropdown if region is selected (but it's optional)
     if ($('#region_id').val()) {
         $('#country_id').prop('disabled', false);
     }
+    // Enable state dropdown if country is selected
     if ($('#country_id').val()) {
         $('#state_id').prop('disabled', false);
     }

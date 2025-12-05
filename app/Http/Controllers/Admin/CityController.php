@@ -40,6 +40,7 @@ class CityController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
+            'region_id' => 'required|exists:regions,id',
             'country_id' => 'required|exists:countries,id',
             'state_id' => 'nullable|exists:states_provinces,id',
             'name' => 'required|string|max:150',
@@ -85,6 +86,7 @@ class CityController extends Controller
     public function update(Request $request, City $city)
     {
         $validator = Validator::make($request->all(), [
+            'region_id' => 'required|exists:regions,id',
             'country_id' => 'required|exists:countries,id',
             'state_id' => 'nullable|exists:states_provinces,id',
             'name' => 'required|string|max:150',

@@ -157,11 +157,17 @@
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label for="birthday">Birthday</label>
-                                    <input type="date" class="form-control @error('birthday') is-invalid @enderror"
-                                           id="birthday" name="birthday" value="{{ old('birthday', $user->profile?->birthday) }}">
+                                    <input type="text" class="form-control @error('birthday') is-invalid @enderror"
+                                           id="birthday" name="birthday" value="{{ old('birthday', $user->profile?->birthday) }}"
+                                           placeholder="MM-DD (e.g., 12-25)"
+                                           pattern="^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+                                           maxlength="5">
                                     @error('birthday')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
+                                    <small class="form-text text-muted" id="birthdayHelp">
+                                        Format: MM-DD (e.g., 12-25 for December 25th)
+                                    </small>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -449,6 +455,69 @@
 
         if (companySelect && accountTypeDisplay) {
             companySelect.addEventListener('change', updateAccountTypeDisplay);
+        }
+    })();
+
+    // Birthday format validation (MM-DD)
+    (function() {
+        const birthdayInput = document.getElementById('birthday');
+        const birthdayHelp = document.getElementById('birthdayHelp');
+        const mmddPattern = /^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
+
+        if (birthdayInput && birthdayHelp) {
+            birthdayInput.addEventListener('input', function() {
+                const value = this.value;
+
+                if (value.length === 0) {
+                    this.classList.remove('is-valid', 'is-invalid');
+                    birthdayHelp.textContent = 'Format: MM-DD (e.g., 12-25 for December 25th)';
+                    birthdayHelp.classList.remove('text-success', 'text-danger');
+                    return;
+                }
+
+                // Auto-format: add dash after 2 digits
+                if (value.length === 2 && !value.includes('-')) {
+                    this.value = value + '-';
+                }
+
+                if (mmddPattern.test(this.value)) {
+                    this.classList.remove('is-invalid');
+                    this.classList.add('is-valid');
+                    birthdayHelp.innerHTML = '<i class="fas fa-check-circle text-success"></i> Valid format';
+                    birthdayHelp.classList.add('text-success');
+                    birthdayHelp.classList.remove('text-danger');
+                } else {
+                    this.classList.remove('is-valid');
+                    this.classList.add('is-invalid');
+                    birthdayHelp.innerHTML = '<i class="fas fa-times-circle text-danger"></i> Format must be MM-DD (e.g., 12-25)';
+                    birthdayHelp.classList.add('text-danger');
+                    birthdayHelp.classList.remove('text-success');
+                }
+            });
+
+            // Prevent invalid characters
+            birthdayInput.addEventListener('keypress', function(e) {
+                const char = String.fromCharCode(e.which);
+                const currentValue = this.value;
+                
+                // Allow numbers and dash
+                if (!/[0-9-]/.test(char)) {
+                    e.preventDefault();
+                    return false;
+                }
+                
+                // Only allow dash at position 2
+                if (char === '-' && currentValue.length !== 2) {
+                    e.preventDefault();
+                    return false;
+                }
+                
+                // Limit to 5 characters (MM-DD)
+                if (currentValue.length >= 5 && char !== '-') {
+                    e.preventDefault();
+                    return false;
+                }
+            });
         }
     })();
     </script>

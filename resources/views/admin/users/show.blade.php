@@ -155,7 +155,7 @@
 
                                 <dt class="col-sm-3">Birthday:</dt>
                                 <dd class="col-sm-9">
-                                    {{ $user->profile?->birthday ? \Carbon\Carbon::parse($user->profile->birthday)->format('M d, Y') : 'Not set' }}
+                                    {{ $user->profile?->birthday ?? 'Not set' }}
                                 </dd>
 
                             </dl>

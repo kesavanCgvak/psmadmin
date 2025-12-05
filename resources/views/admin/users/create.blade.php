@@ -200,15 +200,17 @@
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="birthday">Birthday <span class="text-danger">*</span></label>
-                                    <input type="date" class="form-control @error('birthday') is-invalid @enderror"
-                                           id="birthday" name="birthday" value="{{ old('birthday') }}" required
-                                           max="{{ date('Y-m-d', strtotime('-18 years')) }}">
+                                    <label for="birthday">Birthday</label>
+                                    <input type="text" class="form-control @error('birthday') is-invalid @enderror"
+                                           id="birthday" name="birthday" value="{{ old('birthday') }}"
+                                           placeholder="MM-DD (e.g., 12-25)"
+                                           pattern="^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+                                           maxlength="5">
                                     @error('birthday')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
-                                    <small class="form-text text-muted" id="ageValidation">
-                                        Must be at least 18 years old
+                                    <small class="form-text text-muted" id="birthdayHelp">
+                                        Format: MM-DD (e.g., 12-25 for December 25th)
                                     </small>
                                 </div>
                             </div>
@@ -645,21 +647,6 @@ $(document).ready(function() {
         }
     });
 
-    // Birthday age validation
-    $('#birthday').on('change', function() {
-        const birthday = new Date($(this).val());
-        const today = new Date();
-        const age = Math.floor((today - birthday) / (365.25 * 24 * 60 * 60 * 1000));
-        const $validation = $('#ageValidation');
-
-        if (age < 18) {
-            $(this).addClass('is-invalid');
-            $validation.html('<i class="fas fa-times-circle text-danger"></i> Must be at least 18 years old').addClass('text-danger');
-        } else {
-            $(this).removeClass('is-invalid').addClass('is-valid');
-            $validation.html('<i class="fas fa-check-circle text-success"></i> Age: ' + age + ' years').addClass('text-success');
-        }
-    });
 
     // Company selection - fetch phone format and auto-assign account type
     $('#company_id').on('change', function() {
@@ -757,6 +744,57 @@ $(document).ready(function() {
     @if(isset($selectedCompanyId) && $selectedCompanyId)
         $('#company_id').trigger('change');
     @endif
+
+    // Birthday format validation (MM-DD)
+    $('#birthday').on('input', function() {
+        const value = $(this).val();
+        const $input = $(this);
+        const $help = $('#birthdayHelp');
+        const mmddPattern = /^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
+
+        if (value.length === 0) {
+            $input.removeClass('is-valid is-invalid');
+            $help.text('Format: MM-DD (e.g., 12-25 for December 25th)').removeClass('text-success text-danger');
+            return;
+        }
+
+        // Auto-format: add dash after 2 digits
+        if (value.length === 2 && !value.includes('-')) {
+            $(this).val(value + '-');
+        }
+
+        if (mmddPattern.test(value)) {
+            $input.removeClass('is-invalid').addClass('is-valid');
+            $help.html('<i class="fas fa-check-circle text-success"></i> Valid format').addClass('text-success').removeClass('text-danger');
+        } else {
+            $input.removeClass('is-valid').addClass('is-invalid');
+            $help.html('<i class="fas fa-times-circle text-danger"></i> Format must be MM-DD (e.g., 12-25)').addClass('text-danger').removeClass('text-success');
+        }
+    });
+
+    // Prevent invalid characters
+    $('#birthday').on('keypress', function(e) {
+        const char = String.fromCharCode(e.which);
+        const currentValue = $(this).val();
+        
+        // Allow numbers and dash
+        if (!/[0-9-]/.test(char)) {
+            e.preventDefault();
+            return false;
+        }
+        
+        // Only allow dash at position 2
+        if (char === '-' && currentValue.length !== 2) {
+            e.preventDefault();
+            return false;
+        }
+        
+        // Limit to 5 characters (MM-DD)
+        if (currentValue.length >= 5 && char !== '-') {
+            e.preventDefault();
+            return false;
+        }
+    });
 });
 </script>
 @stop

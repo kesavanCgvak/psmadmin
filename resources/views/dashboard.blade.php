@@ -87,7 +87,7 @@
                                 <span class="info-box-icon"><i class="fas fa-handshake"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">Active Rental Jobs</span>
-                                    <span class="info-box-number">{{ \App\Models\RentalJob::where('status', 'open')->count() }}</span>
+                                    <span class="info-box-number">{{ \App\Models\RentalJob::whereIn('status', ['open', 'in_negotiation'])->count() }}</span>
                                 </div>
                             </div>
                         </div>
