@@ -155,7 +155,27 @@
 
                                 <dt class="col-sm-3">Birthday:</dt>
                                 <dd class="col-sm-9">
-                                    {{ $user->profile?->birthday ? \Carbon\Carbon::parse($user->profile->birthday)->format('M d, Y') : 'Not set' }}
+                                    @if($user->profile?->birthday)
+                                        @php
+                                            try {
+                                                // Handle both Carbon instance (if cast works) and string (if cast fails)
+                                                $birthdayValue = $user->profile->birthday;
+                                                if ($birthdayValue instanceof \Carbon\Carbon) {
+                                                    echo $birthdayValue->format('M d, Y');
+                                                } else {
+                                                    // Try to parse string
+                                                    $birthday = \Carbon\Carbon::parse($birthdayValue);
+                                                    echo $birthday->format('M d, Y');
+                                                }
+                                            } catch (\Exception $e) {
+                                                // Display raw value with warning if parsing fails
+                                                $rawValue = is_string($user->profile->birthday) ? $user->profile->birthday : 'Invalid Date';
+                                                echo $rawValue . ' <span class="text-danger">(Invalid Date Format)</span>';
+                                            }
+                                        @endphp
+                                    @else
+                                        Not set
+                                    @endif
                                 </dd>
 
                             </dl>

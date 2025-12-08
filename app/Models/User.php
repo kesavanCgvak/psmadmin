@@ -42,7 +42,10 @@ class User extends Authenticatable implements JWTSubject
         'email_verified',
         'email_verified_at',
         'is_blocked',
-        'token'
+        'token',
+        'stripe_customer_id',
+        'subscription_status',
+        'subscription_ends_at'
     ];
 
 
@@ -66,6 +69,7 @@ class User extends Authenticatable implements JWTSubject
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'subscription_ends_at' => 'datetime',
         ];
     }
 
@@ -192,6 +196,21 @@ class User extends Authenticatable implements JWTSubject
     public function comments()
     {
         return $this->hasMany(RentalJobComment::class, 'sender_id');
+    }
+
+    public function subscription()
+    {
+        return $this->hasOne(Subscription::class)->latestOfMany();
+    }
+
+    public function subscriptions()
+    {
+        return $this->hasMany(Subscription::class);
+    }
+
+    public function hasActiveSubscription(): bool
+    {
+        return $this->subscription && $this->subscription->isActive();
     }
 
     /**

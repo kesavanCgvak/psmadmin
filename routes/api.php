@@ -40,6 +40,9 @@ Route::post('/auth/refresh', [AuthController::class, 'refresh']);
 // Registration availability checks (public, JSON body)
 Route::post('/registration/availability', [RegistrationCheckController::class, 'checkAvailability']);
 
+// Payment status check (public endpoint for frontend)
+Route::get('/payment/status', [\App\Http\Controllers\Api\PaymentStatusController::class, 'status']);
+
 
 
 // ------------------------------
@@ -230,6 +233,20 @@ Route::middleware('jwt.verify')->group(function () {
 });
 
 
+
+// ------------------------------
+// 💳 Stripe Webhook (No auth required)
+// ------------------------------
+Route::post('/webhooks/stripe', [\App\Http\Controllers\Api\StripeWebhookController::class, 'handleWebhook']);
+
+// ------------------------------
+// 📅 Subscription Management
+// ------------------------------
+Route::middleware('jwt.verify')->group(function () {
+    Route::get('/subscriptions/current', [\App\Http\Controllers\Api\SubscriptionController::class, 'getCurrent']);
+    Route::post('/subscriptions/cancel', [\App\Http\Controllers\Api\SubscriptionController::class, 'cancel']);
+    Route::post('/subscriptions/update-payment', [\App\Http\Controllers\Api\SubscriptionController::class, 'updatePaymentMethod']);
+});
 // Route::middleware(['jwt.verify'])->group(function () {
 //     Route::post('/rental-jobs/{jobId}/offers', [UserOfferController::class, 'sendOfferToProvider']);
 // });

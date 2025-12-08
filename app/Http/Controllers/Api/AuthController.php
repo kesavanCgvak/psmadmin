@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\City;
 use App\Models\Company;
+use App\Models\Setting;
+use App\Services\StripeSubscriptionService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -16,6 +18,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
 
 
 class AuthController extends Controller
@@ -25,7 +28,11 @@ class AuthController extends Controller
      */
     public function register(Request $request)
     {
-        $validator = Validator::make($request->all(), [
+        // Check if payment is enabled
+        $paymentEnabled = Setting::isPaymentEnabled();
+        
+        // Build validation rules based on payment status
+        $rules = [
             'account_type' => 'required|string|in:provider,user',
             'company_name' => 'required|string|max:255|unique:companies,name',
             'username' => 'required|string|max:255|unique:users,username',
@@ -34,20 +41,47 @@ class AuthController extends Controller
             'country_id' => 'required|exists:countries,id',
             'state_id' => 'required|exists:states_provinces,id',
             'city' => 'required|exists:cities,id',
-            // 'birthday' => 'nullable|date|before:today',
             'birthday' => 'required|string|max:255',
             'email' => 'nullable|email|max:255',
-            'password' => 'required|string|min:8|confirmed', // password_confirmation required
+            'password' => 'required|string|min:8|confirmed',
             'mobile' => 'nullable|string|max:20',
             'terms_accepted' => 'accepted',
-        ], [
-            // custom messages
+        ];
+        
+        $customMessages = [
             'account_type.in' => 'Account type must be provider, customer or user.',
             'company_name.unique' => 'This company name is already registered.',
             'username.unique' => 'This username is already taken.',
-            // 'email.unique' => 'This email is already in use.',
             'terms_accepted.accepted' => 'You must accept the terms to register.',
-        ]);
+        ];
+        
+        // Add payment validation only if payment is enabled
+        if ($paymentEnabled) {
+            $rules['payment_method_id'] = [
+                'required',
+                'string',
+                'starts_with:pm_',
+            ];
+            $rules['billing_details'] = [
+                'required',
+                'array',
+            ];
+            $rules['billing_details.name'] = 'required_with:billing_details|string|max:255';
+            $rules['billing_details.email'] = 'nullable|email';
+            $rules['billing_details.phone'] = 'nullable|string|max:20';
+            $rules['billing_details.address'] = 'required_with:billing_details|array';
+            $rules['billing_details.address.line1'] = 'required_with:billing_details.address|string';
+            $rules['billing_details.address.line2'] = 'nullable|string';
+            $rules['billing_details.address.city'] = 'required_with:billing_details.address|string';
+            $rules['billing_details.address.state'] = 'required_with:billing_details.address|string';
+            $rules['billing_details.address.postal_code'] = 'required_with:billing_details.address|string';
+            $rules['billing_details.address.country'] = 'required_with:billing_details.address|string|size:2';
+            
+            $customMessages['payment_method_id.required'] = 'Credit card is required for registration.';
+            $customMessages['billing_details.required'] = 'Billing details are required for registration.';
+        }
+        
+        $validator = Validator::make($request->all(), $rules, $customMessages);
         Log::info('User account verified successfully.', [
             'name' => $request->company_name,
             'region_id' => $request->region,
@@ -62,7 +96,7 @@ class AuthController extends Controller
         }
 
         try {
-            \DB::beginTransaction();
+            DB::beginTransaction();
 
             // Fetch latitude and longitude from the cities table
             $city = City::find($request->city);
@@ -116,7 +150,73 @@ class AuthController extends Controller
                 'mobile' => $request->mobile,
             ]);
 
-            \DB::commit();
+            // Handle Stripe Subscription only if payment is enabled
+            $subscription = null;
+            
+            if ($paymentEnabled) {
+                $subscriptionService = new StripeSubscriptionService();
+                
+                try {
+                    // Create Stripe customer
+                    $customer = $subscriptionService->createCustomer([
+                        'email' => $request->email,
+                        'name' => $request->name ?? $request->username,
+                        'metadata' => [
+                            'user_id' => $user->id,
+                            'company_id' => $company->id,
+                            'account_type' => $request->account_type,
+                        ],
+                    ]);
+                    
+                    // Update user with Stripe customer ID
+                    $user->update(['stripe_customer_id' => $customer->id]);
+                    
+                    // Attach payment method
+                    $subscriptionService->attachPaymentMethod(
+                        $customer->id,
+                        $request->payment_method_id,
+                        $request->billing_details
+                    );
+                    
+                    // Get plan config
+                    $planConfig = config("subscription_plans.{$request->account_type}.default");
+                    
+                    // Create subscription with trial
+                    $trialDays = $request->account_type === 'provider' ? 60 : 14;
+                    
+                    $subscription = $subscriptionService->createSubscriptionWithTrial(
+                        customerId: $customer->id,
+                        priceId: $planConfig['stripe_price_id'],
+                        paymentMethodId: $request->payment_method_id,
+                        trialDays: $trialDays,
+                        accountType: $request->account_type,
+                        userId: $user->id,
+                        companyId: $company->id
+                    );
+                    
+                    Log::info('Subscription created during registration', [
+                        'user_id' => $user->id,
+                        'account_type' => $request->account_type,
+                        'subscription_id' => $subscription->id,
+                        'trial_days' => $trialDays,
+                    ]);
+                    
+                } catch (\Exception $e) {
+                    Log::error('Failed to create subscription during registration', [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                    throw $e; // Re-throw to rollback transaction
+                }
+            } else {
+                Log::info('Registration completed without payment (payment disabled)', [
+                    'user_id' => $user->id,
+                    'account_type' => $request->account_type,
+                ]);
+            }
+
+            DB::commit();
             try {
                 //$user->sendEmailVerificationNotification();
                 $company_details = Company::where('id', $company->id)->first();
@@ -181,10 +281,15 @@ class AuthController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'User registered successfully',
+                'subscription' => $subscription ? [
+                    'status' => $subscription->stripe_status,
+                    'trial_ends_at' => $subscription->trial_ends_at?->format('c'),
+                    'plan_name' => $subscription->plan_name,
+                ] : null,
             ], 201);
 
         } catch (\Exception $e) {
-            \DB::rollBack();
+            DB::rollBack();
 
             return response()->json([
                 'status' => 'error',
@@ -248,26 +353,58 @@ class AuthController extends Controller
                 ], 403);
             }
 
-            // Eager-load profile and company
+            // Eager-load profile, company, and subscription
             $user->load([
                 'profile',
                 'company',
                 'company.currency',
                 'company.rentalSoftware',
+                'subscription',
             ]);
 
-            /*--return response()->json([
-                'token' => $token,
-                'message' => 'Login successful',
-                'user_id' => $user->id,
-                'user' => $user,
-            ]);--*/
+            // Build subscription status response
+            $subscriptionStatus = null;
+            $subscription = $user->subscription;
+            
+            if ($subscription) {
+                $subscriptionStatus = [
+                    'has_subscription' => true,
+                    'is_active' => $subscription->isActive(),
+                    'is_trialing' => $subscription->isOnTrial(),
+                    'is_payment_failed' => $subscription->isPaymentFailed(),
+                    'status' => $subscription->stripe_status,
+                    'trial_ends_at' => $subscription->trial_ends_at?->format('c'),
+                    'current_period_end' => $subscription->current_period_end?->format('c'),
+                    'plan_name' => $subscription->plan_name,
+                    'amount' => (float) $subscription->amount,
+                    'currency' => $subscription->currency,
+                    'payment_required' => $subscription->isPaymentFailed(),
+                ];
+            } else {
+                $subscriptionStatus = [
+                    'has_subscription' => false,
+                    'is_active' => false,
+                    'is_trialing' => false,
+                    'status' => 'none',
+                    'message' => 'No subscription found. Please contact support.',
+                ];
+            }
+
+            // Get payment system status (whether payment is enabled/disabled system-wide)
+            $paymentEnabled = Setting::isPaymentEnabled();
 
             return response()->json([
                 'token' => $token,
                 'message' => 'Login successful',
                 'user_id' => $user->id,
                 'user' => new UserResource($user),
+                'subscription' => $subscriptionStatus,
+                'payment' => [
+                    'enabled' => $paymentEnabled,
+                    'message' => $paymentEnabled 
+                        ? 'Payment is required for new registrations' 
+                        : 'Payment is not required for new registrations',
+                ],
                 'expires_in' => JWTAuth::factory()->getTTL() * 60,
             ]);
 
