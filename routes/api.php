@@ -246,6 +246,11 @@ Route::middleware('jwt.verify')->group(function () {
     Route::get('/subscriptions/current', [\App\Http\Controllers\Api\SubscriptionController::class, 'getCurrent']);
     Route::post('/subscriptions/cancel', [\App\Http\Controllers\Api\SubscriptionController::class, 'cancel']);
     Route::post('/subscriptions/update-payment', [\App\Http\Controllers\Api\SubscriptionController::class, 'updatePaymentMethod']);
+    Route::get('/subscription/payment-method', [\App\Http\Controllers\Api\SubscriptionController::class, 'getPaymentMethod']);
+    
+    // Billing History APIs
+    Route::get('/subscription/billing-history', [\App\Http\Controllers\Api\SubscriptionController::class, 'billingHistory']);
+    Route::get('/subscription/invoice/{invoiceId}', [\App\Http\Controllers\Api\SubscriptionController::class, 'downloadInvoice']);
 });
 // Route::middleware(['jwt.verify'])->group(function () {
 //     Route::post('/rental-jobs/{jobId}/offers', [UserOfferController::class, 'sendOfferToProvider']);

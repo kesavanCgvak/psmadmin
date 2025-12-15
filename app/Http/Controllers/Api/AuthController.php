@@ -200,6 +200,30 @@ class AuthController extends Controller
                         'subscription_id' => $subscription->id,
                         'trial_days' => $trialDays,
                     ]);
+
+                    // Send subscription details email to the user
+                    if ($request->email) {
+                        $subscriptionEmailData = [
+                            'username' => $request->username,
+                            'plan_name' => $subscription->plan_name ?? ucfirst($request->account_type) . ' Plan',
+                            'status' => $subscription->stripe_status,
+                            'trial_end_date' => $subscription->trial_ends_at
+                                ? $subscription->trial_ends_at
+                                    ->timezone(config('app.timezone'))
+                                    ->format(config('app.display_date_format', 'M d, Y'))
+                                : null,
+                            'amount' => $subscription->amount,
+                            'currency' => strtoupper($subscription->currency ?? 'USD'),
+                            'interval' => $subscription->interval,
+                            'app_url' => env('APP_FRONTEND_URL'),
+                        ];
+
+                        Mail::send('emails.subscriptionCreated', $subscriptionEmailData, function ($message) use ($request) {
+                            $message->to($request->email);
+                            $message->subject('Your subscription is set up');
+                            $message->from(config('mail.from.address'), config('mail.from.name'));
+                        });
+                    }
                     
                 } catch (\Exception $e) {
                     Log::error('Failed to create subscription during registration', [
