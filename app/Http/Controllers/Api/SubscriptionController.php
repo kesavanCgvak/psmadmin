@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\StripeSubscriptionService;
 use App\Models\Subscription;
+use App\Mail\SubscriptionCanceledNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Stripe\Stripe;
 use Stripe\Exception\ApiErrorException;
@@ -87,6 +89,25 @@ class SubscriptionController extends Controller
             
             // Refresh subscription from database
             $subscription->refresh();
+            
+            // Send cancellation confirmation email
+            try {
+                $email = $user->profile->email ?? $user->email;
+                if ($email) {
+                    Mail::to($email)->send(new SubscriptionCanceledNotification($user, $subscription, false));
+                    Log::info('Cancellation confirmation email sent', [
+                        'user_id' => $user->id,
+                        'subscription_id' => $subscription->id,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to send cancellation confirmation email', [
+                    'user_id' => $user->id,
+                    'subscription_id' => $subscription->id,
+                    'error' => $e->getMessage(),
+                ]);
+                // Don't fail the cancellation if email fails
+            }
             
             return response()->json([
                 'success' => true,

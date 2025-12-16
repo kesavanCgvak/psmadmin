@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Subscription;
+use App\Mail\SubscriptionCanceledNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Stripe\Stripe;
 use Stripe\Webhook;
 use Stripe\Exception\SignatureVerificationException;
@@ -282,6 +284,25 @@ class StripeWebhookController extends Controller
             'user_id' => $subscription->user_id,
             'current_period_end' => $subscription->current_period_end,
         ]);
+        
+        // Send cancellation confirmation email
+        try {
+            $email = $subscription->user->profile->email ?? $subscription->user->email;
+            if ($email) {
+                Mail::to($email)->send(new SubscriptionCanceledNotification($subscription->user, $subscription, true));
+                Log::info('Cancellation confirmation email sent via webhook', [
+                    'user_id' => $subscription->user_id,
+                    'subscription_id' => $subscription->id,
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to send cancellation confirmation email via webhook', [
+                'user_id' => $subscription->user_id,
+                'subscription_id' => $subscription->id,
+                'error' => $e->getMessage(),
+            ]);
+            // Don't fail webhook processing if email fails
+        }
     }
     
     private function handleTrialWillEnd($stripeSubscription)
