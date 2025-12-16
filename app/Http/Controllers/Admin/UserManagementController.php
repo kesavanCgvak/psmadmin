@@ -56,7 +56,7 @@ class UserManagementController extends Controller
             // Profile fields
             'full_name' => 'required|string|max:255',
             'mobile' => 'required|string|max:20',
-            'birthday' => 'nullable|string|max:255|regex:/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/',
+            'birthday' => ['nullable', 'string', 'max:255', 'regex:/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/'],
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ], [
             'account_type.in' => 'Account type must be either Provider or User.',
@@ -246,7 +246,7 @@ class UserManagementController extends Controller
             // Profile fields
             'full_name' => 'nullable|string|max:255',
             'mobile' => 'nullable|string|max:20',
-            'birthday' => 'nullable|string|max:255|regex:/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/',
+            'birthday' => ['nullable', 'string', 'max:255', 'regex:/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/'],
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ], [
             'birthday.regex' => 'Birthday must be in MM-DD format (e.g., 12-25).',

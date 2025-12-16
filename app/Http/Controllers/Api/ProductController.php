@@ -437,6 +437,15 @@ class ProductController extends Controller
             ], 422);
         }
 
+        // ✅ ENFORCE 100 ROW LIMIT
+        $dataRowCount = max(0, count($rows) - 1); // Exclude header row
+        if ($dataRowCount > 100) {
+            return response()->json([
+                'success' => false,
+                'message' => "Maximum 100 rows allowed per upload. Your file contains {$dataRowCount} data rows.",
+            ], 422);
+        }
+
         // Counters + accumulators
         $createdProducts = [];
         $attachedCount = 0;
