@@ -138,6 +138,22 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     Route::post('/admin-users/{adminUser}/reset-password', [\App\Http\Controllers\Admin\AdminUserManagementController::class, 'resetPassword'])
         ->name('admin-users.reset-password');
 
+    // Payment Settings
+    Route::get('/payment-settings', [\App\Http\Controllers\Admin\PaymentSettingsController::class, 'index'])
+        ->name('payment-settings.index');
+    Route::put('/payment-settings', [\App\Http\Controllers\Admin\PaymentSettingsController::class, 'update'])
+        ->name('payment-settings.update');
+    Route::post('/payment-settings/toggle', [\App\Http\Controllers\Admin\PaymentSettingsController::class, 'toggle'])
+        ->name('payment-settings.toggle');
+
+    // Subscription Management
+    Route::get('/subscriptions', [\App\Http\Controllers\Admin\SubscriptionManagementController::class, 'index'])
+        ->name('subscriptions.index');
+    Route::get('/subscriptions/{subscription}', [\App\Http\Controllers\Admin\SubscriptionManagementController::class, 'show'])
+        ->name('subscriptions.show');
+    Route::post('/subscriptions/{subscription}/sync', [\App\Http\Controllers\Admin\SubscriptionManagementController::class, 'sync'])
+        ->name('subscriptions.sync');
+
     // AJAX endpoints
     Route::get('/ajax/companies/{company}/users', [\App\Http\Controllers\Admin\EquipmentManagementController::class, 'getUsersByCompany'])
         ->name('ajax.users-by-company');

@@ -428,6 +428,19 @@ return [
             'icon' => 'fas fa-fw fa-truck',
             'icon_color' => 'success',
         ],
+        ['header' => 'SYSTEM SETTINGS'],
+        [
+            'text' => 'Payment Settings',
+            'route' => 'admin.payment-settings.index',
+            'icon' => 'fas fa-fw fa-credit-card',
+            'icon_color' => 'success',
+        ],
+        [
+            'text' => 'Subscriptions',
+            'route' => 'admin.subscriptions.index',
+            'icon' => 'fas fa-fw fa-receipt',
+            'icon_color' => 'primary',
+        ],
         ['header' => 'ACCOUNT SETTINGS'],
         [
             'text' => 'My Profile',

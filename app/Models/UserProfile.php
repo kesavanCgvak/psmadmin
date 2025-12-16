@@ -22,6 +22,10 @@ class UserProfile extends Model
         'email',
     ];
 
+    protected $casts = [
+        'birthday' => 'date',
+    ];
+
     public function user()
     {
         return $this->belongsTo(User::class);
