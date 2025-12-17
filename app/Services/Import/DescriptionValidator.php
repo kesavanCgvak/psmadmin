@@ -176,9 +176,10 @@ class DescriptionValidator
             }
         }
 
-        // Default: require at least 2 long words for meaningful content
-        // "MA light Digital Dimmer 12X2, 3kva Dimmer" has: light(4), Digital(7), Dimmer(6), 3kva(4) = 4 long words
-        return count($longWords) >= 2;
+        // Default: require at least 1 long word for meaningful content.
+        // This allows concise names like "Apogee SSM" (brand + model) to pass validation.
+        // More aggressive gibberish checks are already handled earlier.
+        return count($longWords) >= 1;
     }
 
     /**
