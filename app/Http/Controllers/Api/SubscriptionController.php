@@ -149,13 +149,33 @@ class SubscriptionController extends Controller
                 ], 404);
             }
             
+            $paymentMethodId = $validated['payment_method_id'];
+
+            // Ensure payment method is attached to the customer before setting default
+            $paymentMethod = \Stripe\PaymentMethod::retrieve($paymentMethodId);
+            if ($paymentMethod->customer && $paymentMethod->customer !== $user->stripe_customer_id) {
+                throw new \Exception('Payment method is attached to a different customer.');
+            }
+
+            if (!$paymentMethod->customer) {
+                $paymentMethod->attach(['customer' => $user->stripe_customer_id]);
+            }
+
             // Update default payment method on customer
             \Stripe\Customer::update(
                 $user->stripe_customer_id,
                 [
                     'invoice_settings' => [
-                        'default_payment_method' => $validated['payment_method_id']
+                        'default_payment_method' => $paymentMethodId
                     ]
+                ]
+            );
+
+            // Also set default payment method on the subscription itself
+            \Stripe\Subscription::update(
+                $subscription->stripe_subscription_id,
+                [
+                    'default_payment_method' => $paymentMethodId,
                 ]
             );
             
