@@ -349,30 +349,48 @@ class ProductController extends Controller
     }
 
     /**
-     * Generate the next PSM Code automatically (always PSM_ format)
+     * Generate the next PSM Code automatically (always PSM format)
      */
-    private function generateNextPsmCode()
+    // private function generateNextPsmCode()
+    // {
+    //     // Get the latest PSM code from the database (handle both PSM-XXX and PSMXXX formats)
+    //     $latestProduct = Product::whereNotNull('psm_code')
+    //         ->where(function ($query) {
+    //             $query->where('psm_code', 'like', 'PSM-%')
+    //                 ->orWhere('psm_code', 'like', 'PSM%');
+    //         })
+    //         ->orderByRaw('CAST(SUBSTRING(psm_code, 5) AS UNSIGNED) DESC')
+    //         ->first();
+
+    //     if ($latestProduct && $latestProduct->psm_code) {
+    //         // Extract the number from the latest PSM code (handle both formats)
+    //         $latestCode = $latestProduct->psm_code;
+    //         if (preg_match('/PSM[_](\d+)/', $latestCode, $matches)) {
+    //             $nextNumber = intval($matches[1]) + 1;
+    //             return 'PSM_' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
+    //         }
+    //     }
+
+    //     // If no existing PSM codes or format doesn't match, start with PSM_00001
+    //     return 'PSM_00001';
+    // }
+    private function generateNextPsmCode(): string
     {
-        // Get the latest PSM code from the database (handle both PSM-XXX and PSM_XXX formats)
-        $latestProduct = Product::whereNotNull('psm_code')
-            ->where(function ($query) {
-                $query->where('psm_code', 'like', 'PSM-%')
-                    ->orWhere('psm_code', 'like', 'PSM_%');
-            })
-            ->orderByRaw('CAST(SUBSTRING(psm_code, 5) AS UNSIGNED) DESC')
-            ->first();
+        // Get the highest numeric part from existing PSM codes (legacy + new)
+        $latestNumber = Product::whereNotNull('psm_code')
+            ->selectRaw("
+            MAX(
+                CAST(
+                    REGEXP_REPLACE(psm_code, '[^0-9]', '')
+                AS UNSIGNED)
+            ) AS max_number
+        ")
+            ->value('max_number');
 
-        if ($latestProduct && $latestProduct->psm_code) {
-            // Extract the number from the latest PSM code (handle both formats)
-            $latestCode = $latestProduct->psm_code;
-            if (preg_match('/PSM[_](\d+)/', $latestCode, $matches)) {
-                $nextNumber = intval($matches[1]) + 1;
-                return 'PSM_' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
-            }
-        }
+        $nextNumber = ($latestNumber ?? 0) + 1;
 
-        // If no existing PSM codes or format doesn't match, start with PSM_00001
-        return 'PSM_00001';
+        // ✅ NEW FORMAT ONLY (NO UNDERSCORE)
+        return 'PSM' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
     }
 
     /**

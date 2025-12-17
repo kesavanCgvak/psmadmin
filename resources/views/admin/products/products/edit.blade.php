@@ -22,11 +22,10 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="category_id">Category <span class="text-danger">*</span></label>
+                            <label for="category_id">Category</label>
                             <select class="form-control @error('category_id') is-invalid @enderror"
                                     id="category_id"
-                                    name="category_id"
-                                    required>
+                                    name="category_id">
                                 <option value="">-- Select Category --</option>
                                 @foreach($categories as $category)
                                     <option value="{{ $category->id }}" {{ old('category_id', $product->category_id) == $category->id ? 'selected' : '' }}>
@@ -63,11 +62,10 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="brand_id">Brand <span class="text-danger">*</span></label>
+                            <label for="brand_id">Brand</label>
                             <select class="form-control @error('brand_id') is-invalid @enderror"
                                     id="brand_id"
-                                    name="brand_id"
-                                    required>
+                                    name="brand_id">
                                 <option value="">-- Select Brand --</option>
                                 @foreach($brands as $brand)
                                     <option value="{{ $brand->id }}" {{ old('brand_id', $product->brand_id) == $brand->id ? 'selected' : '' }}>
@@ -104,10 +102,12 @@
                            id="psm_code"
                            name="psm_code"
                            value="{{ old('psm_code', $product->psm_code) }}"
-                           placeholder="e.g., PSM-EXC-001">
+                           readonly
+                           style="background-color: #f8f9fa; cursor: not-allowed;">
                     @error('psm_code')
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
+                    <small class="form-text text-muted">PSM Code cannot be edited</small>
                 </div>
 
                 <div class="form-group">

@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\CompanyUserController;
 use App\Http\Controllers\Api\CurrencyController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\GeoController;
+use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\RegistrationCheckController;
@@ -137,7 +138,19 @@ Route::middleware('jwt.verify')->group(function () {
 
 
 Route::middleware('jwt.verify')->post('/products/create-or-attach', [ProductController::class, 'createOrAttach']);
-Route::middleware('jwt.verify')->post('/products/import', [ProductController::class, 'importProducts']);
+Route::middleware('jwt.verify')->post('/products/import', [ProductController::class, 'importProducts']); // Legacy endpoint
+
+// New Import Workflow with Preview and Persistent Draft State
+Route::middleware('jwt.verify')->prefix('import')->group(function () {
+    Route::get('/sessions', [ImportController::class, 'index']); // List active sessions
+    Route::post('/sessions', [ImportController::class, 'start']); // Start new session
+    Route::get('/sessions/{session}', [ImportController::class, 'show']); // Get session with items
+    Route::post('/sessions/{session}/upload', [ImportController::class, 'upload']); // Upload Excel
+    Route::post('/sessions/{session}/analyze', [ImportController::class, 'analyze']); // Run matching
+    Route::put('/sessions/{session}/selections', [ImportController::class, 'updateSelections']); // Save draft selections
+    Route::post('/sessions/{session}/confirm', [ImportController::class, 'confirm']); // Confirm and import
+    Route::post('/sessions/{session}/cancel', [ImportController::class, 'cancel']); // Cancel session
+});
 
 
 Route::middleware(['jwt.verify'])->group(function () {

@@ -133,7 +133,7 @@ class ProductController extends Controller
             ], 404);
         }
 
-        if ($user->account_type !== 'provider') {
+        if (strtolower($user->account_type) !== 'provider') {
             return response()->json([
                 'status' => 'error',
                 'error' => [
@@ -347,7 +347,7 @@ class ProductController extends Controller
                 ], 409); // HTTP 409 Conflict
             }
 
-            // Generate safe next PSM code (always PSM_ format)
+            // Generate safe next PSM code (always PSM format)
             $psmCode = $validated['psm_code'] ?? $this->generateNextPsmCode();
 
             $product = Product::create([
@@ -434,6 +434,15 @@ class ProductController extends Controller
                 'success' => false,
                 'message' => 'Unable to read import file',
                 'error' => $e->getMessage()
+            ], 422);
+        }
+
+        // ✅ ENFORCE 100 ROW LIMIT
+        $dataRowCount = max(0, count($rows) - 1); // Exclude header row
+        if ($dataRowCount > 100) {
+            return response()->json([
+                'success' => false,
+                'message' => "Maximum 100 rows allowed per upload. Your file contains {$dataRowCount} data rows.",
             ], 422);
         }
 
@@ -658,7 +667,7 @@ class ProductController extends Controller
     }
 
     /**
-     * Generate the next sequential PSM code safely (always PSM_ format)
+     * Generate the next sequential PSM code safely (always PSM format)
      */
     protected function generateNextPsmCode(): string
     {
@@ -667,13 +676,13 @@ class ProductController extends Controller
             ->lockForUpdate()
             ->first();
 
-        if ($latest && preg_match('/PSM_(\d+)/', $latest->psm_code, $matches)) {
+        if ($latest && preg_match('/PSM(\d+)/', $latest->psm_code, $matches)) {
             $nextNumber = (int) $matches[1] + 1;
         } else {
             $nextNumber = 1;
         }
 
-        return 'PSM_' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
+        return 'PSM' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
     }
 
     public function createOrAttachOld1(Request $request): JsonResponse
