@@ -79,6 +79,8 @@ class ProductMatcherService
     /**
      * Find exact description matches (case-insensitive, trimmed)
      * This catches products that match exactly like "CHAUVET ROGUE R2 BEAM FIXTURE"
+     * Also matches brand + model combinations like "Apogee SSM"
+     * Handles metadata in brackets (e.g., "Apogee SSM [Amazon]" matches "Apogee SSM")
      */
     protected function findExactDescriptionMatches(ImportSessionItem $item): Collection
     {
@@ -86,15 +88,25 @@ class ProductMatcherService
         $normalized = $this->normalizeDescription($description);
         
         // Try exact match on model field (case-insensitive, trimmed)
-        $products = Product::where(function ($query) use ($description, $normalized) {
-            $query->whereRaw('LOWER(TRIM(model)) = LOWER(?)', [$description])
-                  // Also check normalized_model field if it exists
-                  ->orWhereRaw('LOWER(TRIM(normalized_model)) = LOWER(?)', [$normalized])
-                  // Also try normalized comparison on model field
-                  ->orWhereRaw('LOWER(REPLACE(REPLACE(TRIM(model), "  ", " "), "  ", " ")) = LOWER(?)', [$normalized]);
-        })
-        ->with('brand')
-        ->get();
+        // Also check brand + model combination using join
+        $products = Product::leftJoin('brands', 'products.brand_id', '=', 'brands.id')
+            ->where(function ($query) use ($description, $normalized) {
+                // Match original description
+                $query->whereRaw('LOWER(TRIM(products.model)) = LOWER(?)', [$description])
+                      // Match normalized description (strips brackets/metadata)
+                      ->orWhereRaw('LOWER(TRIM(products.normalized_model)) = LOWER(?)', [$normalized])
+                      // Normalized comparison on model field
+                      ->orWhereRaw('LOWER(REPLACE(REPLACE(TRIM(products.model), "  ", " "), "  ", " ")) = LOWER(?)', [$normalized])
+                      // Match brand + model combination (original)
+                      ->orWhereRaw('LOWER(TRIM(CONCAT_WS(\' \', brands.name, products.model))) = LOWER(?)', [$description])
+                      // Match brand + model combination (normalized - strips brackets)
+                      ->orWhereRaw('LOWER(TRIM(CONCAT_WS(\' \', brands.name, products.model))) = LOWER(?)', [$normalized])
+                      // Also normalize the product side for comparison (handles cases where product has brackets)
+                      ->orWhereRaw('LOWER(TRIM(REPLACE(REPLACE(REPLACE(CONCAT_WS(\' \', brands.name, products.model), \'[\', \' \'), \']\', \' \'), \'  \', \' \'))) = LOWER(?)', [$normalized]);
+            })
+            ->select('products.*')
+            ->with('brand')
+            ->get();
         
         return $products->map(function ($product) {
             return [
@@ -214,6 +226,7 @@ class ProductMatcherService
     /**
      * Normalized similarity matching with brand awareness
      * Handles brand variations: "Klark-Teknik" = "KT" = "Klark Teknik"
+     * Also matches brand name + model combinations like "Apogee SSM"
      */
     protected function findNormalizedSimilarityMatches(ImportSessionItem $item): Collection
     {
@@ -233,11 +246,14 @@ class ProductMatcherService
             // Extract key terms from description to narrow search
             $keyTerms = $this->extractKeyTerms($normalized);
             if (!empty($keyTerms)) {
-                // Search for products containing key terms
+                // Search for products containing key terms in model OR brand name
                 $query->where(function ($q) use ($keyTerms) {
                     foreach ($keyTerms as $term) {
                         if (strlen($term) >= 3) { // Only use terms 3+ chars
-                            $q->orWhere('model', 'LIKE', "%{$term}%");
+                            $q->orWhere('model', 'LIKE', "%{$term}%")
+                              ->orWhereHas('brand', function ($brandQuery) use ($term) {
+                                  $brandQuery->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($term) . '%']);
+                              });
                         }
                     }
                 });
@@ -247,8 +263,19 @@ class ProductMatcherService
         }
         
         return $products->map(function ($product) use ($normalized) {
-            $productNormalized = $this->normalizeDescription($product->model);
-            $confidence = $this->calculateSimilarity($normalized, $productNormalized);
+            // Build full product name: brand + model for comparison
+            $productFullName = trim(($product->brand->name ?? '') . ' ' . $product->model);
+            $productNormalized = $this->normalizeDescription($productFullName);
+            
+            // Also compare just the model
+            $productModelNormalized = $this->normalizeDescription($product->model);
+            
+            // Calculate similarity for both full name and model
+            $fullNameConfidence = $this->calculateSimilarity($normalized, $productNormalized);
+            $modelConfidence = $this->calculateSimilarity($normalized, $productModelNormalized);
+            
+            // Use the higher confidence
+            $confidence = max($fullNameConfidence, $modelConfidence);
             
             if ($confidence >= 0.70) {
                 return [
@@ -265,7 +292,7 @@ class ProductMatcherService
     
     /**
      * Enhanced description-based matching for products without model numbers
-     * Uses full-text search on product descriptions
+     * Uses full-text search on product descriptions and brand names
      */
     protected function findByDescription(ImportSessionItem $item): Collection
     {
@@ -276,14 +303,17 @@ class ProductMatcherService
             return collect();
         }
         
-        // Build query to search for products containing key terms
+        // Build query to search for products containing key terms in model OR brand name
         $query = Product::query()->with('brand');
         
         // Search for products that contain multiple key terms (better matches)
         $query->where(function ($q) use ($keyTerms) {
             foreach ($keyTerms as $term) {
                 if (strlen($term) >= 4) { // Only use terms 4+ chars for better precision
-                    $q->orWhere('model', 'LIKE', "%{$term}%");
+                    $q->orWhere('model', 'LIKE', "%{$term}%")
+                      ->orWhereHas('brand', function ($brandQuery) use ($term) {
+                          $brandQuery->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($term) . '%']);
+                      });
                 }
             }
         });
@@ -291,8 +321,19 @@ class ProductMatcherService
         $products = $query->limit(200)->get();
         
         return $products->map(function ($product) use ($normalized) {
-            $productNormalized = $this->normalizeDescription($product->model);
-            $confidence = $this->calculateSimilarity($normalized, $productNormalized);
+            // Build full product name: brand + model for comparison
+            $productFullName = trim(($product->brand->name ?? '') . ' ' . $product->model);
+            $productNormalized = $this->normalizeDescription($productFullName);
+            
+            // Also compare just the model
+            $productModelNormalized = $this->normalizeDescription($product->model);
+            
+            // Calculate similarity for both full name and model
+            $fullNameConfidence = $this->calculateSimilarity($normalized, $productNormalized);
+            $modelConfidence = $this->calculateSimilarity($normalized, $productModelNormalized);
+            
+            // Use the higher confidence
+            $confidence = max($fullNameConfidence, $modelConfidence);
             
             // For description-only matches, require higher confidence (0.75+)
             if ($confidence >= 0.75) {
@@ -341,10 +382,19 @@ class ProductMatcherService
     
     /**
      * Enhanced normalization that handles brand variations
+     * Removes metadata in brackets (e.g., [Amazon], [Fox]) as they're not part of product name
      */
     protected function normalizeDescription(string $text): string
     {
         $text = strtolower($text);
+        
+        // Remove bracketed content (metadata like [Amazon], [Fox], etc.)
+        // This handles cases like "Apogee SSM [Amazon]" -> "Apogee SSM"
+        $text = preg_replace('/\s*\[[^\]]+\]\s*/', ' ', $text);
+        
+        // Remove parenthesized content that looks like metadata
+        // This handles cases like "Product Name (Source)" -> "Product Name"
+        $text = preg_replace('/\s*\([^\)]+\)\s*/', ' ', $text);
         
         // Normalize brand names - common variations
         $text = preg_replace('/\bklark[-\s]?teknik\b/i', 'klarkteknik', $text);
@@ -365,6 +415,7 @@ class ProductMatcherService
     
     /**
      * Improved similarity calculation using term matching + string similarity
+     * More lenient with extra words (handles metadata like source names)
      */
     protected function calculateSimilarity(string $a, string $b): float
     {
@@ -377,7 +428,25 @@ class ProductMatcherService
         if (!empty($aTerms) && !empty($bTerms)) {
             $intersection = count(array_intersect($aTerms, $bTerms));
             $union = count(array_unique(array_merge($aTerms, $bTerms)));
-            $termMatch = $union > 0 ? $intersection / $union : 0.0;
+            
+            // If all terms from the shorter string are in the longer string, 
+            // it's a good match (handles cases like "apogee ssm" vs "apogee ssm amazon")
+            $shorterTerms = count($aTerms) <= count($bTerms) ? $aTerms : $bTerms;
+            $longerTerms = count($aTerms) > count($bTerms) ? $aTerms : $bTerms;
+            
+            if (!empty($shorterTerms)) {
+                $shorterInLonger = count(array_intersect($shorterTerms, $longerTerms));
+                $coverage = $shorterInLonger / count($shorterTerms);
+                
+                // If shorter string is fully contained in longer, boost the score
+                if ($coverage >= 1.0) {
+                    $termMatch = min(1.0, ($intersection / max(count($shorterTerms), 1)) * 1.1);
+                } else {
+                    $termMatch = $union > 0 ? $intersection / $union : 0.0;
+                }
+            } else {
+                $termMatch = $union > 0 ? $intersection / $union : 0.0;
+            }
         }
         
         // Calculate text similarity using similar_text
@@ -385,6 +454,13 @@ class ProductMatcherService
         if (!empty($a) && !empty($b)) {
             similar_text($a, $b, $textPercent);
             $textSimilarity = $textPercent / 100;
+            
+            // Boost similarity if one string contains the other (handles metadata suffixes)
+            $aInB = str_contains($b, $a);
+            $bInA = str_contains($a, $b);
+            if ($aInB || $bInA) {
+                $textSimilarity = min(1.0, $textSimilarity * 1.15);
+            }
         }
         
         // Weighted combination: 60% term match (more important), 40% text similarity

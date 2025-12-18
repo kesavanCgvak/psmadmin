@@ -35,7 +35,16 @@ class ProductController extends Controller
             'search' => 'required|string|min:2'
         ]);
 
-        $keywords = explode(' ', $request->query('search')); // split into words
+        $searchTerm = trim($request->query('search'));
+        $keywords = array_filter(explode(' ', $searchTerm)); // split into words and remove empty strings
+
+        // If no keywords after filtering, return empty
+        if (empty($keywords)) {
+            return response()->json([
+                'success' => true,
+                'data' => []
+            ]);
+        }
 
         $products = DB::table('products as p')
             ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
@@ -54,14 +63,19 @@ class ProductController extends Controller
                 'sc.name as sub_category_name'
             )
             ->where(function ($query) use ($keywords) {
+                // Ensure all keywords match somewhere (AND logic) - case-insensitive
                 foreach ($keywords as $word) {
-                    $like = "%$word%";
-                    $query->where(function ($q) use ($like) {
-                        $q->where('p.model', 'LIKE', $like)
-                            ->orWhere('b.name', 'LIKE', $like)
-                            ->orWhere('c.name', 'LIKE', $like)
-                            ->orWhere('sc.name', 'LIKE', $like)
-                            ->orWhere(DB::raw("CONCAT(b.name, ' ', p.model)"), 'LIKE', $like);
+                    $wordLower = strtolower(trim($word));
+                    if (empty($wordLower)) {
+                        continue;
+                    }
+                    $wordLike = '%' . $wordLower . '%';
+                    $query->where(function ($q) use ($wordLike) {
+                        $q->whereRaw('LOWER(p.model) LIKE ?', [$wordLike])
+                            ->orWhereRaw('LOWER(b.name) LIKE ?', [$wordLike])
+                            ->orWhereRaw('LOWER(c.name) LIKE ?', [$wordLike])
+                            ->orWhereRaw('LOWER(sc.name) LIKE ?', [$wordLike])
+                            ->orWhereRaw('LOWER(TRIM(CONCAT_WS(\' \', b.name, p.model))) LIKE ?', [$wordLike]);
                     });
                 }
             })
