@@ -433,8 +433,26 @@ class SubscriptionController extends Controller
                 'billing_details.address.country' => 'required_with:billing_details.address|string|size:2',
             ]);
 
-            // Determine account type from user/company
-            $accountType = $user->company->account_type ?? $user->account_type ?? 'user';
+            // Determine account type with priority:
+            // 1) Company account_type (if valid)
+            // 2) account_type from request (if provided & valid)
+            // 3) User.account_type (if valid)
+            // 4) Fallback: 'user'
+            $validTypes = ['provider', 'user'];
+            $companyType = $user->company->account_type ?? null;
+            $requestedType = $request->input('account_type');
+            $requestedType = $requestedType ? strtolower($requestedType) : null;
+            $userType = $user->account_type ?? null;
+
+            if ($companyType && in_array(strtolower($companyType), $validTypes, true)) {
+                $accountType = strtolower($companyType);
+            } elseif ($requestedType && in_array($requestedType, $validTypes, true)) {
+                $accountType = $requestedType;
+            } elseif ($userType && in_array(strtolower($userType), $validTypes, true)) {
+                $accountType = strtolower($userType);
+            } else {
+                $accountType = 'user';
+            }
 
             // Ensure Stripe customer exists
             if (!$user->stripe_customer_id) {
