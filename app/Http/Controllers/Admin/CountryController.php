@@ -48,6 +48,13 @@ class CountryController extends Controller
                 ->withInput();
         }
 
+        // Check for duplicate using normalized name comparison within the same region
+        if (Country::isDuplicate($request->name, $request->region_id)) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A country with this name already exists in the selected region.'])
+                ->withInput();
+        }
+
         Country::create($request->all());
 
         return redirect()->route('countries.index')
@@ -87,6 +94,13 @@ class CountryController extends Controller
         if ($validator->fails()) {
             return redirect()->back()
                 ->withErrors($validator)
+                ->withInput();
+        }
+
+        // Check for duplicate using normalized name comparison within the same region (excluding current record)
+        if (Country::isDuplicate($request->name, $request->region_id, $country->id)) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A country with this name already exists in the selected region.'])
                 ->withInput();
         }
 
