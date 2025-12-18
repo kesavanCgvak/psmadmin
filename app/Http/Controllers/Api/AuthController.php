@@ -315,6 +315,13 @@ class AuthController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
+            // Log the underlying registration error so we can debug 500 responses
+            Log::error('User registration error', [
+                'request' => $request->all(),
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Registration failed',

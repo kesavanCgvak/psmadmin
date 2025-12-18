@@ -68,6 +68,16 @@ class StripeSubscriptionService
                 ]);
             }
 
+            // Ensure this payment method is set as the customer's default
+            \Stripe\Customer::update(
+                $customerId,
+                [
+                    'invoice_settings' => [
+                        'default_payment_method' => $paymentMethodId,
+                    ],
+                ]
+            );
+
             Log::info('Payment method attached to customer', [
                 'customer_id' => $customerId,
                 'payment_method_id' => $paymentMethodId,

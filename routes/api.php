@@ -260,6 +260,7 @@ Route::middleware('jwt.verify')->group(function () {
     Route::post('/subscriptions/cancel', [\App\Http\Controllers\Api\SubscriptionController::class, 'cancel']);
     Route::post('/subscriptions/update-payment', [\App\Http\Controllers\Api\SubscriptionController::class, 'updatePaymentMethod']);
     Route::get('/subscription/payment-method', [\App\Http\Controllers\Api\SubscriptionController::class, 'getPaymentMethod']);
+    Route::post('/subscriptions/create', [\App\Http\Controllers\Api\SubscriptionController::class, 'create']);
     
     // Billing History APIs
     Route::get('/subscription/billing-history', [\App\Http\Controllers\Api\SubscriptionController::class, 'billingHistory']);

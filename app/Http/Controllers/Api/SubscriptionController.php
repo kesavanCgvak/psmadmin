@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\StripeSubscriptionService;
 use App\Models\Subscription;
+use App\Models\Setting;
 use App\Mail\SubscriptionCanceledNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -247,6 +248,12 @@ class SubscriptionController extends Controller
 
             $defaultPaymentMethod = $customer->invoice_settings->default_payment_method ?? null;
 
+            // Fallback: if customer has no default_payment_method, try subscription's default
+            if (!$defaultPaymentMethod && $user->subscription) {
+                $stripeSubscription = \Stripe\Subscription::retrieve($user->subscription->stripe_subscription_id);
+                $defaultPaymentMethod = $stripeSubscription->default_payment_method ?? null;
+            }
+
             if (!$defaultPaymentMethod) {
                 return response()->json([
                     'success' => true,
@@ -368,6 +375,153 @@ class SubscriptionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve billing history',
+            ], 500);
+        }
+    }
+
+    /**
+     * Create a new subscription for an existing user
+     * (used when payment mode is ON and the user registered earlier without a subscription)
+     */
+    public function create(Request $request)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+
+            // If user already has an active subscription, return it instead of creating a duplicate
+            if ($user->subscription) {
+                $subscription = $user->subscription;
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Subscription already exists',
+                    'subscription' => [
+                        'id' => $subscription->id,
+                        'plan_name' => $subscription->plan_name,
+                        'status' => $subscription->stripe_status,
+                        'amount' => (float) $subscription->amount,
+                        'currency' => $subscription->currency,
+                        'trial_ends_at' => $subscription->trial_ends_at?->format('c'),
+                        'current_period_end' => $subscription->current_period_end?->format('c'),
+                        'is_active' => $subscription->isActive(),
+                        'is_trialing' => $subscription->isOnTrial(),
+                        'is_payment_failed' => $subscription->isPaymentFailed(),
+                    ],
+                ], 200);
+            }
+
+            // Ensure payment feature is enabled
+            if (!Setting::isPaymentEnabled()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment is currently disabled. Please contact support.',
+                ], 400);
+            }
+
+            $validated = $request->validate([
+                'payment_method_id' => 'required|string|starts_with:pm_',
+                'billing_details' => 'required|array',
+                'billing_details.name' => 'required_with:billing_details|string|max:255',
+                'billing_details.email' => 'nullable|email',
+                'billing_details.phone' => 'nullable|string|max:20',
+                'billing_details.address' => 'required_with:billing_details|array',
+                'billing_details.address.line1' => 'required_with:billing_details.address|string',
+                'billing_details.address.line2' => 'nullable|string',
+                'billing_details.address.city' => 'required_with:billing_details.address|string',
+                'billing_details.address.state' => 'required_with:billing_details.address|string',
+                'billing_details.address.postal_code' => 'required_with:billing_details.address|string',
+                'billing_details.address.country' => 'required_with:billing_details.address|string|size:2',
+            ]);
+
+            // Determine account type from user/company
+            $accountType = $user->company->account_type ?? $user->account_type ?? 'user';
+
+            // Ensure Stripe customer exists
+            if (!$user->stripe_customer_id) {
+                $customer = $this->subscriptionService->createCustomer([
+                    'email' => $user->preferred_email ?? $user->email,
+                    'name' => $user->profile->full_name ?? $user->username,
+                    'metadata' => [
+                        'user_id' => $user->id,
+                        'company_id' => $user->company_id,
+                        'account_type' => $accountType,
+                    ],
+                ]);
+
+                $user->update(['stripe_customer_id' => $customer->id]);
+                $customerId = $customer->id;
+            } else {
+                $customerId = $user->stripe_customer_id;
+            }
+
+            // Attach payment method and create subscription with trial
+            $this->subscriptionService->attachPaymentMethod(
+                $customerId,
+                $validated['payment_method_id'],
+                $validated['billing_details']
+            );
+
+            // Normalize/validate account type against subscription_plans config
+            if (!in_array($accountType, ['provider', 'user'], true)) {
+                $accountType = 'user';
+            }
+
+            $planConfig = config("subscription_plans.{$accountType}.default");
+            if (!$planConfig || empty($planConfig['stripe_price_id'])) {
+                throw new \RuntimeException("Subscription plan not configured for account type: {$accountType}");
+            }
+
+            $trialDays = $accountType === 'provider' ? 60 : 14;
+
+            $subscription = $this->subscriptionService->createSubscriptionWithTrial(
+                customerId: $customerId,
+                priceId: $planConfig['stripe_price_id'],
+                paymentMethodId: $validated['payment_method_id'],
+                trialDays: $trialDays,
+                accountType: $accountType,
+                userId: $user->id,
+                companyId: $user->company_id
+            );
+
+            Log::info('Subscription created for existing user', [
+                'user_id' => $user->id,
+                'account_type' => $accountType,
+                'subscription_id' => $subscription->id,
+                'trial_days' => $trialDays,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Subscription created successfully',
+                'subscription' => [
+                    'id' => $subscription->id,
+                    'plan_name' => $subscription->plan_name,
+                    'status' => $subscription->stripe_status,
+                    'amount' => (float) $subscription->amount,
+                    'currency' => $subscription->currency,
+                    'trial_ends_at' => $subscription->trial_ends_at?->format('c'),
+                    'current_period_end' => $subscription->current_period_end?->format('c'),
+                    'is_active' => $subscription->isActive(),
+                    'is_trialing' => $subscription->isOnTrial(),
+                    'is_payment_failed' => $subscription->isPaymentFailed(),
+                ],
+            ], 201);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Failed to create subscription for existing user', [
+                'user_id' => $user->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create subscription',
             ], 500);
         }
     }
