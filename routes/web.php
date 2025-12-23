@@ -65,6 +65,8 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     Route::resource('subcategories', \App\Http\Controllers\Admin\SubCategoryController::class);
     Route::post('/subcategories/bulk-delete', [\App\Http\Controllers\Admin\SubCategoryController::class, 'bulkDelete'])
         ->name('subcategories.bulk-delete');
+    Route::post('/subcategories/{subcategory}/move-products', [\App\Http\Controllers\Admin\SubCategoryController::class, 'moveProducts'])
+        ->name('subcategories.moveProducts');
 
     // Brands
     Route::resource('brands', \App\Http\Controllers\Admin\BrandController::class);
