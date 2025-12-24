@@ -208,9 +208,28 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany(Subscription::class);
     }
 
+    /**
+     * Get the effective subscription for this user
+     * For provider company users: returns company subscription
+     * For regular users: returns individual subscription
+     */
+    public function getEffectiveSubscription()
+    {
+        // If user belongs to provider company, use company subscription
+        if ($this->company && 
+            $this->company->account_type === 'provider' && 
+            $this->company->subscription) {
+            return $this->company->subscription;
+        }
+        
+        // Otherwise, use individual subscription (for regular users)
+        return $this->subscription;
+    }
+
     public function hasActiveSubscription(): bool
     {
-        return $this->subscription && $this->subscription->isActive();
+        $subscription = $this->getEffectiveSubscription();
+        return $subscription && $subscription->isActive();
     }
 
     /**

@@ -22,15 +22,25 @@ class RequireSubscription
             ], 401);
         }
         
-        if (!$user->subscription) {
+        // Load company and subscription relationships
+        $user->load(['company.subscription', 'subscription']);
+        
+        // Get effective subscription (company subscription for provider companies, individual for regular users)
+        $subscription = $user->getEffectiveSubscription();
+        
+        if (!$subscription) {
+            // Determine message based on account type
+            $message = 'No subscription found';
+            if ($user->company && $user->company->account_type === 'provider') {
+                $message = 'Your company subscription has expired or is inactive. Please renew to continue.';
+            }
+            
             return response()->json([
                 'success' => false,
-                'message' => 'No subscription found',
+                'message' => $message,
                 'requires_subscription' => true
             ], 403);
         }
-        
-        $subscription = $user->subscription;
         
         // Allow access if active or trialing
         if ($subscription->isActive() || $subscription->isOnTrial()) {
@@ -50,18 +60,28 @@ class RequireSubscription
         
         if ($subscription->isUnpaid()) {
             // Payment failed, restrict access
+            $message = 'Subscription payment required. Please update your payment method.';
+            if ($user->company && $user->company->account_type === 'provider') {
+                $message = 'Your company subscription payment failed. Please update payment method to continue.';
+            }
+            
             return response()->json([
                 'success' => false,
-                'message' => 'Subscription payment required. Please update your payment method.',
+                'message' => $message,
                 'payment_required' => true,
                 'subscription_status' => 'unpaid',
             ], 402);
         }
         
         // Other inactive statuses
+        $message = 'Active subscription required';
+        if ($user->company && $user->company->account_type === 'provider') {
+            $message = 'Your company subscription has expired or is inactive. Please renew to continue.';
+        }
+        
         return response()->json([
             'success' => false,
-            'message' => 'Active subscription required',
+            'message' => $message,
             'subscription_status' => $subscription->stripe_status,
         ], 403);
     }

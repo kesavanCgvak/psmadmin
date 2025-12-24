@@ -155,5 +155,68 @@ class Company extends Model
         return $this->blocks()->where('user_id', $userId)->exists();
     }
 
+    /**
+     * Get the provider subscription for this company
+     */
+    public function subscription()
+    {
+        return $this->hasOne(Subscription::class, 'company_id')
+            ->where('account_type', 'provider')
+            ->latestOfMany();
+    }
+
+    /**
+     * Get all subscriptions for this company (for reporting/analytics)
+     */
+    public function subscriptions()
+    {
+        return $this->hasMany(Subscription::class, 'company_id');
+    }
+
+    /**
+     * Check if company has an active subscription
+     */
+    public function hasActiveSubscription(): bool
+    {
+        return $this->subscription && $this->subscription->isActive();
+    }
+
+    /**
+     * Get the provider owner (first admin user)
+     */
+    public function providerOwner()
+    {
+        return $this->users()->where('is_admin', 1)->first();
+    }
+
+    /**
+     * Get additional users (excluding provider owner)
+     */
+    public function additionalUsers()
+    {
+        $providerId = $this->providerOwner()?->id;
+        return $this->users()
+            ->when($providerId, fn($q) => $q->where('id', '!=', $providerId))
+            ->get();
+    }
+
+    /**
+     * Get count of additional users (excluding provider owner)
+     */
+    public function additionalUsersCount(): int
+    {
+        $providerId = $this->providerOwner()?->id;
+        return $this->users()
+            ->when($providerId, fn($q) => $q->where('id', '!=', $providerId))
+            ->count();
+    }
+
+    /**
+     * Check if company can add more users (max 3 additional users)
+     */
+    public function canAddMoreUsers(): bool
+    {
+        return $this->additionalUsersCount() < 3;
+    }
 
 }

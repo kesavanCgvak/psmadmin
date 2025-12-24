@@ -45,6 +45,21 @@ class CompanyUserController extends Controller
                 return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
             }
 
+            // Check if company can add more users (max 3 additional users for provider companies)
+            $company = Company::find($request->company_id);
+            if ($company && $company->account_type === 'provider') {
+                if (!$company->canAddMoreUsers()) {
+                    Log::warning('Maximum users limit reached for company', [
+                        'company_id' => $company->id,
+                        'current_count' => $company->additionalUsersCount()
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Maximum 3 additional users allowed per company. You have reached the limit.'
+                    ], 422);
+                }
+            }
+
             DB::beginTransaction();
 
             $user = User::create([

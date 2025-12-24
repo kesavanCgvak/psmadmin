@@ -25,16 +25,128 @@ class SubscriptionController extends Controller
     }
 
     /**
+     * Check if payment is enabled, return error if disabled
+     */
+    protected function checkPaymentEnabled()
+    {
+        if (!Setting::isPaymentEnabled()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment is currently disabled. Subscription features are not available.',
+                'payment_enabled' => false,
+            ], 403);
+        }
+        return null;
+    }
+
+    /**
      * Get current subscription
      */
     public function getCurrent(Request $request)
     {
+        // Check if payment is enabled
+        $paymentCheck = $this->checkPaymentEnabled();
+        if ($paymentCheck) {
+            return $paymentCheck;
+        }
+
         try {
             $user = JWTAuth::parseToken()->authenticate();
             
-            $subscription = $user->subscription;
+            // Load company and subscription relationships
+            $user->load(['company', 'subscription']);
+            
+            $subscription = null;
+            $isCompanySubscription = false;
+            
+            // Check if user belongs to a provider company
+            if ($user->company) {
+                $accountType = strtolower($user->company->account_type ?? '');
+                
+                if ($accountType === 'provider') {
+                    // Load company subscription explicitly
+                    $user->company->load('subscription');
+                    
+                    // If relationship didn't load, try direct query
+                    if (!$user->company->subscription) {
+                        // Try to find subscription by company_id
+                        $companySubscription = Subscription::where('company_id', $user->company->id)
+                            ->where('account_type', 'provider')
+                            ->latest()
+                            ->first();
+                        
+                        // If not found by company_id, try to find provider owner's subscription
+                        if (!$companySubscription) {
+                            $providerOwner = $user->company->providerOwner();
+                            if ($providerOwner) {
+                                $companySubscription = Subscription::where('user_id', $providerOwner->id)
+                                    ->where('company_id', $user->company->id)
+                                    ->where('account_type', 'provider')
+                                    ->latest()
+                                    ->first();
+                                
+                                // If still not found, try without company_id (for older subscriptions)
+                                if (!$companySubscription) {
+                                    $companySubscription = Subscription::where('user_id', $providerOwner->id)
+                                        ->where('account_type', 'provider')
+                                        ->latest()
+                                        ->first();
+                                }
+                            }
+                        }
+                        
+                        if ($companySubscription) {
+                            $user->company->setRelation('subscription', $companySubscription);
+                        }
+                    }
+                    
+                    // Use company subscription if found
+                    if ($user->company->subscription) {
+                        $subscription = $user->company->subscription;
+                        $isCompanySubscription = true;
+                        
+                        Log::info('Provider company user - using company subscription', [
+                            'user_id' => $user->id,
+                            'company_id' => $user->company->id,
+                            'subscription_id' => $subscription->id,
+                            'subscription_status' => $subscription->stripe_status,
+                        ]);
+                    } else {
+                        // Debug: Check if any subscriptions exist for this company
+                        $allCompanySubscriptions = Subscription::where('company_id', $user->company->id)->get();
+                        $providerOwner = $user->company->providerOwner();
+                        $ownerSubscriptions = $providerOwner ? Subscription::where('user_id', $providerOwner->id)->get() : collect();
+                        
+                        Log::warning('Provider company user - no company subscription found', [
+                            'user_id' => $user->id,
+                            'company_id' => $user->company->id,
+                            'company_account_type' => $user->company->account_type,
+                            'subscriptions_by_company_id' => $allCompanySubscriptions->count(),
+                            'provider_owner_id' => $providerOwner?->id,
+                            'subscriptions_by_owner_id' => $ownerSubscriptions->count(),
+                            'subscription_ids' => $allCompanySubscriptions->pluck('id')->toArray(),
+                        ]);
+                    }
+                } elseif ($user->subscription) {
+                    // Regular user with individual subscription
+                    $subscription = $user->subscription;
+                }
+            } elseif ($user->subscription) {
+                // Regular user with individual subscription (no company)
+                $subscription = $user->subscription;
+            }
             
             if (!$subscription) {
+                // For provider company users, provide helpful message
+                if ($user->company && strtolower($user->company->account_type ?? '') === 'provider') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Your company subscription has expired or is inactive. Please contact your company administrator.',
+                        'is_company_subscription' => true,
+                        'company_id' => $user->company_id,
+                    ], 404);
+                }
+                
                 return response()->json([
                     'success' => false,
                     'message' => 'No subscription found',
@@ -54,11 +166,15 @@ class SubscriptionController extends Controller
                     'is_active' => $subscription->isActive(),
                     'is_trialing' => $subscription->isOnTrial(),
                     'is_payment_failed' => $subscription->isPaymentFailed(),
+                    'is_company_subscription' => $isCompanySubscription,
+                    'company_id' => $isCompanySubscription ? $user->company_id : null,
                 ],
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to get current subscription', [
+                'user_id' => $user->id ?? null,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             
             return response()->json([
@@ -73,15 +189,76 @@ class SubscriptionController extends Controller
      */
     public function cancel(Request $request)
     {
+        // Check if payment is enabled
+        $paymentCheck = $this->checkPaymentEnabled();
+        if ($paymentCheck) {
+            return $paymentCheck;
+        }
+
         try {
             $user = JWTAuth::parseToken()->authenticate();
             
-            $subscription = $user->subscription;
+            // Load company and subscription relationships
+            $user->load(['company.subscription', 'subscription']);
+            
+            // Get effective subscription (company subscription for provider companies, individual for regular users)
+            $subscription = null;
+            $isCompanySubscription = false;
+
+            // For provider company users, use company subscription
+            if ($user->company && strtolower($user->company->account_type ?? '') === 'provider') {
+                // Load company subscription
+                $user->company->load('subscription');
+                
+                // If relationship didn't load, try direct query
+                if (!$user->company->subscription) {
+                    $companySubscription = Subscription::where('company_id', $user->company->id)
+                        ->where('account_type', 'provider')
+                        ->latest()
+                        ->first();
+                    
+                    if (!$companySubscription) {
+                        $providerOwner = $user->company->providerOwner();
+                        if ($providerOwner) {
+                            $companySubscription = Subscription::where('user_id', $providerOwner->id)
+                                ->where('company_id', $user->company->id)
+                                ->where('account_type', 'provider')
+                                ->latest()
+                                ->first();
+                            
+                            if (!$companySubscription) {
+                                $companySubscription = Subscription::where('user_id', $providerOwner->id)
+                                    ->where('account_type', 'provider')
+                                    ->latest()
+                                    ->first();
+                            }
+                        }
+                    }
+                    
+                    if ($companySubscription) {
+                        $user->company->setRelation('subscription', $companySubscription);
+                    }
+                }
+                
+                if ($user->company->subscription) {
+                    $subscription = $user->company->subscription;
+                    $isCompanySubscription = true;
+                }
+            } else {
+                // Regular user - use their own subscription
+                $subscription = $user->subscription;
+            }
             
             if (!$subscription) {
+                $message = 'No subscription found';
+                if ($user->company && strtolower($user->company->account_type ?? '') === 'provider') {
+                    $message = 'Your company subscription has expired or is inactive. Please contact your company administrator.';
+                }
+                
                 return response()->json([
                     'success' => false,
-                    'message' => 'No subscription found',
+                    'message' => $message,
+                    'is_company_subscription' => $isCompanySubscription,
                 ], 404);
             }
             
@@ -99,6 +276,7 @@ class SubscriptionController extends Controller
                     Log::info('Cancellation confirmation email sent', [
                         'user_id' => $user->id,
                         'subscription_id' => $subscription->id,
+                        'is_company_subscription' => $isCompanySubscription,
                     ]);
                 }
             } catch (\Exception $e) {
@@ -110,15 +288,23 @@ class SubscriptionController extends Controller
                 // Don't fail the cancellation if email fails
             }
             
+            $message = 'Subscription will be canceled at end of billing period. Service continues until ' . $subscription->current_period_end?->format('Y-m-d');
+            if ($isCompanySubscription) {
+                $message = 'Company subscription will be canceled at end of billing period. Service continues until ' . $subscription->current_period_end?->format('Y-m-d') . '. All users in your company will be affected.';
+            }
+            
             return response()->json([
                 'success' => true,
-                'message' => 'Subscription will be canceled at end of billing period. Service continues until ' . $subscription->current_period_end?->format('Y-m-d'),
+                'message' => $message,
                 'cancel_at_period_end' => true,
                 'current_period_end' => $subscription->current_period_end?->format('c'),
+                'is_company_subscription' => $isCompanySubscription,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to cancel subscription', [
+                'user_id' => $user->id ?? null,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             
             return response()->json([
@@ -133,20 +319,97 @@ class SubscriptionController extends Controller
      */
     public function updatePaymentMethod(Request $request)
     {
+        // Check if payment is enabled
+        $paymentCheck = $this->checkPaymentEnabled();
+        if ($paymentCheck) {
+            return $paymentCheck;
+        }
+
         try {
             $user = JWTAuth::parseToken()->authenticate();
+            
+            // Load company and subscription relationships
+            $user->load(['company.subscription', 'subscription']);
             
             $validated = $request->validate([
                 'payment_method_id' => 'required|string|starts_with:pm_',
                 'billing_details' => 'nullable|array',
             ]);
             
-            $subscription = $user->subscription;
+            // Get effective subscription (company subscription for provider companies, individual for regular users)
+            $subscription = null;
+            $stripeCustomerId = null;
+            $isCompanySubscription = false;
+
+            // For provider company users, use company subscription
+            if ($user->company && strtolower($user->company->account_type ?? '') === 'provider') {
+                // Load company subscription
+                $user->company->load('subscription');
+                
+                // If relationship didn't load, try direct query
+                if (!$user->company->subscription) {
+                    $companySubscription = Subscription::where('company_id', $user->company->id)
+                        ->where('account_type', 'provider')
+                        ->latest()
+                        ->first();
+                    
+                    if (!$companySubscription) {
+                        $providerOwner = $user->company->providerOwner();
+                        if ($providerOwner) {
+                            $companySubscription = Subscription::where('user_id', $providerOwner->id)
+                                ->where('company_id', $user->company->id)
+                                ->where('account_type', 'provider')
+                                ->latest()
+                                ->first();
+                            
+                            if (!$companySubscription) {
+                                $companySubscription = Subscription::where('user_id', $providerOwner->id)
+                                    ->where('account_type', 'provider')
+                                    ->latest()
+                                    ->first();
+                            }
+                        }
+                    }
+                    
+                    if ($companySubscription) {
+                        $user->company->setRelation('subscription', $companySubscription);
+                    }
+                }
+                
+                if ($user->company->subscription) {
+                    $subscription = $user->company->subscription;
+                    $stripeCustomerId = $subscription->stripe_customer_id;
+                    $isCompanySubscription = true;
+                } else {
+                    // Fallback to provider owner's customer ID
+                    $providerOwner = $user->company->providerOwner();
+                    if ($providerOwner && $providerOwner->stripe_customer_id) {
+                        $stripeCustomerId = $providerOwner->stripe_customer_id;
+                    }
+                }
+            } else {
+                // Regular user - use their own subscription
+                $subscription = $user->subscription;
+                $stripeCustomerId = $user->stripe_customer_id;
+            }
             
             if (!$subscription) {
+                $message = 'No subscription found';
+                if ($user->company && strtolower($user->company->account_type ?? '') === 'provider') {
+                    $message = 'Your company subscription has expired or is inactive. Please contact your company administrator.';
+                }
+                
                 return response()->json([
                     'success' => false,
-                    'message' => 'No subscription found',
+                    'message' => $message,
+                    'is_company_subscription' => $isCompanySubscription,
+                ], 404);
+            }
+
+            if (!$stripeCustomerId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No Stripe customer found',
                 ], 404);
             }
             
@@ -154,17 +417,17 @@ class SubscriptionController extends Controller
 
             // Ensure payment method is attached to the customer before setting default
             $paymentMethod = \Stripe\PaymentMethod::retrieve($paymentMethodId);
-            if ($paymentMethod->customer && $paymentMethod->customer !== $user->stripe_customer_id) {
+            if ($paymentMethod->customer && $paymentMethod->customer !== $stripeCustomerId) {
                 throw new \Exception('Payment method is attached to a different customer.');
             }
 
             if (!$paymentMethod->customer) {
-                $paymentMethod->attach(['customer' => $user->stripe_customer_id]);
+                $paymentMethod->attach(['customer' => $stripeCustomerId]);
             }
 
             // Update default payment method on customer
             \Stripe\Customer::update(
-                $user->stripe_customer_id,
+                $stripeCustomerId,
                 [
                     'invoice_settings' => [
                         'default_payment_method' => $paymentMethodId
@@ -183,7 +446,7 @@ class SubscriptionController extends Controller
             // If subscription is past_due, attempt to pay the invoice
             if ($subscription->stripe_status === 'past_due') {
                 $invoices = \Stripe\Invoice::all([
-                    'customer' => $user->stripe_customer_id,
+                    'customer' => $stripeCustomerId,
                     'subscription' => $subscription->stripe_subscription_id,
                     'status' => 'open',
                     'limit' => 1,
@@ -205,6 +468,7 @@ class SubscriptionController extends Controller
                 'success' => true,
                 'message' => 'Payment method updated successfully',
                 'subscription_status' => $subscription->stripe_status,
+                'is_company_subscription' => $isCompanySubscription,
             ]);
             
         } catch (\Stripe\Exception\CardException $e) {
@@ -215,7 +479,8 @@ class SubscriptionController extends Controller
         } catch (\Exception $e) {
             Log::error('Failed to update payment method', [
                 'user_id' => $user->id ?? null,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             
             return response()->json([
@@ -230,27 +495,94 @@ class SubscriptionController extends Controller
      */
     public function getPaymentMethod(Request $request)
     {
+        // Check if payment is enabled
+        $paymentCheck = $this->checkPaymentEnabled();
+        if ($paymentCheck) {
+            return $paymentCheck;
+        }
+
         try {
             $user = JWTAuth::parseToken()->authenticate();
+            
+            // Load company and subscription relationships
+            $user->load(['company.subscription', 'subscription']);
 
-            if (!$user->stripe_customer_id) {
+            // Determine which Stripe customer ID to use
+            $stripeCustomerId = null;
+            $subscription = null;
+            $isCompanySubscription = false;
+
+            // For provider company users, use company subscription's customer ID
+            if ($user->company && strtolower($user->company->account_type ?? '') === 'provider') {
+                // Load company subscription
+                $user->company->load('subscription');
+                
+                // If relationship didn't load, try direct query
+                if (!$user->company->subscription) {
+                    $companySubscription = Subscription::where('company_id', $user->company->id)
+                        ->where('account_type', 'provider')
+                        ->latest()
+                        ->first();
+                    
+                    if (!$companySubscription) {
+                        $providerOwner = $user->company->providerOwner();
+                        if ($providerOwner) {
+                            $companySubscription = Subscription::where('user_id', $providerOwner->id)
+                                ->where('company_id', $user->company->id)
+                                ->where('account_type', 'provider')
+                                ->latest()
+                                ->first();
+                            
+                            if (!$companySubscription) {
+                                $companySubscription = Subscription::where('user_id', $providerOwner->id)
+                                    ->where('account_type', 'provider')
+                                    ->latest()
+                                    ->first();
+                            }
+                        }
+                    }
+                    
+                    if ($companySubscription) {
+                        $user->company->setRelation('subscription', $companySubscription);
+                    }
+                }
+                
+                if ($user->company->subscription) {
+                    $subscription = $user->company->subscription;
+                    $stripeCustomerId = $subscription->stripe_customer_id;
+                    $isCompanySubscription = true;
+                } else {
+                    // Fallback to provider owner's customer ID
+                    $providerOwner = $user->company->providerOwner();
+                    if ($providerOwner && $providerOwner->stripe_customer_id) {
+                        $stripeCustomerId = $providerOwner->stripe_customer_id;
+                    }
+                }
+            } else {
+                // Regular user - use their own customer ID
+                $stripeCustomerId = $user->stripe_customer_id;
+                $subscription = $user->subscription;
+            }
+
+            if (!$stripeCustomerId) {
                 return response()->json([
                     'success' => false,
                     'message' => 'No Stripe customer found',
+                    'is_company_subscription' => $isCompanySubscription,
                 ], 404);
             }
 
             // Retrieve customer with expanded default payment method
             $customer = \Stripe\Customer::retrieve(
-                $user->stripe_customer_id,
+                $stripeCustomerId,
                 ['expand' => ['invoice_settings.default_payment_method']]
             );
 
             $defaultPaymentMethod = $customer->invoice_settings->default_payment_method ?? null;
 
             // Fallback: if customer has no default_payment_method, try subscription's default
-            if (!$defaultPaymentMethod && $user->subscription) {
-                $stripeSubscription = \Stripe\Subscription::retrieve($user->subscription->stripe_subscription_id);
+            if (!$defaultPaymentMethod && $subscription) {
+                $stripeSubscription = \Stripe\Subscription::retrieve($subscription->stripe_subscription_id);
                 $defaultPaymentMethod = $stripeSubscription->default_payment_method ?? null;
             }
 
@@ -258,6 +590,7 @@ class SubscriptionController extends Controller
                 return response()->json([
                     'success' => true,
                     'payment_method' => null,
+                    'is_company_subscription' => $isCompanySubscription,
                 ]);
             }
 
@@ -279,6 +612,7 @@ class SubscriptionController extends Controller
                     'funding' => $card->funding ?? null,
                     'country' => $card->country ?? null,
                 ],
+                'is_company_subscription' => $isCompanySubscription,
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             Log::error('Payment method not found', [
@@ -294,6 +628,7 @@ class SubscriptionController extends Controller
             Log::error('Failed to get payment method', [
                 'user_id' => $user->id ?? null,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
@@ -308,13 +643,80 @@ class SubscriptionController extends Controller
      */
     public function billingHistory(Request $request)
     {
+        // Check if payment is enabled
+        $paymentCheck = $this->checkPaymentEnabled();
+        if ($paymentCheck) {
+            return $paymentCheck;
+        }
+
         try {
             $user = JWTAuth::parseToken()->authenticate();
             
-            if (!$user->stripe_customer_id) {
+            // Load company and subscription relationships
+            $user->load(['company.subscription', 'subscription']);
+
+            // Determine which Stripe customer ID to use
+            $stripeCustomerId = null;
+            $subscription = null;
+            $isCompanySubscription = false;
+
+            // For provider company users, use company subscription's customer ID
+            if ($user->company && strtolower($user->company->account_type ?? '') === 'provider') {
+                // Load company subscription
+                $user->company->load('subscription');
+                
+                // If relationship didn't load, try direct query
+                if (!$user->company->subscription) {
+                    $companySubscription = Subscription::where('company_id', $user->company->id)
+                        ->where('account_type', 'provider')
+                        ->latest()
+                        ->first();
+                    
+                    if (!$companySubscription) {
+                        $providerOwner = $user->company->providerOwner();
+                        if ($providerOwner) {
+                            $companySubscription = Subscription::where('user_id', $providerOwner->id)
+                                ->where('company_id', $user->company->id)
+                                ->where('account_type', 'provider')
+                                ->latest()
+                                ->first();
+                            
+                            if (!$companySubscription) {
+                                $companySubscription = Subscription::where('user_id', $providerOwner->id)
+                                    ->where('account_type', 'provider')
+                                    ->latest()
+                                    ->first();
+                            }
+                        }
+                    }
+                    
+                    if ($companySubscription) {
+                        $user->company->setRelation('subscription', $companySubscription);
+                    }
+                }
+                
+                if ($user->company->subscription) {
+                    $subscription = $user->company->subscription;
+                    $stripeCustomerId = $subscription->stripe_customer_id;
+                    $isCompanySubscription = true;
+                } else {
+                    // Fallback to provider owner's customer ID
+                    $providerOwner = $user->company->providerOwner();
+                    if ($providerOwner && $providerOwner->stripe_customer_id) {
+                        $stripeCustomerId = $providerOwner->stripe_customer_id;
+                    }
+                }
+            } else {
+                // Regular user - use their own customer ID
+                $stripeCustomerId = $user->stripe_customer_id;
+                $subscription = $user->subscription;
+            }
+
+            if (!$stripeCustomerId) {
                 return response()->json([
                     'success' => false,
                     'message' => 'No Stripe customer found',
+                    'is_company_subscription' => $isCompanySubscription,
                 ], 404);
             }
 
@@ -325,7 +727,7 @@ class SubscriptionController extends Controller
 
             // Build parameters for Stripe API
             $params = [
-                'customer' => $user->stripe_customer_id,
+                'customer' => $stripeCustomerId,
                 'limit' => min($limit, 100), // Max 100 per Stripe API
             ];
 
@@ -364,12 +766,14 @@ class SubscriptionController extends Controller
                 'success' => true,
                 'invoices' => $formattedInvoices,
                 'has_more' => $invoices->has_more,
+                'is_company_subscription' => $isCompanySubscription,
             ]);
 
         } catch (\Exception $e) {
             Log::error('Failed to get billing history', [
                 'user_id' => $user->id ?? null,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             
             return response()->json([
@@ -385,6 +789,12 @@ class SubscriptionController extends Controller
      */
     public function create(Request $request)
     {
+        // Check if payment is enabled
+        $paymentCheck = $this->checkPaymentEnabled();
+        if ($paymentCheck) {
+            return $paymentCheck;
+        }
+
         try {
             $user = JWTAuth::parseToken()->authenticate();
 
@@ -549,6 +959,12 @@ class SubscriptionController extends Controller
      */
     public function downloadInvoice(Request $request, $invoiceId)
     {
+        // Check if payment is enabled
+        $paymentCheck = $this->checkPaymentEnabled();
+        if ($paymentCheck) {
+            return $paymentCheck;
+        }
+
         try {
             $user = JWTAuth::parseToken()->authenticate();
             

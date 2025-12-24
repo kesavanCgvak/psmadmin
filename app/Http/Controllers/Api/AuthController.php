@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\City;
 use App\Models\Company;
+use App\Models\Subscription;
 use App\Models\Setting;
 use App\Services\StripeSubscriptionService;
 use Illuminate\Support\Facades\Hash;
@@ -403,9 +404,60 @@ class AuthController extends Controller
                 'subscription',
             ]);
 
-            // Build subscription status response
-            $subscriptionStatus = null;
-            $subscription = $user->subscription;
+            // Determine subscription source and build status
+            $subscription = null;
+            $isCompanySubscription = false;
+
+            // For provider company users, check company subscription first
+            if ($user->company) {
+                // Check account_type (could be 'provider' or 'Provider')
+                $accountType = strtolower($user->company->account_type ?? '');
+                
+                if ($accountType === 'provider') {
+                    // Load company subscription explicitly - try multiple approaches
+                    $user->company->load('subscription');
+                    
+                    // If relationship didn't load, try direct query
+                    if (!$user->company->subscription) {
+                        $companySubscription = Subscription::where('company_id', $user->company->id)
+                            ->where(function($query) {
+                                $query->where('account_type', 'provider')
+                                      ->orWhere('account_type', 'Provider');
+                            })
+                            ->latest()
+                            ->first();
+                        
+                        if ($companySubscription) {
+                            $user->company->setRelation('subscription', $companySubscription);
+                        }
+                    }
+                    
+                    // Use company subscription if found
+                    if ($user->company->subscription) {
+                        $subscription = $user->company->subscription;
+                        $isCompanySubscription = true;
+                        
+                        Log::info('Provider company user login - using company subscription', [
+                            'user_id' => $user->id,
+                            'company_id' => $user->company->id,
+                            'subscription_id' => $subscription->id,
+                            'subscription_status' => $subscription->stripe_status,
+                        ]);
+                    } else {
+                        Log::warning('Provider company user login - no company subscription found', [
+                            'user_id' => $user->id,
+                            'company_id' => $user->company->id,
+                            'company_account_type' => $user->company->account_type,
+                        ]);
+                    }
+                } elseif ($user->subscription) {
+                    // Regular user with individual subscription
+                    $subscription = $user->subscription;
+                }
+            } elseif ($user->subscription) {
+                // Regular user with individual subscription (no company)
+                $subscription = $user->subscription;
+            }
 
             if ($subscription) {
                 $subscriptionStatus = [
@@ -420,15 +472,44 @@ class AuthController extends Controller
                     'amount' => (float) $subscription->amount,
                     'currency' => $subscription->currency,
                     'payment_required' => $subscription->isPaymentFailed(),
+                    'is_company_subscription' => $isCompanySubscription,
+                    'company_id' => $isCompanySubscription ? $user->company_id : null,
                 ];
             } else {
-                $subscriptionStatus = [
-                    'has_subscription' => false,
-                    'is_active' => false,
-                    'is_trialing' => false,
-                    'status' => 'none',
-                    'message' => 'No subscription found. Please contact support.',
-                ];
+                // For provider company users without subscription, provide helpful message
+                $userAccountType = $user->company ? strtolower($user->company->account_type ?? '') : '';
+                
+                if ($user->company && $userAccountType === 'provider') {
+                    $subscriptionStatus = [
+                        'has_subscription' => false,
+                        'is_active' => false,
+                        'is_trialing' => false,
+                        'status' => 'none',
+                        'message' => 'Your company subscription has expired or is inactive. Please contact your company administrator.',
+                        'is_company_subscription' => true,
+                        'company_id' => $user->company_id,
+                    ];
+                } else {
+                    $subscriptionStatus = [
+                        'has_subscription' => false,
+                        'is_active' => false,
+                        'is_trialing' => false,
+                        'status' => 'none',
+                        'message' => 'No subscription found. Please contact support.',
+                    ];
+                }
+            }
+
+            // Block login if subscription is expired/canceled for provider company users
+            if ($user->company && $user->company->account_type === 'provider') {
+                if (!$subscription || !$subscription->isActive()) {
+                    auth()->logout();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Your company subscription has expired or is inactive. Please renew to continue.',
+                        'subscription' => $subscriptionStatus,
+                    ], 403);
+                }
             }
 
             // Get payment system status (whether payment is enabled/disabled system-wide)
