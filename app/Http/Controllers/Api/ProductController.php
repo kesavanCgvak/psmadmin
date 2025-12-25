@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\ProductNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\Product;
@@ -36,15 +37,16 @@ class ProductController extends Controller
         ]);
 
         $searchTerm = trim($request->query('search'));
-        $keywords = array_filter(explode(' ', $searchTerm)); // split into words and remove empty strings
-
-        // If no keywords after filtering, return empty
-        if (empty($keywords)) {
-            return response()->json([
-                'success' => true,
-                'data' => []
-            ]);
-        }
+        
+        // Extract and normalize model code
+        $modelCode = ProductNormalizer::extractModelCode($searchTerm);
+        $normalizedCode = $modelCode ? ProductNormalizer::normalizeCode($modelCode) : null;
+        
+        // Normalize full search term
+        $normalizedFull = ProductNormalizer::normalizeFullName(null, $searchTerm);
+        
+        // Split into keywords for fallback search
+        $keywords = array_filter(explode(' ', $searchTerm));
 
         $products = DB::table('products as p')
             ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
@@ -62,23 +64,47 @@ class ProductController extends Controller
                 'sc.id as sub_category_id',
                 'sc.name as sub_category_name'
             )
-            ->where(function ($query) use ($keywords) {
-                // Ensure all keywords match somewhere (AND logic) - case-insensitive
-                foreach ($keywords as $word) {
-                    $wordLower = strtolower(trim($word));
-                    if (empty($wordLower)) {
-                        continue;
+            ->where(function ($query) use ($normalizedCode, $normalizedFull, $keywords) {
+                // Priority 1: Match by normalized_model (handles DML-1122, DML1122, etc.)
+                if ($normalizedCode && ProductNormalizer::isValidNormalizedCode($normalizedCode)) {
+                    $query->where('p.normalized_model', $normalizedCode)
+                          ->orWhere('p.normalized_model', 'LIKE', '%' . $normalizedCode . '%');
+                }
+                
+                // Priority 2: Match by normalized_full_name (handles "Apogee SSM -", "EV-DML1122", etc.)
+                if ($normalizedFull) {
+                    $query->orWhere('p.normalized_full_name', $normalizedFull)
+                          ->orWhere('p.normalized_full_name', 'LIKE', '%' . $normalizedFull . '%');
+                }
+                
+                // Priority 3: Fallback to keyword search (AND logic) - case-insensitive
+                if (!empty($keywords)) {
+                    foreach ($keywords as $word) {
+                        $wordLower = strtolower(trim($word));
+                        if (empty($wordLower)) {
+                            continue;
+                        }
+                        $wordLike = '%' . $wordLower . '%';
+                        $query->where(function ($q) use ($wordLike) {
+                            $q->whereRaw('LOWER(p.model) LIKE ?', [$wordLike])
+                                ->orWhereRaw('LOWER(b.name) LIKE ?', [$wordLike])
+                                ->orWhereRaw('LOWER(c.name) LIKE ?', [$wordLike])
+                                ->orWhereRaw('LOWER(sc.name) LIKE ?', [$wordLike])
+                                ->orWhereRaw('LOWER(TRIM(CONCAT_WS(\' \', b.name, p.model))) LIKE ?', [$wordLike]);
+                        });
                     }
-                    $wordLike = '%' . $wordLower . '%';
-                    $query->where(function ($q) use ($wordLike) {
-                        $q->whereRaw('LOWER(p.model) LIKE ?', [$wordLike])
-                            ->orWhereRaw('LOWER(b.name) LIKE ?', [$wordLike])
-                            ->orWhereRaw('LOWER(c.name) LIKE ?', [$wordLike])
-                            ->orWhereRaw('LOWER(sc.name) LIKE ?', [$wordLike])
-                            ->orWhereRaw('LOWER(TRIM(CONCAT_WS(\' \', b.name, p.model))) LIKE ?', [$wordLike]);
-                    });
                 }
             })
+            ->orderByRaw(
+                "CASE 
+                    WHEN p.normalized_model = ? THEN 0
+                    WHEN p.normalized_model LIKE ? THEN 1
+                    WHEN p.normalized_full_name = ? THEN 2
+                    WHEN p.normalized_full_name LIKE ? THEN 3
+                    ELSE 4
+                 END",
+                [$normalizedCode, '%' . $normalizedCode . '%', $normalizedFull, '%' . $normalizedFull . '%']
+            )
             ->limit(50)
             ->get();
 

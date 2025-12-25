@@ -61,7 +61,7 @@
                             <p>If you did not make this request, you can safely ignore this email.</p>
                             <p>Otherwise, please click the button below to reset your password:</p>
                             <p style="text-align:center;">
-                                <a href="{{ env('APP_FRONTEND_URL') }}/reset-password?token={{ $token }}"
+                                <a href="{{ env('APP_FRONTEND_URL') }}#/reset-password/{{ $token }}"
                                     class="btn">Reset Password</a>
                             </p>
                             <p>If the button above doesn’t work, copy and paste this link into your browser:</p>

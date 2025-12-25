@@ -1,6 +1,7 @@
 <?php
 namespace App\Models;
 
+use App\Support\ProductNormalizer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
@@ -16,7 +17,33 @@ class Product extends Model
         'psm_code',
         'is_verified',
         'webpage_url',
+        'normalized_model',
+        'normalized_full_name',
     ];
+
+    /**
+     * Boot the model and auto-normalize on save
+     */
+    protected static function booted()
+    {
+        static::saving(function (Product $product) {
+            // Normalize model code
+            $product->normalized_model = ProductNormalizer::normalizeCode($product->model);
+            
+            // Get brand name for full name normalization
+            $brandName = null;
+            if ($product->brand_id) {
+                // Load brand if not already loaded
+                if (!$product->relationLoaded('brand') && $product->brand_id) {
+                    $product->load('brand');
+                }
+                $brandName = $product->brand->name ?? null;
+            }
+            
+            // Normalize full name (brand + model)
+            $product->normalized_full_name = ProductNormalizer::normalizeFullName($brandName, $product->model);
+        });
+    }
 
     /**
      * A product belongs to a category.

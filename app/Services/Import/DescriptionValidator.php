@@ -82,13 +82,18 @@ class DescriptionValidator
 
     /**
      * Detect random typing patterns (QWERTY keyboard patterns)
+     * ✅ UPDATED: Allows sequential/repeating numbers in legitimate product codes
      */
     protected function hasRandomPattern(string $text): bool
     {
-        // Remove numbers and special characters
+        // ✅ Extract potential model codes (letters followed by numbers, e.g., "DML1122", "EV-1122")
+        // This helps distinguish legitimate product codes from random patterns
+        $hasLegitimateModelCode = $this->hasLegitimateModelCode($text);
+
+        // Remove numbers and special characters for pattern checking
         $letters = preg_replace('/[^A-Za-z]/', '', $text);
 
-        // Check for QWERTY-like sequences
+        // Check for QWERTY-like sequences (definite random pattern)
         $qwertyPatterns = ['qwerty', 'asdf', 'zxcv', 'hjkl', 'uiop'];
         foreach ($qwertyPatterns as $pattern) {
             if (stripos($letters, $pattern) !== false) {
@@ -96,9 +101,57 @@ class DescriptionValidator
             }
         }
 
-        // Check for too many consonants in a row (indicates random typing)
-        // More than 6 consecutive consonants is suspicious
-        if (preg_match('/[bcdfghjklmnpqrstvwxyz]{6,}/i', $letters)) {
+        // ✅ IMPROVED: Check for too many consecutive consonants
+        // More than 7 consecutive consonants is suspicious (increased from 6 to allow codes like "DML1122")
+        // But if we have a legitimate model code, be more lenient
+        $consonantThreshold = $hasLegitimateModelCode ? 8 : 6;
+        if (preg_match('/[bcdfghjklmnpqrstvwxyz]{' . $consonantThreshold . ',}/i', $letters)) {
+            // ✅ Exception: Allow common product-related prefixes/abbreviations
+            $allowedPrefixes = ['dml', 'led', 'kva', 'rgb', 'dmx', 'xlr', 'trs', 'midi', 'usb', 'hdmi', 'sdi'];
+            $lowerText = strtolower($text);
+            foreach ($allowedPrefixes as $prefix) {
+                if (stripos($lowerText, $prefix) !== false) {
+                    return false; // Contains legitimate prefix, allow it
+                }
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * ✅ NEW: Check if text contains a legitimate model code pattern
+     * Legitimate model codes typically have: letters + numbers (e.g., "DML1122", "EV-1122", "4455A")
+     * This allows sequential/repeating numbers when they're part of a valid product code structure
+     *
+     * @param string $text The description text to check
+     * @return bool True if a legitimate model code pattern is found
+     */
+    protected function hasLegitimateModelCode(string $text): bool
+    {
+        // Pattern 1: Letters directly followed by digits (most common: "DML1122", "EV1122", "DMX512")
+        // Matches 1-6 letters followed by 2-8 digits (allows sequential/repeating numbers)
+        // Examples: "DML1122", "EV1122", "DMX512", "LED4455", "RGB4455"
+        if (preg_match('/\b[A-Z]{1,6}\d{2,8}\b/i', $text)) {
+            return true;
+        }
+
+        // Pattern 2: Letters with hyphen or space separator, then digits
+        // Examples: "EV-1122", "EV 1122", "DML-4455", "DMX-512"
+        if (preg_match('/\b[A-Z]{1,6}[-\s]\d{2,8}\b/i', $text)) {
+            return true;
+        }
+
+        // Pattern 3: Digits followed by letters (less common but valid)
+        // Examples: "1122A", "4455SP", "1234XLR", "512DMX"
+        if (preg_match('/\b\d{2,8}[A-Z]{1,4}\b/i', $text)) {
+            return true;
+        }
+
+        // Pattern 4: Combined code - Letters, digits, then optional letters suffix
+        // Examples: "DML1122SP", "EV4455LR", "DMX512A"
+        if (preg_match('/\b[A-Z]{2,6}\d{2,8}[A-Z]{0,4}\b/i', $text)) {
             return true;
         }
 
