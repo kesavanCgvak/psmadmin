@@ -149,6 +149,7 @@ class ProductController extends Controller
     {
         $viewUrl = route('admin.products.show', $product);
         $editUrl = route('admin.products.edit', $product);
+        $cloneUrl = route('admin.products.clone', $product);
         $deleteUrl = route('admin.products.destroy', $product);
 
         return '
@@ -158,6 +159,9 @@ class ProductController extends Controller
                 </a>
                 <a href="' . $editUrl . '" class="btn btn-warning btn-sm" title="Edit">
                     <i class="fas fa-edit"></i>
+                </a>
+                <a href="' . $cloneUrl . '" class="btn btn-success btn-sm" title="Clone" onclick="return confirm(\'Are you sure you want to clone this product? A new product will be created with \' (clone)\' appended to the model name.\');">
+                    <i class="fas fa-copy"></i>
                 </a>
                 <button type="button" class="btn btn-secondary btn-sm merge-product-btn" title="Merge/Replace" data-product-id="' . $product->id . '" data-product-name="' . htmlspecialchars($product->model) . '" data-psm-code="' . htmlspecialchars($product->psm_code ?? '') . '">
                     <i class="fas fa-code-branch"></i>
@@ -171,6 +175,52 @@ class ProductController extends Controller
                 </form>
             </div>
         ';
+    }
+
+    /**
+     * Clone an existing product
+     * Creates a new product with all fields copied except PSM Code (generated new)
+     * Model name is appended with " (clone)" for easy identification
+     */
+    public function clone(Product $product)
+    {
+        try {
+            // Create a new product with all fields copied except PSM Code
+            $clonedProduct = $product->replicate();
+
+            // Generate new PSM Code (using existing logic)
+            $clonedProduct->psm_code = $this->generateNextPsmCode();
+
+            // Append " (clone)" to the model name
+            $clonedProduct->model = $product->model . ' (clone)';
+
+            // Set is_verified to 0 for cloned products (they need verification)
+            $clonedProduct->is_verified = 0;
+
+            // Clear the ID and timestamps so it creates a new record
+            $clonedProduct->id = null;
+            $clonedProduct->created_at = null;
+            $clonedProduct->updated_at = null;
+
+            // Clear normalized fields - they will be regenerated automatically via model boot
+            $clonedProduct->normalized_model = null;
+            $clonedProduct->normalized_full_name = null;
+
+            // Save the cloned product (normalization will happen automatically via model boot)
+            $clonedProduct->save();
+
+            // Clear related caches when a product is cloned
+            Cache::forget('categories_list');
+            Cache::forget('subcategories_list');
+            Cache::forget('brands_list');
+
+            return redirect()->route('admin.products.edit', $clonedProduct)
+                ->with('success', 'Product cloned successfully. You can now edit the cloned product.');
+
+        } catch (\Exception $e) {
+            return redirect()->route('admin.products.index')
+                ->with('error', 'Failed to clone product: ' . $e->getMessage());
+        }
     }
 
     /**

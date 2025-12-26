@@ -4,6 +4,7 @@ namespace App\Services\Import;
 
 use App\Models\Product;
 use App\Models\ImportSessionItem;
+use App\Support\ProductNormalizer;
 use Illuminate\Support\Collection;
 
 class ProductMatcherService
@@ -77,36 +78,52 @@ class ProductMatcherService
     }
     
     /**
-     * Find exact description matches (case-insensitive, trimmed)
-     * This catches products that match exactly like "CHAUVET ROGUE R2 BEAM FIXTURE"
-     * Also matches brand + model combinations like "Apogee SSM"
-     * Handles metadata in brackets (e.g., "Apogee SSM [Amazon]" matches "Apogee SSM")
+     * Find exact description matches using normalized codes and full names
+     * Handles variations like "DML-1122", "DML1122", "EV-DML1122", "Apogee SSM -"
      */
     protected function findExactDescriptionMatches(ImportSessionItem $item): Collection
     {
         $description = trim($item->original_description);
-        $normalized = $this->normalizeDescription($description);
         
-        // Try exact match on model field (case-insensitive, trimmed)
-        // Also check brand + model combination using join
-        $products = Product::leftJoin('brands', 'products.brand_id', '=', 'brands.id')
-            ->where(function ($query) use ($description, $normalized) {
-                // Match original description
-                $query->whereRaw('LOWER(TRIM(products.model)) = LOWER(?)', [$description])
-                      // Match normalized description (strips brackets/metadata)
-                      ->orWhereRaw('LOWER(TRIM(products.normalized_model)) = LOWER(?)', [$normalized])
-                      // Normalized comparison on model field
-                      ->orWhereRaw('LOWER(REPLACE(REPLACE(TRIM(products.model), "  ", " "), "  ", " ")) = LOWER(?)', [$normalized])
-                      // Match brand + model combination (original)
-                      ->orWhereRaw('LOWER(TRIM(CONCAT_WS(\' \', brands.name, products.model))) = LOWER(?)', [$description])
-                      // Match brand + model combination (normalized - strips brackets)
-                      ->orWhereRaw('LOWER(TRIM(CONCAT_WS(\' \', brands.name, products.model))) = LOWER(?)', [$normalized])
-                      // Also normalize the product side for comparison (handles cases where product has brackets)
-                      ->orWhereRaw('LOWER(TRIM(REPLACE(REPLACE(REPLACE(CONCAT_WS(\' \', brands.name, products.model), \'[\', \' \'), \']\', \' \'), \'  \', \' \'))) = LOWER(?)', [$normalized]);
+        // Extract and normalize model code
+        $modelCode = ProductNormalizer::extractModelCode($description);
+        $normalizedCode = $modelCode ? ProductNormalizer::normalizeCode($modelCode) : null;
+        
+        // Normalize full description (removes metadata, special chars)
+        $normalizedFull = ProductNormalizer::normalizeFullName(null, $description);
+        
+        // Build query using normalized columns
+        $query = Product::leftJoin('brands', 'products.brand_id', '=', 'brands.id')
+            ->where(function ($q) use ($normalizedCode, $normalizedFull) {
+                // Match by normalized model code (handles DML-1122, DML1122, etc.)
+                if ($normalizedCode && ProductNormalizer::isValidNormalizedCode($normalizedCode)) {
+                    $q->where('products.normalized_model', $normalizedCode)
+                      ->orWhere('products.normalized_model', 'LIKE', '%' . $normalizedCode . '%');
+                }
+                
+                // Match by normalized full name (handles "Apogee SSM -", "EV-DML1122", etc.)
+                if ($normalizedFull) {
+                    $q->orWhere('products.normalized_full_name', $normalizedFull)
+                      ->orWhere('products.normalized_full_name', 'LIKE', '%' . $normalizedFull . '%');
+                }
             })
             ->select('products.*')
-            ->with('brand')
-            ->get();
+            ->with('brand');
+        
+        // Order by exact match first, then contains
+        if ($normalizedCode) {
+            $query->orderByRaw(
+                "CASE 
+                    WHEN products.normalized_model = ? THEN 0
+                    WHEN products.normalized_model LIKE ? THEN 1
+                    WHEN products.normalized_full_name = ? THEN 2
+                    ELSE 3
+                 END",
+                [$normalizedCode, '%' . $normalizedCode . '%', $normalizedFull]
+            );
+        }
+        
+        $products = $query->limit(10)->get();
         
         return $products->map(function ($product) {
             return [
@@ -120,44 +137,42 @@ class ProductMatcherService
     
     /**
      * Extract model number from description (e.g., "DN-360", "DN360", "EOS R5")
+     * Uses ProductNormalizer for consistency
      */
     protected function extractModelNumber(string $description): ?string
     {
-        // Pattern: 1-5 letters + optional separator + 1-5 digits
-        // Matches: DN-360, DN360, DN 360, EOS R5, R2, X1, etc.
-        if (preg_match('/\b([A-Z]{1,5}[-\s]?\d{1,5})\b/i', $description, $matches)) {
-            return $matches[1];
-        }
-        
-        return null;
+        return ProductNormalizer::extractModelCode($description);
     }
     
     /**
      * Find products with exact or near-exact model number match
-     * Handles brand variations: Klark-Teknik, KT, Klark Teknik all match
+     * Uses normalized_model column for efficient matching
      */
     protected function findExactModelMatches(string $modelNumber, ImportSessionItem $item): Collection
     {
-        // Normalize model: remove separators and spaces for comparison
-        // "DN-360" -> "DN360", "DN 360" -> "DN360"
-        $normalizedModel = preg_replace('/[-\s]/', '', strtoupper($modelNumber));
+        // Normalize model code using ProductNormalizer
+        $normalizedCode = ProductNormalizer::normalizeCode($modelNumber);
         
-        // Build query to find products with matching model
+        if (!$normalizedCode || !ProductNormalizer::isValidNormalizedCode($normalizedCode)) {
+            return collect();
+        }
+        
+        // Build query using normalized_model column
         $query = Product::with('brand')
-            ->where(function ($q) use ($normalizedModel, $modelNumber) {
-                // Match exact normalized model in product.model field
-                $q->whereRaw('UPPER(REPLACE(REPLACE(model, "-", ""), " ", "")) LIKE ?', ["%{$normalizedModel}%"])
-                  // Also match original model number pattern
-                  ->orWhere('model', 'LIKE', "%{$modelNumber}%");
-            });
+            ->where(function ($q) use ($normalizedCode) {
+                // Exact match on normalized_model
+                $q->where('normalized_model', $normalizedCode)
+                  // Also check if normalized_model contains the code (handles prefixes like "EV-DML1122")
+                  ->orWhere('normalized_model', 'LIKE', '%' . $normalizedCode . '%');
+            })
+            ->orderByRaw(
+                "CASE WHEN normalized_model = ? THEN 0 ELSE 1 END",
+                [$normalizedCode]
+            );
         
-        // Apply query and map results
-        return $query->get()->map(function ($product) use ($normalizedModel, $modelNumber) {
-            // Normalize product model for comparison
-            $productModel = preg_replace('/[-\s]/', '', strtoupper($product->model));
-            
-            // Exact match (normalized) gets 95% confidence
-            if ($productModel === $normalizedModel) {
+        return $query->get()->map(function ($product) use ($normalizedCode) {
+            // Exact match gets 95% confidence
+            if ($product->normalized_model === $normalizedCode) {
                 return [
                     'product_id' => $product->id,
                     'psm_code' => $product->psm_code,
@@ -166,48 +181,42 @@ class ProductMatcherService
                 ];
             }
             
-            // Check if product model contains the extracted model number
-            if (stripos($product->model, $modelNumber) !== false) {
-                return [
-                    'product_id' => $product->id,
-                    'psm_code' => $product->psm_code,
-                    'confidence' => 0.90,
-                    'match_type' => 'partial_model',
-                ];
-            }
-            
-            // Normalized partial match gets 85% confidence
-            if (str_contains($productModel, $normalizedModel) || str_contains($normalizedModel, $productModel)) {
-                return [
-                    'product_id' => $product->id,
-                    'psm_code' => $product->psm_code,
-                    'confidence' => 0.85,
-                    'match_type' => 'normalized_partial',
-                ];
-            }
-            
-            return null;
-        })->filter();
+            // Contains match gets 90% confidence
+            return [
+                'product_id' => $product->id,
+                'psm_code' => $product->psm_code,
+                'confidence' => 0.90,
+                'match_type' => 'partial_model',
+            ];
+        });
     }
     
     /**
      * Find products by PSM code when model matches
-     * This is the KEY feature: PSM codes connect all variants of the same product
-     * Example: "Klark-Teknik DN-360" and "KT DN360" both have PSM code "PSM00123"
+     * Uses normalized_model for efficient matching
      */
     protected function findByPsmCodeViaModel(string $modelNumber): Collection
     {
-        $normalizedModel = preg_replace('/[-\s]/', '', strtoupper($modelNumber));
+        $normalizedCode = ProductNormalizer::normalizeCode($modelNumber);
         
-        // Find a product with matching model that has a PSM code
-        $product = Product::whereRaw('UPPER(REPLACE(REPLACE(model, "-", ""), " ", "")) LIKE ?', 
-                ["%{$normalizedModel}%"])
+        if (!$normalizedCode || !ProductNormalizer::isValidNormalizedCode($normalizedCode)) {
+            return collect();
+        }
+        
+        // Find a product with matching normalized model that has a PSM code
+        $product = Product::where('normalized_model', $normalizedCode)
             ->whereNotNull('psm_code')
             ->first();
         
+        // Also try contains match if exact match fails
+        if (!$product) {
+            $product = Product::where('normalized_model', 'LIKE', '%' . $normalizedCode . '%')
+                ->whereNotNull('psm_code')
+                ->first();
+        }
+        
         if ($product && $product->psm_code) {
             // Find ALL products with the same PSM code
-            // These are all variants/descriptions of the same product
             return Product::where('psm_code', $product->psm_code)
                 ->get()
                 ->map(function ($p) {
@@ -224,58 +233,58 @@ class ProductMatcherService
     }
     
     /**
-     * Normalized similarity matching with brand awareness
-     * Handles brand variations: "Klark-Teknik" = "KT" = "Klark Teknik"
-     * Also matches brand name + model combinations like "Apogee SSM"
+     * Normalized similarity matching using normalized columns
+     * Handles variations like "DML-1122", "EV-DML1122", "Apogee SSM -"
      */
     protected function findNormalizedSimilarityMatches(ImportSessionItem $item): Collection
     {
-        $normalized = $this->normalizeDescription($item->original_description);
-        $modelNumber = $this->extractModelNumber($item->original_description);
+        $description = $item->original_description;
         
-        // Build query - if we have a model number, use it to narrow search
+        // Extract and normalize model code
+        $modelCode = ProductNormalizer::extractModelCode($description);
+        $normalizedCode = $modelCode ? ProductNormalizer::normalizeCode($modelCode) : null;
+        
+        // Normalize full description
+        $normalizedFull = ProductNormalizer::normalizeFullName(null, $description);
+        
+        // Build query using normalized columns
         $query = Product::query()->with('brand');
         
-        if ($modelNumber) {
-            $modelNorm = preg_replace('/[-\s]/', '', strtoupper($modelNumber));
-            $query->whereRaw('UPPER(REPLACE(REPLACE(model, "-", ""), " ", "")) LIKE ?', ["%{$modelNorm}%"]);
-            // With model number, limit to 100 products
+        if ($normalizedCode && ProductNormalizer::isValidNormalizedCode($normalizedCode)) {
+            // Use normalized_model for efficient matching
+            $query->where(function ($q) use ($normalizedCode) {
+                $q->where('normalized_model', $normalizedCode)
+                  ->orWhere('normalized_model', 'LIKE', '%' . $normalizedCode . '%');
+            });
             $products = $query->limit(100)->get();
         } else {
-            // Without model number, search more broadly but still limit for performance
-            // Extract key terms from description to narrow search
-            $keyTerms = $this->extractKeyTerms($normalized);
-            if (!empty($keyTerms)) {
-                // Search for products containing key terms in model OR brand name
-                $query->where(function ($q) use ($keyTerms) {
-                    foreach ($keyTerms as $term) {
-                        if (strlen($term) >= 3) { // Only use terms 3+ chars
-                            $q->orWhere('model', 'LIKE', "%{$term}%")
-                              ->orWhereHas('brand', function ($brandQuery) use ($term) {
-                                  $brandQuery->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($term) . '%']);
-                              });
-                        }
-                    }
+            // Fallback to normalized_full_name search
+            if ($normalizedFull) {
+                $query->where(function ($q) use ($normalizedFull) {
+                    $q->where('normalized_full_name', 'LIKE', '%' . $normalizedFull . '%');
                 });
             }
-            // Without model number, search more products (500) to find matches
             $products = $query->limit(500)->get();
         }
         
-        return $products->map(function ($product) use ($normalized) {
-            // Build full product name: brand + model for comparison
-            $productFullName = trim(($product->brand->name ?? '') . ' ' . $product->model);
-            $productNormalized = $this->normalizeDescription($productFullName);
+        return $products->map(function ($product) use ($normalizedCode, $normalizedFull) {
+            $confidence = 0.0;
             
-            // Also compare just the model
-            $productModelNormalized = $this->normalizeDescription($product->model);
+            // Calculate confidence based on normalized matches
+            if ($normalizedCode && $product->normalized_model) {
+                if ($product->normalized_model === $normalizedCode) {
+                    $confidence = 0.95; // Exact code match
+                } elseif (str_contains($product->normalized_model, $normalizedCode) || 
+                          str_contains($normalizedCode, $product->normalized_model)) {
+                    $confidence = 0.85; // Partial code match
+                }
+            }
             
-            // Calculate similarity for both full name and model
-            $fullNameConfidence = $this->calculateSimilarity($normalized, $productNormalized);
-            $modelConfidence = $this->calculateSimilarity($normalized, $productModelNormalized);
-            
-            // Use the higher confidence
-            $confidence = max($fullNameConfidence, $modelConfidence);
+            // Also check normalized_full_name
+            if ($normalizedFull && $product->normalized_full_name) {
+                $fullConfidence = $this->calculateNormalizedSimilarity($normalizedFull, $product->normalized_full_name);
+                $confidence = max($confidence, $fullConfidence);
+            }
             
             if ($confidence >= 0.70) {
                 return [
@@ -288,6 +297,27 @@ class ProductMatcherService
             
             return null;
         })->filter();
+    }
+    
+    /**
+     * Calculate similarity between two normalized strings
+     */
+    protected function calculateNormalizedSimilarity(string $a, string $b): float
+    {
+        if ($a === $b) {
+            return 1.0;
+        }
+        
+        // If one contains the other, high confidence
+        if (str_contains($a, $b) || str_contains($b, $a)) {
+            $shorter = strlen($a) <= strlen($b) ? $a : $b;
+            $longer = strlen($a) > strlen($b) ? $a : $b;
+            return strlen($shorter) / strlen($longer);
+        }
+        
+        // Use similar_text for fuzzy matching
+        similar_text($a, $b, $percent);
+        return $percent / 100;
     }
     
     /**
@@ -382,35 +412,11 @@ class ProductMatcherService
     
     /**
      * Enhanced normalization that handles brand variations
-     * Removes metadata in brackets (e.g., [Amazon], [Fox]) as they're not part of product name
+     * Uses ProductNormalizer for consistency
      */
     protected function normalizeDescription(string $text): string
     {
-        $text = strtolower($text);
-        
-        // Remove bracketed content (metadata like [Amazon], [Fox], etc.)
-        // This handles cases like "Apogee SSM [Amazon]" -> "Apogee SSM"
-        $text = preg_replace('/\s*\[[^\]]+\]\s*/', ' ', $text);
-        
-        // Remove parenthesized content that looks like metadata
-        // This handles cases like "Product Name (Source)" -> "Product Name"
-        $text = preg_replace('/\s*\([^\)]+\)\s*/', ' ', $text);
-        
-        // Normalize brand names - common variations
-        $text = preg_replace('/\bklark[-\s]?teknik\b/i', 'klarkteknik', $text);
-        $text = preg_replace('/\bkt\b/i', 'klarkteknik', $text);
-        
-        // Normalize common abbreviations
-        $text = preg_replace('/\bprofessional\b/i', 'pro', $text);
-        $text = preg_replace('/\bequalizer\b/i', 'eq', $text);
-        
-        // Remove special characters but keep spaces
-        $text = preg_replace('/[^a-z0-9\s]/', ' ', $text);
-        
-        // Normalize whitespace
-        $text = preg_replace('/\s+/', ' ', trim($text));
-        
-        return $text;
+        return ProductNormalizer::normalizeDescription($text);
     }
     
     /**

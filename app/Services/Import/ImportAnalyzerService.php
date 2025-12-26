@@ -8,6 +8,7 @@ use App\Models\ImportSessionMatch;
 use App\Models\Product;
 use App\Services\Import\DescriptionValidator;
 use App\Services\Import\ProductMatcherService;
+use App\Support\ProductNormalizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -86,15 +87,16 @@ class ImportAnalyzerService
                 continue;
             }
 
-            // Valid row - extract model and normalize
-            $detectedModel = $this->extractModelCode($description);
-            $normalized = $this->normalize($description);
+            // Valid row - extract model and normalize using ProductNormalizer
+            $detectedModel = ProductNormalizer::extractModelCode($description);
+            $normalizedCode = $detectedModel ? ProductNormalizer::normalizeCode($detectedModel) : null;
+            $normalizedFull = ProductNormalizer::normalizeFullName(null, $description);
 
             $session->items()->create([
                 'excel_row_number' => $index + 1, // ✅ FIX: Excel row numbering (row 2, 3, 4...)
                 'original_description' => $description,
                 'detected_model' => $detectedModel,
-                'normalized_model' => $normalized,
+                'normalized_model' => $normalizedCode ?? $normalizedFull, // Use normalized code or full name
                 'quantity' => $quantity,
                 'software_code' => $softwareCode ?: null,
                 'status' => 'pending',
@@ -304,18 +306,15 @@ class ImportAnalyzerService
 
     protected function extractModelCode(string $text): ?string
     {
-        // Pattern: 1-5 letters + optional separator + 1-5 digits
-        // Matches: DN-360, DN360, R2, X1, EOS R5, etc.
-        preg_match('/\b[A-Z]{1,5}[-\s]?\d{1,5}\b/i', $text, $matches);
-        return $matches[0] ?? null;
+        // Use ProductNormalizer for consistency
+        return ProductNormalizer::extractModelCode($text);
     }
 
     protected function normalize(string $text): string
     {
-        $text = strtolower($text);
-        $text = preg_replace('/[^a-z0-9\s]/', '', $text);
-        $text = preg_replace('/\s+/', ' ', trim($text));
-        return $text;
+        // Use ProductNormalizer for consistency
+        $normalized = ProductNormalizer::normalizeCode($text);
+        return $normalized ?? ProductNormalizer::normalizeDescription($text);
     }
 
     protected function similarity(string $a, string $b): float

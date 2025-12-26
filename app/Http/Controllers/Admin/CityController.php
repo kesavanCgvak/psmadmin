@@ -54,6 +54,16 @@ class CityController extends Controller
                 ->withInput();
         }
 
+        // Check for duplicate using normalized name comparison within the same state (or country if no state)
+        if (City::isDuplicate($request->name, $request->country_id, $request->state_id)) {
+            $location = $request->state_id 
+                ? 'state/province' 
+                : 'country';
+            return redirect()->back()
+                ->withErrors(['name' => "A city with this name already exists in the selected {$location}."])
+                ->withInput();
+        }
+
         City::create($request->all());
 
         return redirect()->route('cities.index')
@@ -97,6 +107,16 @@ class CityController extends Controller
         if ($validator->fails()) {
             return redirect()->back()
                 ->withErrors($validator)
+                ->withInput();
+        }
+
+        // Check for duplicate using normalized name comparison within the same state (or country if no state) (excluding current record)
+        if (City::isDuplicate($request->name, $request->country_id, $request->state_id, $city->id)) {
+            $location = $request->state_id 
+                ? 'state/province' 
+                : 'country';
+            return redirect()->back()
+                ->withErrors(['name' => "A city with this name already exists in the selected {$location}."])
                 ->withInput();
         }
 

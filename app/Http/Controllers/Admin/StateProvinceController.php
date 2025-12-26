@@ -51,6 +51,13 @@ class StateProvinceController extends Controller
                 ->withInput();
         }
 
+        // Check for duplicate using normalized name comparison within the same country
+        if (StateProvince::isDuplicate($request->name, $request->country_id)) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A state/province with this name already exists in the selected country.'])
+                ->withInput();
+        }
+
         StateProvince::create($request->all());
 
         return redirect()->route('states.index')
@@ -92,6 +99,13 @@ class StateProvinceController extends Controller
         if ($validator->fails()) {
             return redirect()->back()
                 ->withErrors($validator)
+                ->withInput();
+        }
+
+        // Check for duplicate using normalized name comparison within the same country (excluding current record)
+        if (StateProvince::isDuplicate($request->name, $request->country_id, $state->id)) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A state/province with this name already exists in the selected country.'])
                 ->withInput();
         }
 

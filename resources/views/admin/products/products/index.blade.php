@@ -110,6 +110,12 @@
     @include('partials.responsive-js')
     <script>
         $(document).ready(function() {
+            // Restore filter states from localStorage BEFORE initializing DataTables
+            var savedUnverified = localStorage.getItem('products_filter_unverified');
+            if (savedUnverified === '1') {
+                $('#filterUnverified').prop('checked', true);
+            }
+
             var productsTable = initResponsiveDataTable('productsTable', {
                 "processing": true,
                 "serverSide": true,
@@ -209,18 +215,91 @@
                     $('#selectAll').prop('checked', totalCheckboxes === checkedCheckboxes && totalCheckboxes > 0);
                 }
             });
-            
-            // Clear any saved state from localStorage for this table
-            localStorage.removeItem('DataTables_productsTable');
-            
-            // Clear any existing search on page load to show all records
-            setTimeout(function() {
-                productsTable.search('').draw();
-            }, 100);
 
-            // Filter unverified products
+            // Clear any saved state from localStorage for this table (DataTables default)
+            localStorage.removeItem('DataTables_productsTable');
+
+            // Restore all saved filter states from localStorage after table is initialized
+            setTimeout(function() {
+                var savedSearch = localStorage.getItem('products_filter_search');
+                var savedPageLength = localStorage.getItem('products_filter_pageLength');
+                var savedOrder = localStorage.getItem('products_filter_order');
+                var savedPage = localStorage.getItem('products_filter_page');
+
+                var needsRedraw = false;
+
+                // Restore page length (doesn't trigger draw automatically)
+                if (savedPageLength) {
+                    var pageLen = parseInt(savedPageLength);
+                    if (productsTable.page.len() !== pageLen) {
+                        productsTable.page.len(pageLen);
+                        needsRedraw = true;
+                    }
+                }
+
+                // Restore sorting (doesn't trigger draw automatically for server-side)
+                if (savedOrder) {
+                    try {
+                        var orderArray = JSON.parse(savedOrder);
+                        if (Array.isArray(orderArray) && orderArray.length > 0) {
+                            productsTable.order(orderArray);
+                            needsRedraw = true;
+                        }
+                    } catch (e) {
+                        console.error('Error parsing saved order:', e);
+                    }
+                }
+
+                // Restore search filter (doesn't trigger draw automatically for server-side)
+                if (savedSearch && productsTable.search() !== savedSearch) {
+                    productsTable.search(savedSearch);
+                    needsRedraw = true;
+                }
+
+                // Restore pagination and trigger single draw with all restored state
+                if (needsRedraw || savedPage) {
+                    if (savedPage) {
+                        productsTable.page(parseInt(savedPage));
+                    }
+                    productsTable.draw(false); // false = don't reset paging
+                }
+            }, 200);
+
+            // Filter unverified products - save state to localStorage
             $('#filterUnverified').on('change', function() {
+                var isChecked = $(this).is(':checked') ? '1' : '0';
+                localStorage.setItem('products_filter_unverified', isChecked);
+                // Reset to first page when filter changes
+                localStorage.setItem('products_filter_page', '0');
                 productsTable.ajax.reload();
+            });
+
+            // Save search filter to localStorage
+            productsTable.on('search.dt', function() {
+                var searchValue = productsTable.search();
+                if (searchValue) {
+                    localStorage.setItem('products_filter_search', searchValue);
+                } else {
+                    localStorage.removeItem('products_filter_search');
+                }
+                // Reset to first page when search changes
+                localStorage.setItem('products_filter_page', '0');
+            });
+
+            // Save pagination state to localStorage
+            productsTable.on('page.dt', function() {
+                localStorage.setItem('products_filter_page', productsTable.page());
+            });
+
+            productsTable.on('length.dt', function(e, settings, len) {
+                localStorage.setItem('products_filter_pageLength', len);
+                localStorage.setItem('products_filter_page', '0'); // Reset to first page when page length changes
+            });
+
+            // Save sorting state to localStorage
+            productsTable.on('order.dt', function() {
+                var order = productsTable.order();
+                localStorage.setItem('products_filter_order', JSON.stringify(order));
             });
 
             // Bulk delete functionality for server-side DataTable
@@ -239,11 +318,11 @@
             function updateBulkButtons() {
                 var checked = $('.row-checkbox:checked');
                 var checkedCount = checked.length;
-                
+
                 if (checkedCount > 0) {
                     // Show delete button with count
                     $('#bulkDeleteBtn').show().html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected (' + checkedCount + ')</span><span class="d-lg-none">Delete</span>');
-                    
+
                     // Check if any selected products are unverified
                     var hasUnverified = false;
                     checked.each(function() {
@@ -252,7 +331,7 @@
                             return false; // break loop
                         }
                     });
-                    
+
                     // Only show verify button if there are unverified products selected
                     if (hasUnverified) {
                         $('#bulkVerifyBtn').show().html('<i class="fas fa-check-circle"></i> <span class="d-none d-lg-inline">Verify Selected (' + checkedCount + ')</span><span class="d-lg-none">Verify</span>');
@@ -398,7 +477,7 @@
                 $('#productSearch').val('');
                 $('#productSearchResults').html('');
                 selectedCorrectProductId = null;
-                
+
                 // Reset button to initial state
                 $('#confirmMergeBtn').prop('disabled', true).html('Confirm Merge');
 

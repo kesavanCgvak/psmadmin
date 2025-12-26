@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\SubCategory;
 use App\Models\Category;
+use App\Models\Product;
 use App\Services\BulkDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class SubCategoryController extends Controller
 {
@@ -57,7 +59,15 @@ class SubCategoryController extends Controller
     public function show(SubCategory $subcategory)
     {
         $subcategory->load(['category', 'products.brand']);
-        return view('admin.products.subcategories.show', compact('subcategory'));
+        // Get all subcategories for the move dropdown (excluding current one)
+        $allSubCategories = SubCategory::where('id', '!=', $subcategory->id)
+            ->with('category')
+            ->orderBy('name')
+            ->get()
+            ->groupBy(function ($subcat) {
+                return $subcat->category->name ?? 'Uncategorized';
+            });
+        return view('admin.products.subcategories.show', compact('subcategory', 'allSubCategories'));
     }
 
     /**
@@ -167,6 +177,87 @@ class SubCategoryController extends Controller
 
         return redirect()->route('admin.subcategories.index')
             ->with($success ? 'success' : 'error', $message);
+    }
+
+    /**
+     * Move products from one sub-category to another.
+     */
+    public function moveProducts(Request $request, SubCategory $subcategory)
+    {
+        $validator = Validator::make($request->all(), [
+            'product_ids' => 'required|array|min:1',
+            'product_ids.*' => 'required|exists:products,id',
+            'target_subcategory_id' => 'required|exists:sub_categories,id',
+        ]);
+
+        if ($validator->fails()) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            return redirect()->back()
+                ->withErrors($validator)
+                ->withInput();
+        }
+
+        $productIds = $request->input('product_ids');
+        $targetSubcategoryId = $request->input('target_subcategory_id');
+
+        // Verify all products belong to the current subcategory
+        $products = Product::whereIn('id', $productIds)
+            ->where('sub_category_id', $subcategory->id)
+            ->get();
+
+        if ($products->count() !== count($productIds)) {
+            $message = 'Some selected products do not belong to this sub-category.';
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message
+                ], 422);
+            }
+            return redirect()->back()->with('error', $message);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Update products to new subcategory
+            Product::whereIn('id', $productIds)
+                ->update(['sub_category_id' => $targetSubcategoryId]);
+
+            DB::commit();
+
+            $targetSubcategory = SubCategory::find($targetSubcategoryId);
+            $message = "Successfully moved {$products->count()} product(s) to '{$targetSubcategory->name}'.";
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'moved_count' => $products->count()
+                ]);
+            }
+
+            return redirect()->route('admin.subcategories.show', $subcategory)
+                ->with('success', $message);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $message = 'Failed to move products: ' . $e->getMessage();
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message
+                ], 500);
+            }
+
+            return redirect()->back()->with('error', $message);
+        }
     }
 }
 

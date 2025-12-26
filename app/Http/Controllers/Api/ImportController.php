@@ -120,7 +120,7 @@ class ImportController extends Controller
 
         try {
             $summary = $analyzer->analyze($session);
-            
+
             // ✅ Add existing equipment info to matches
             // This helps users see if they already have the product in inventory
             if (isset($summary['items']) && $summary['items'] instanceof \Illuminate\Support\Collection) {
@@ -133,7 +133,7 @@ class ImportController extends Controller
                                     ->where('company_id', $session->company_id)
                                     ->where('product_id', $match->product_id)
                                     ->first();
-                                
+
                                 if ($existingEquipment) {
                                     // Add as attribute to the match model
                                     $match->setAttribute('existing_equipment', [
@@ -145,7 +145,7 @@ class ImportController extends Controller
                             }
                         });
                     }
-                    
+
                     return $item;
                 });
             }
@@ -187,7 +187,7 @@ class ImportController extends Controller
                 'data' => $sessions->map(function ($session) {
                     // Determine current stage/step
                     $stage = $this->determineSessionStage($session);
-                    
+
                     return [
                         'id' => $session->id,
                         'status' => $session->status,
@@ -217,7 +217,7 @@ class ImportController extends Controller
     /**
      * Get a specific import session with all items and matches
      * Used to display the preview grid
-     * 
+     *
      * Query parameter: ?show_all=false (default) - only show pending/analyzed items
      *                  ?show_all=true - show all items including confirmed
      */
@@ -227,7 +227,7 @@ class ImportController extends Controller
 
         try {
             $showAll = $request->boolean('show_all', false);
-            
+
             $session->load([
                 'items.matches.product.brand',
                 'items.matches.product.category',
@@ -237,7 +237,7 @@ class ImportController extends Controller
 
             // Determine current stage/step
             $stage = $this->determineSessionStage($session);
-            
+
             // ✅ FILTER ITEMS: Only show pending/analyzed items by default (hide confirmed)
             // This ensures when user continues import, they only see remaining items
             $items = $session->items;
@@ -246,11 +246,11 @@ class ImportController extends Controller
                     return $item->status !== 'confirmed';
                 });
             }
-            
+
             // Count items by status for summary
             $confirmedCount = $session->items->where('status', 'confirmed')->count();
             $pendingCount = $session->items->where('status', '!=', 'confirmed')->where('status', '!=', 'rejected')->count();
-            
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -287,7 +287,7 @@ class ImportController extends Controller
                                         ->where('product_id', $match->product_id)
                                         ->first();
                                 }
-                                
+
                                 return [
                                     'id' => $match->id,
                                     'product_id' => $match->product_id,
@@ -373,8 +373,8 @@ class ImportController extends Controller
                 if ($item->status !== 'confirmed') {
                     $item->update([
                         'action' => $itemData['action'],
-                        'selected_product_id' => $itemData['action'] === 'attach' 
-                            ? $itemData['product_id'] 
+                        'selected_product_id' => $itemData['action'] === 'attach'
+                            ? $itemData['product_id']
                             : null,
                     ]);
                 }
@@ -443,6 +443,39 @@ class ImportController extends Controller
                 ->where('status', '!=', 'rejected')
                 ->count();
 
+            // ✅ Determine if we should return success or partial success
+            $hasErrors = !empty($result['errors'] ?? []);
+            $hasSuccesses = ($result['total_processed'] ?? 0) > 0;
+
+            if ($hasErrors && !$hasSuccesses) {
+                // All rows failed - return error response
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Import failed for all rows',
+                    'error_type' => 'batch_failed',
+                    'data' => $result,
+                ], 422);
+            }
+
+            if ($hasErrors && $hasSuccesses) {
+                // Partial success - some rows succeeded, some failed
+                $message = "Import completed with errors. {$result['total_processed']} rows processed successfully. " . count($result['errors']) . " row(s) failed.";
+                if ($pendingCount > 0) {
+                    $message .= " {$pendingCount} items remain pending.";
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'data' => array_merge($result, [
+                        'pending_items' => $pendingCount,
+                        'session_remains_active' => $pendingCount > 0,
+                        'partial_success' => true,
+                    ]),
+                ], 200);
+            }
+
+            // All rows succeeded
             $message = $pendingCount > 0
                 ? "Import completed. {$pendingCount} items remain pending. You can continue later."
                 : 'Import completed successfully';
@@ -460,18 +493,11 @@ class ImportController extends Controller
             DB::rollBack();
             report($e);
 
-            // Check if it's a duplicate prevention error
-            if (str_contains($e->getMessage(), 'High-confidence match found')) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $e->getMessage(),
-                    'error_type' => 'duplicate_detected',
-                ], 422);
-            }
-
+            // Only catch unexpected exceptions (not row-specific errors which are now handled in service)
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage() ?: 'Import confirmation failed',
+                'error_type' => 'unexpected_error',
             ], 500);
         }
     }
@@ -506,7 +532,7 @@ class ImportController extends Controller
     /**
      * Determine the current stage/step of an import session
      * Helps frontend resume from the correct step
-     * 
+     *
      * @param ImportSession $session
      * @return array ['step' => int, 'name' => string, 'description' => string]
      */
@@ -516,13 +542,13 @@ class ImportController extends Controller
         if (!$session->relationLoaded('items')) {
             $session->load('items');
         }
-        
+
         $totalItems = $session->items->count();
         $analyzedItems = $session->items->where('status', 'analyzed')->count();
         $confirmedItems = $session->items->where('status', 'confirmed')->count();
         $pendingItems = $session->items->where('status', 'pending')->count();
         $rejectedItems = $session->items->where('status', 'rejected')->count();
-        
+
         // Step 1: Start - No items uploaded yet
         if ($totalItems === 0) {
             return [
@@ -531,7 +557,7 @@ class ImportController extends Controller
                 'description' => 'Ready to upload file',
             ];
         }
-        
+
         // Step 2: Upload - Items uploaded but not analyzed
         // If there are pending items (not analyzed), user needs to analyze
         if ($pendingItems > 0 && $analyzedItems === 0) {
@@ -541,7 +567,7 @@ class ImportController extends Controller
                 'description' => 'File uploaded, ready to analyze matches',
             ];
         }
-        
+
         // Step 3: Review - Items analyzed, ready to review matches
         // If there are analyzed items, show review step (even if some have actions saved)
         if ($analyzedItems > 0) {
@@ -550,13 +576,13 @@ class ImportController extends Controller
                 ->where('status', 'analyzed')
                 ->whereNull('action')
                 ->count();
-            
+
             // Count analyzed items with actions (draft saved)
             $analyzedWithActions = $session->items
                 ->where('status', 'analyzed')
                 ->whereNotNull('action')
                 ->count();
-            
+
             // If there are any analyzed items (with or without actions), show review
             // User can see matches and modify saved selections
             if ($analyzedWithoutActions > 0 || $analyzedWithActions > 0) {
@@ -564,7 +590,7 @@ class ImportController extends Controller
                 if ($analyzedWithActions > 0) {
                     $description .= ' (draft saved)';
                 }
-                
+
                 return [
                     'step' => 3,
                     'name' => 'review',
@@ -572,7 +598,7 @@ class ImportController extends Controller
                 ];
             }
         }
-        
+
         // Step 4: Confirm - All analyzed items are confirmed (imported)
         // This stage is reached after successful import
         if ($confirmedItems > 0 && $confirmedItems === $analyzedItems) {
@@ -582,7 +608,7 @@ class ImportController extends Controller
                 'description' => 'Import completed',
             ];
         }
-        
+
         // Default: If we have items but unclear state, assume review step
         return [
             'step' => 3,

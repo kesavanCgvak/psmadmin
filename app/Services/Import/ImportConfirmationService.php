@@ -26,6 +26,10 @@ class ImportConfirmationService
         $matcher = new ProductMatcherService();
         $typeMatcher = new TypeMatcherService();
 
+        // ✅ Collect row-specific errors instead of throwing immediately
+        $errors = [];
+        $successfulRows = [];
+
         foreach ($rows as $rowData) {
             $item = $session->items
                 ->where('excel_row_number', $rowData['row'])
@@ -35,106 +39,134 @@ class ImportConfirmationService
                 continue;
             }
 
-            if ($rowData['action'] === 'attach') {
-                // Validate product exists
-                $product = Product::find($rowData['product_id']);
-                if (!$product) {
-                    throw new \Exception("Row {$rowData['row']}: Product not found (ID: {$rowData['product_id']}).");
+            try {
+                if ($rowData['action'] === 'attach') {
+                    // Validate product exists
+                    $product = Product::find($rowData['product_id']);
+                    if (!$product) {
+                        $errors[] = [
+                            'row' => $rowData['row'],
+                            'message' => "Row {$rowData['row']}: Product not found (ID: {$rowData['product_id']}).",
+                            'error_type' => 'product_not_found',
+                        ];
+                        continue;
+                    }
+
+                    // ✅ ADD QUANTITIES: Check if equipment already exists, add quantities instead of replacing
+                    $existingEquipment = Equipment::where('user_id', $userId)
+                        ->where('company_id', $companyId)
+                        ->where('product_id', $rowData['product_id'])
+                        ->first();
+
+                    $importQuantity = $item->quantity ?? 1;
+
+                    if ($existingEquipment) {
+                        // Equipment exists - ADD quantities
+                        $existingEquipment->update([
+                            'quantity' => $existingEquipment->quantity + $importQuantity,
+                            // Update software_code if provided and different
+                            'software_code' => $item->software_code ?? $existingEquipment->software_code,
+                        ]);
+                    } else {
+                        // Equipment doesn't exist - create new
+                        Equipment::create([
+                            'user_id' => $userId,
+                            'company_id' => $companyId,
+                            'product_id' => $rowData['product_id'],
+                            'quantity' => $importQuantity,
+                            'software_code' => $item->software_code ?? null,
+                        ]);
+                    }
+
+                    $attached++;
+                    $successfulRows[] = $rowData['row'];
                 }
 
-                // ✅ ADD QUANTITIES: Check if equipment already exists, add quantities instead of replacing
-                $existingEquipment = Equipment::where('user_id', $userId)
-                    ->where('company_id', $companyId)
-                    ->where('product_id', $rowData['product_id'])
-                    ->first();
+                if ($rowData['action'] === 'create') {
+                    // ✅ PRE-CREATE VALIDATION: Check for high-confidence matches before creating
+                    $matches = $matcher->findMatches($item, 0.85);
 
-                $importQuantity = $item->quantity ?? 1;
+                    // If very high confidence match found (90%+), prevent creation
+                    $highConfidenceMatch = $matches->where('confidence', '>=', 0.90)->first();
+                    if ($highConfidenceMatch) {
+                        $confidencePercent = round($highConfidenceMatch['confidence'] * 100);
+                        $psmCode = $highConfidenceMatch['psm_code'] ?? 'N/A';
+                        $matchType = $highConfidenceMatch['match_type'] ?? 'unknown';
 
-                if ($existingEquipment) {
-                    // Equipment exists - ADD quantities
-                    $existingEquipment->update([
-                        'quantity' => $existingEquipment->quantity + $importQuantity,
-                        // Update software_code if provided and different
-                        'software_code' => $item->software_code ?? $existingEquipment->software_code,
+                        $errors[] = [
+                            'row' => $rowData['row'],
+                            'message' => "Row {$rowData['row']}: High-confidence match found! " .
+                                "A similar product already exists (PSM Code: {$psmCode}, Confidence: {$confidencePercent}%, Type: {$matchType}). " .
+                                "Please use 'attach' action instead of 'create' to avoid duplicates.",
+                            'error_type' => 'duplicate_detected',
+                            'match_details' => [
+                                'psm_code' => $psmCode,
+                                'confidence' => $confidencePercent,
+                                'match_type' => $matchType,
+                                'product_id' => $highConfidenceMatch['product_id'] ?? null,
+                            ],
+                        ];
+                        continue;
+                    }
+
+                    // ✅ TYPE MATCHING: Infer types from matched products or description
+                    $matchedProductsArray = $matches->toArray();
+                    $types = $typeMatcher->inferTypes($item->original_description, $matchedProductsArray);
+
+                    // Create new product with inferred types
+                    $product = Product::create([
+                        'model' => $item->original_description,
+                        'psm_code' => $this->generateNextPsmCode(),
+                        'is_verified' => 0,
+                        'category_id' => $types['category_id'],
+                        'brand_id' => $types['brand_id'],
+                        'sub_category_id' => $types['sub_category_id'],
                     ]);
-                } else {
-                    // Equipment doesn't exist - create new
-                    Equipment::create([
-                        'user_id' => $userId,
-                        'company_id' => $companyId,
-                        'product_id' => $rowData['product_id'],
-                        'quantity' => $importQuantity,
-                        'software_code' => $item->software_code ?? null,
-                    ]);
+
+                    // ✅ ADD QUANTITIES: Check if equipment already exists for newly created product
+                    $existingEquipment = Equipment::where('user_id', $userId)
+                        ->where('company_id', $companyId)
+                        ->where('product_id', $product->id)
+                        ->first();
+
+                    $importQuantity = $item->quantity ?? 1;
+
+                    if ($existingEquipment) {
+                        // Equipment exists - ADD quantities
+                        $existingEquipment->update([
+                            'quantity' => $existingEquipment->quantity + $importQuantity,
+                            'software_code' => $item->software_code ?? $existingEquipment->software_code,
+                        ]);
+                    } else {
+                        // Equipment doesn't exist - create new
+                        Equipment::create([
+                            'user_id' => $userId,
+                            'company_id' => $companyId,
+                            'product_id' => $product->id,
+                            'quantity' => $importQuantity,
+                            'software_code' => $item->software_code ?? null,
+                        ]);
+                    }
+
+                    $created++;
+                    $successfulRows[] = $rowData['row'];
                 }
 
-                $attached++;
-            }
-
-            if ($rowData['action'] === 'create') {
-                // ✅ PRE-CREATE VALIDATION: Check for high-confidence matches before creating
-                $matches = $matcher->findMatches($item, 0.85);
-
-                // If very high confidence match found (90%+), prevent creation
-                $highConfidenceMatch = $matches->where('confidence', '>=', 0.90)->first();
-                if ($highConfidenceMatch) {
-                    $confidencePercent = round($highConfidenceMatch['confidence'] * 100);
-                    $psmCode = $highConfidenceMatch['psm_code'] ?? 'N/A';
-                    $matchType = $highConfidenceMatch['match_type'] ?? 'unknown';
-
-                    throw new \Exception(
-                        "Row {$rowData['row']}: High-confidence match found! " .
-                        "A similar product already exists (PSM Code: {$psmCode}, Confidence: {$confidencePercent}%, Type: {$matchType}). " .
-                        "Please use 'attach' action instead of 'create' to avoid duplicates."
-                    );
-                }
-
-                // ✅ TYPE MATCHING: Infer types from matched products or description
-                $matchedProductsArray = $matches->toArray();
-                $types = $typeMatcher->inferTypes($item->original_description, $matchedProductsArray);
-
-                // Create new product with inferred types
-                $product = Product::create([
-                    'model' => $item->original_description,
-                    'psm_code' => $this->generateNextPsmCode(),
-                    'is_verified' => 0,
-                    'category_id' => $types['category_id'],
-                    'brand_id' => $types['brand_id'],
-                    'sub_category_id' => $types['sub_category_id'],
+                // Only mark as confirmed if processing succeeded
+                $item->update([
+                    'action' => $rowData['action'],
+                    'status' => 'confirmed',
                 ]);
 
-                // ✅ ADD QUANTITIES: Check if equipment already exists for newly created product
-                $existingEquipment = Equipment::where('user_id', $userId)
-                    ->where('company_id', $companyId)
-                    ->where('product_id', $product->id)
-                    ->first();
-
-                $importQuantity = $item->quantity ?? 1;
-
-                if ($existingEquipment) {
-                    // Equipment exists - ADD quantities
-                    $existingEquipment->update([
-                        'quantity' => $existingEquipment->quantity + $importQuantity,
-                        'software_code' => $item->software_code ?? $existingEquipment->software_code,
-                    ]);
-                } else {
-                    // Equipment doesn't exist - create new
-                    Equipment::create([
-                        'user_id' => $userId,
-                        'company_id' => $companyId,
-                        'product_id' => $product->id,
-                        'quantity' => $importQuantity,
-                        'software_code' => $item->software_code ?? null,
-                    ]);
-                }
-
-                $created++;
+            } catch (\Exception $e) {
+                // Catch any other unexpected errors for this row
+                $errors[] = [
+                    'row' => $rowData['row'],
+                    'message' => "Row {$rowData['row']}: " . $e->getMessage(),
+                    'error_type' => 'processing_error',
+                ];
+                continue;
             }
-
-            $item->update([
-                'action' => $rowData['action'],
-                'status' => 'confirmed',
-            ]);
         }
 
         // ✅ PARTIAL IMPORT SUPPORT: Only mark as confirmed if all items are processed
@@ -159,15 +191,24 @@ class ImportConfirmationService
             ]);
         }
 
-        // Return structured response
-        return [
+        // Return structured response with errors if any
+        $response = [
             'session_id' => $session->id,
             'created_products' => $created,
             'attached_products' => $attached,
             'total_processed' => $created + $attached,
             'pending_items' => $pendingCount,
             'session_remains_active' => $pendingCount > 0,
+            'successful_rows' => $successfulRows,
         ];
+
+        // ✅ Include errors if any occurred
+        if (!empty($errors)) {
+            $response['errors'] = $errors;
+            $response['failed_rows'] = array_column($errors, 'row');
+        }
+
+        return $response;
     }
 
     /*

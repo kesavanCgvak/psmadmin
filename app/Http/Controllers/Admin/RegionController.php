@@ -34,12 +34,19 @@ class RegionController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:150|unique:regions,name',
+            'name' => 'required|string|max:150',
         ]);
 
         if ($validator->fails()) {
             return redirect()->back()
                 ->withErrors($validator)
+                ->withInput();
+        }
+
+        // Check for duplicate using normalized name comparison
+        if (Region::isDuplicate($request->name)) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A region with this name already exists.'])
                 ->withInput();
         }
 
@@ -74,12 +81,19 @@ class RegionController extends Controller
     public function update(Request $request, Region $region)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:150|unique:regions,name,' . $region->id,
+            'name' => 'required|string|max:150',
         ]);
 
         if ($validator->fails()) {
             return redirect()->back()
                 ->withErrors($validator)
+                ->withInput();
+        }
+
+        // Check for duplicate using normalized name comparison (excluding current record)
+        if (Region::isDuplicate($request->name, $region->id)) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A region with this name already exists.'])
                 ->withInput();
         }
 
