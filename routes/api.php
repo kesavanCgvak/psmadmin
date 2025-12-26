@@ -133,6 +133,7 @@ Route::middleware('jwt.verify')->group(function () {
     // Block/Unblock company
     Route::post('/companies/{company}/block', [CompanyController::class, 'blockCompany']);
     Route::post('/companies/{company}/unblock', [CompanyController::class, 'unblockCompany']);
+    Route::post('/providers/{company}/block', [CompanyController::class, 'toggleProviderBlock']);
 
 });
 
@@ -261,7 +262,7 @@ Route::middleware('jwt.verify')->group(function () {
     Route::post('/subscriptions/update-payment', [\App\Http\Controllers\Api\SubscriptionController::class, 'updatePaymentMethod']);
     Route::get('/subscription/payment-method', [\App\Http\Controllers\Api\SubscriptionController::class, 'getPaymentMethod']);
     Route::post('/subscriptions/create', [\App\Http\Controllers\Api\SubscriptionController::class, 'create']);
-    
+
     // Billing History APIs
     Route::get('/subscription/billing-history', [\App\Http\Controllers\Api\SubscriptionController::class, 'billingHistory']);
     Route::get('/subscription/invoice/{invoiceId}', [\App\Http\Controllers\Api\SubscriptionController::class, 'downloadInvoice']);

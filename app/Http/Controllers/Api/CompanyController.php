@@ -15,6 +15,7 @@ use App\Models\Company;
 use App\Models\User;
 use App\Models\CompanyRating;
 use App\Models\CompanyBlock;
+use App\Models\CompanyProviderBlock;
 
 
 
@@ -1204,5 +1205,76 @@ class CompanyController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Block or unblock a provider company for the logged-in user's company.
+     */
+    public function toggleProviderBlock(Request $request, $providerId)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+            $companyId = $user->company_id;
+
+            // Safety: prevent blocking own company
+            if ($companyId == $providerId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You cannot block your own company'
+                ], 403);
+            }
+
+            $block = $request->boolean('block', true);
+
+            if ($block) {
+                // Block provider for company
+                CompanyProviderBlock::updateOrCreate(
+                    [
+                        'company_id' => $companyId,
+                        'provider_id' => $providerId,
+                    ],
+                    [
+                        'blocked_by_user_id' => $user->id,
+                        'blocked_at' => now(),
+                    ]
+                );
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Provider blocked successfully',
+                    'data' => [
+                        'provider_id' => $providerId,
+                        'is_blocked' => true
+                    ]
+                ], 200);
+            }
+
+            // Unblock provider
+            CompanyProviderBlock::where('company_id', $companyId)
+                ->where('provider_id', $providerId)
+                ->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Provider unblocked successfully',
+                'data' => [
+                    'provider_id' => $providerId,
+                    'is_blocked' => false
+                ]
+            ], 200);
+
+        } catch (\Throwable $e) {
+            Log::error('Provider block toggle failed', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id ?? null,
+                'provider_id' => $providerId
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to update provider block status'
+            ], 500);
+        }
+    }
+
 
 }
