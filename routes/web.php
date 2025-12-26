@@ -78,6 +78,8 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
         ->name('products.data');
     Route::get('/products/search', [\App\Http\Controllers\Admin\ProductController::class, 'searchProducts'])
         ->name('products.search');
+    Route::get('/products/{product}/clone', [\App\Http\Controllers\Admin\ProductController::class, 'clone'])
+        ->name('products.clone');
     Route::resource('products', \App\Http\Controllers\Admin\ProductController::class);
     Route::post('/products/bulk-delete', [\App\Http\Controllers\Admin\ProductController::class, 'bulkDelete'])
         ->name('products.bulk-delete');
