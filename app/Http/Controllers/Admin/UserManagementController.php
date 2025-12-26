@@ -45,7 +45,7 @@ class UserManagementController extends Controller
     {
         $request->validate([
             'username' => 'required|string|max:255|unique:users',
-            'email' => 'required|email|max:255|unique:user_profiles,email',
+            'email' => 'required|email|max:255',
             'password' => 'required|string|min:8|confirmed',
             'account_type' => 'nullable|in:Provider,User',
             'role' => 'required|in:admin,user',
@@ -232,10 +232,6 @@ class UserManagementController extends Controller
                 'required',
                 'email',
                 'max:255',
-                // Ensure uniqueness against user_profiles.email excluding current user's profile
-                Rule::unique('user_profiles', 'email')->where(function ($query) use ($user) {
-                    return $query->where('user_id', '!=', $user->id);
-                })
             ],
             'password' => 'nullable|string|min:8|confirmed',
             'role' => 'required|in:user,admin,super_admin',

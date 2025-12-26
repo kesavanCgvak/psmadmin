@@ -272,7 +272,7 @@
                                 <option value="">-- Select Format --</option>
                                 <option value="MM/DD/YYYY" {{ old('date_format', $company->date_format) == 'MM/DD/YYYY' ? 'selected' : '' }}>MM/DD/YYYY</option>
                                 <option value="DD/MM/YYYY" {{ old('date_format', $company->date_format) == 'DD/MM/YYYY' ? 'selected' : '' }}>DD/MM/YYYY</option>
-                                <option value="YYYY-MM-DD" {{ old('date_format', $company->date_format) == 'YYYY-MM-DD' ? 'selected' : '' }}>YYYY-MM-DD</option>
+                                <!-- <option value="YYYY-MM-DD" {{ old('date_format', $company->date_format) == 'YYYY-MM-DD' ? 'selected' : '' }}>YYYY-MM-DD</option> -->
                             </select>
                             @error('date_format')
                                 <div class="invalid-feedback">{{ $message }}</div>
