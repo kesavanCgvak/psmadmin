@@ -81,6 +81,20 @@ class ImportController extends Controller
             // Reload session to get updated stats
             $session->refresh();
 
+            // Get rejected rows with their rejection reasons
+            $rejectedItems = $session->items()
+                ->where('status', 'rejected')
+                ->select('id', 'excel_row_number', 'original_description', 'rejection_reason')
+                ->orderBy('excel_row_number')
+                ->get()
+                ->map(function ($item) {
+                    return [
+                        'row_number' => $item->excel_row_number,
+                        'description' => $item->original_description,
+                        'rejection_reason' => $item->rejection_reason,
+                    ];
+                });
+
             return response()->json([
                 'success' => true,
                 'message' => 'File uploaded and staged successfully',
@@ -88,6 +102,7 @@ class ImportController extends Controller
                     'total_rows' => $session->total_rows,
                     'valid_rows' => $session->valid_rows,
                     'rejected_rows' => $session->rejected_rows,
+                    'rejected_items' => $rejectedItems,
                 ],
             ]);
 

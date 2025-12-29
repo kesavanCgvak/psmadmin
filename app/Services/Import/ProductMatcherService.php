@@ -4,6 +4,7 @@ namespace App\Services\Import;
 
 use App\Models\Product;
 use App\Models\ImportSessionItem;
+use App\Models\Category;
 use App\Support\ProductNormalizer;
 use Illuminate\Support\Collection;
 
@@ -21,13 +22,17 @@ class ProductMatcherService
     {
         $matches = collect();
         
+        // Extract/infer expected category from description
+        $expectedCategoryId = $this->extractCategoryFromDescription($item->original_description);
+        
         // Strategy 0: EXACT MATCH FIRST (case-insensitive, trimmed)
         // This catches products like "CHAUVET ROGUE R2 BEAM FIXTURE" matching exactly
-        $exactMatches = $this->findExactDescriptionMatches($item);
+        $exactMatches = $this->findExactDescriptionMatches($item, $expectedCategoryId);
         $matches = $matches->merge($exactMatches);
         
-        // If we found exact matches, return them (they're 100% confidence)
-        if ($exactMatches->isNotEmpty()) {
+        // If we found exact matches with category alignment, return them
+        // But only if they have high confidence after category penalty
+        if ($exactMatches->where('confidence', '>=', 0.90)->isNotEmpty()) {
             return $matches
                 ->unique('product_id')
                 ->where('confidence', '>=', $minConfidence)
@@ -41,30 +46,31 @@ class ProductMatcherService
         
         if ($modelNumber) {
             // Exact model matches with brand awareness
-            $exactModelMatches = $this->findExactModelMatches($modelNumber, $item);
+            $exactModelMatches = $this->findExactModelMatches($modelNumber, $item, $expectedCategoryId);
             $matches = $matches->merge($exactModelMatches);
             
             // PSM code lookup - if model matches a product with PSM code, find all products with that PSM code
             // This is critical: PSM code is the universal identifier for the same product
-            $psmMatches = $this->findByPsmCodeViaModel($modelNumber);
+            // But apply category penalties if categories don't align
+            $psmMatches = $this->findByPsmCodeViaModel($modelNumber, $expectedCategoryId);
             $matches = $matches->merge($psmMatches);
         }
         
         // Strategy 2: Normalized similarity matching (handles brand variations)
         // This works for both products with and without model numbers
-        $normalizedMatches = $this->findNormalizedSimilarityMatches($item);
+        $normalizedMatches = $this->findNormalizedSimilarityMatches($item, $expectedCategoryId);
         $matches = $matches->merge($normalizedMatches);
         
         // Strategy 3: Enhanced description matching for products without model numbers
         // If no model number found, do a broader search
         if (!$modelNumber) {
-            $descriptionMatches = $this->findByDescription($item);
+            $descriptionMatches = $this->findByDescription($item, $expectedCategoryId);
             $matches = $matches->merge($descriptionMatches);
         }
         
         // Strategy 4: Fuzzy match as fallback (only if no high-confidence matches found)
         if ($matches->where('confidence', '>=', 0.85)->isEmpty()) {
-            $fuzzyMatches = $this->findFuzzyMatches($item);
+            $fuzzyMatches = $this->findFuzzyMatches($item, $expectedCategoryId);
             $matches = $matches->merge($fuzzyMatches);
         }
         
@@ -81,7 +87,7 @@ class ProductMatcherService
      * Find exact description matches using normalized codes and full names
      * Handles variations like "DML-1122", "DML1122", "EV-DML1122", "Apogee SSM -"
      */
-    protected function findExactDescriptionMatches(ImportSessionItem $item): Collection
+    protected function findExactDescriptionMatches(ImportSessionItem $item, ?int $expectedCategoryId = null): Collection
     {
         $description = trim($item->original_description);
         
@@ -108,28 +114,46 @@ class ProductMatcherService
                 }
             })
             ->select('products.*')
-            ->with('brand');
+            ->with(['brand', 'category']);
         
-        // Order by exact match first, then contains
+        // Order by exact match first, then contains, prioritize category match if expected
         if ($normalizedCode) {
-            $query->orderByRaw(
-                "CASE 
-                    WHEN products.normalized_model = ? THEN 0
-                    WHEN products.normalized_model LIKE ? THEN 1
-                    WHEN products.normalized_full_name = ? THEN 2
-                    ELSE 3
-                 END",
-                [$normalizedCode, '%' . $normalizedCode . '%', $normalizedFull]
-            );
+            if ($expectedCategoryId) {
+                $query->orderByRaw(
+                    "CASE 
+                        WHEN products.category_id = ? AND products.normalized_model = ? THEN 0
+                        WHEN products.normalized_model = ? THEN 1
+                        WHEN products.category_id = ? AND products.normalized_model LIKE ? THEN 2
+                        WHEN products.normalized_model LIKE ? THEN 3
+                        WHEN products.category_id = ? AND products.normalized_full_name = ? THEN 4
+                        WHEN products.normalized_full_name = ? THEN 5
+                        ELSE 6
+                     END",
+                    [$expectedCategoryId, $normalizedCode, $normalizedCode, $expectedCategoryId, '%' . $normalizedCode . '%', '%' . $normalizedCode . '%', $expectedCategoryId, $normalizedFull, $normalizedFull]
+                );
+            } else {
+                $query->orderByRaw(
+                    "CASE 
+                        WHEN products.normalized_model = ? THEN 0
+                        WHEN products.normalized_model LIKE ? THEN 1
+                        WHEN products.normalized_full_name = ? THEN 2
+                        ELSE 3
+                     END",
+                    [$normalizedCode, '%' . $normalizedCode . '%', $normalizedFull]
+                );
+            }
         }
         
         $products = $query->limit(10)->get();
         
-        return $products->map(function ($product) {
+        return $products->map(function ($product) use ($expectedCategoryId) {
+            $confidence = 1.0; // Start with 100% for exact match
+            $confidence = $this->applyCategoryPenalty($confidence, $expectedCategoryId, $product->category_id);
+            
             return [
                 'product_id' => $product->id,
                 'psm_code' => $product->psm_code,
-                'confidence' => 1.0, // Exact match = 100% confidence
+                'confidence' => $confidence,
                 'match_type' => 'exact_description',
             ];
         });
@@ -148,7 +172,7 @@ class ProductMatcherService
      * Find products with exact or near-exact model number match
      * Uses normalized_model column for efficient matching
      */
-    protected function findExactModelMatches(string $modelNumber, ImportSessionItem $item): Collection
+    protected function findExactModelMatches(string $modelNumber, ImportSessionItem $item, ?int $expectedCategoryId = null): Collection
     {
         // Normalize model code using ProductNormalizer
         $normalizedCode = ProductNormalizer::normalizeCode($modelNumber);
@@ -158,35 +182,44 @@ class ProductMatcherService
         }
         
         // Build query using normalized_model column
-        $query = Product::with('brand')
+        $query = Product::with(['brand', 'category'])
             ->where(function ($q) use ($normalizedCode) {
                 // Exact match on normalized_model
                 $q->where('normalized_model', $normalizedCode)
                   // Also check if normalized_model contains the code (handles prefixes like "EV-DML1122")
                   ->orWhere('normalized_model', 'LIKE', '%' . $normalizedCode . '%');
-            })
-            ->orderByRaw(
+            });
+        
+        // Prioritize category matches if expected category is known
+        if ($expectedCategoryId) {
+            $query->orderByRaw(
+                "CASE 
+                    WHEN category_id = ? AND normalized_model = ? THEN 0
+                    WHEN normalized_model = ? THEN 1
+                    WHEN category_id = ? AND normalized_model LIKE ? THEN 2
+                    ELSE 3
+                 END",
+                [$expectedCategoryId, $normalizedCode, $normalizedCode, $expectedCategoryId, '%' . $normalizedCode . '%']
+            );
+        } else {
+            $query->orderByRaw(
                 "CASE WHEN normalized_model = ? THEN 0 ELSE 1 END",
                 [$normalizedCode]
             );
+        }
         
-        return $query->get()->map(function ($product) use ($normalizedCode) {
-            // Exact match gets 95% confidence
-            if ($product->normalized_model === $normalizedCode) {
-                return [
-                    'product_id' => $product->id,
-                    'psm_code' => $product->psm_code,
-                    'confidence' => 0.95,
-                    'match_type' => 'exact_model',
-                ];
-            }
+        return $query->get()->map(function ($product) use ($normalizedCode, $expectedCategoryId) {
+            // Start with base confidence
+            $confidence = $product->normalized_model === $normalizedCode ? 0.95 : 0.90;
             
-            // Contains match gets 90% confidence
+            // Apply category penalty
+            $confidence = $this->applyCategoryPenalty($confidence, $expectedCategoryId, $product->category_id);
+            
             return [
                 'product_id' => $product->id,
                 'psm_code' => $product->psm_code,
-                'confidence' => 0.90,
-                'match_type' => 'partial_model',
+                'confidence' => $confidence,
+                'match_type' => $product->normalized_model === $normalizedCode ? 'exact_model' : 'partial_model',
             ];
         });
     }
@@ -194,8 +227,9 @@ class ProductMatcherService
     /**
      * Find products by PSM code when model matches
      * Uses normalized_model for efficient matching
+     * Applies category penalties to prevent cross-category false matches
      */
-    protected function findByPsmCodeViaModel(string $modelNumber): Collection
+    protected function findByPsmCodeViaModel(string $modelNumber, ?int $expectedCategoryId = null): Collection
     {
         $normalizedCode = ProductNormalizer::normalizeCode($modelNumber);
         
@@ -204,26 +238,33 @@ class ProductMatcherService
         }
         
         // Find a product with matching normalized model that has a PSM code
-        $product = Product::where('normalized_model', $normalizedCode)
-            ->whereNotNull('psm_code')
-            ->first();
+        // Prioritize products with matching category if expected category is known
+        $query = Product::where(function ($q) use ($normalizedCode) {
+            $q->where('normalized_model', $normalizedCode)
+              ->orWhere('normalized_model', 'LIKE', '%' . $normalizedCode . '%');
+        })
+        ->whereNotNull('psm_code');
         
-        // Also try contains match if exact match fails
-        if (!$product) {
-            $product = Product::where('normalized_model', 'LIKE', '%' . $normalizedCode . '%')
-                ->whereNotNull('psm_code')
-                ->first();
+        if ($expectedCategoryId) {
+            $query->orderByRaw('CASE WHEN category_id = ? THEN 0 ELSE 1 END', [$expectedCategoryId]);
         }
+        
+        $product = $query->first();
         
         if ($product && $product->psm_code) {
             // Find ALL products with the same PSM code
             return Product::where('psm_code', $product->psm_code)
+                ->with('category')
                 ->get()
-                ->map(function ($p) {
+                ->map(function ($p) use ($expectedCategoryId) {
+                    $confidence = 1.0; // PSM code match starts at 100%
+                    // Apply category penalty - PSM codes should typically match category, but verify
+                    $confidence = $this->applyCategoryPenalty($confidence, $expectedCategoryId, $p->category_id);
+                    
                     return [
                         'product_id' => $p->id,
                         'psm_code' => $p->psm_code,
-                        'confidence' => 1.0, // PSM code match = 100% confidence
+                        'confidence' => $confidence,
                         'match_type' => 'psm_code',
                     ];
                 });
@@ -236,7 +277,7 @@ class ProductMatcherService
      * Normalized similarity matching using normalized columns
      * Handles variations like "DML-1122", "EV-DML1122", "Apogee SSM -"
      */
-    protected function findNormalizedSimilarityMatches(ImportSessionItem $item): Collection
+    protected function findNormalizedSimilarityMatches(ImportSessionItem $item, ?int $expectedCategoryId = null): Collection
     {
         $description = $item->original_description;
         
@@ -248,7 +289,7 @@ class ProductMatcherService
         $normalizedFull = ProductNormalizer::normalizeFullName(null, $description);
         
         // Build query using normalized columns
-        $query = Product::query()->with('brand');
+        $query = Product::query()->with(['brand', 'category']);
         
         if ($normalizedCode && ProductNormalizer::isValidNormalizedCode($normalizedCode)) {
             // Use normalized_model for efficient matching
@@ -256,6 +297,12 @@ class ProductMatcherService
                 $q->where('normalized_model', $normalizedCode)
                   ->orWhere('normalized_model', 'LIKE', '%' . $normalizedCode . '%');
             });
+            
+            // Prioritize category matches if expected category is known
+            if ($expectedCategoryId) {
+                $query->orderByRaw('CASE WHEN category_id = ? THEN 0 ELSE 1 END', [$expectedCategoryId]);
+            }
+            
             $products = $query->limit(100)->get();
         } else {
             // Fallback to normalized_full_name search
@@ -264,10 +311,16 @@ class ProductMatcherService
                     $q->where('normalized_full_name', 'LIKE', '%' . $normalizedFull . '%');
                 });
             }
+            
+            // Prioritize category matches if expected category is known
+            if ($expectedCategoryId) {
+                $query->orderByRaw('CASE WHEN category_id = ? THEN 0 ELSE 1 END', [$expectedCategoryId]);
+            }
+            
             $products = $query->limit(500)->get();
         }
         
-        return $products->map(function ($product) use ($normalizedCode, $normalizedFull) {
+        return $products->map(function ($product) use ($normalizedCode, $normalizedFull, $expectedCategoryId) {
             $confidence = 0.0;
             
             // Calculate confidence based on normalized matches
@@ -284,6 +337,11 @@ class ProductMatcherService
             if ($normalizedFull && $product->normalized_full_name) {
                 $fullConfidence = $this->calculateNormalizedSimilarity($normalizedFull, $product->normalized_full_name);
                 $confidence = max($confidence, $fullConfidence);
+            }
+            
+            // Apply category penalty
+            if ($confidence > 0) {
+                $confidence = $this->applyCategoryPenalty($confidence, $expectedCategoryId, $product->category_id);
             }
             
             if ($confidence >= 0.70) {
@@ -324,7 +382,7 @@ class ProductMatcherService
      * Enhanced description-based matching for products without model numbers
      * Uses full-text search on product descriptions and brand names
      */
-    protected function findByDescription(ImportSessionItem $item): Collection
+    protected function findByDescription(ImportSessionItem $item, ?int $expectedCategoryId = null): Collection
     {
         $normalized = $this->normalizeDescription($item->original_description);
         $keyTerms = $this->extractKeyTerms($normalized);
@@ -334,7 +392,7 @@ class ProductMatcherService
         }
         
         // Build query to search for products containing key terms in model OR brand name
-        $query = Product::query()->with('brand');
+        $query = Product::query()->with(['brand', 'category']);
         
         // Search for products that contain multiple key terms (better matches)
         $query->where(function ($q) use ($keyTerms) {
@@ -348,9 +406,14 @@ class ProductMatcherService
             }
         });
         
+        // Prioritize category matches if expected category is known
+        if ($expectedCategoryId) {
+            $query->orderByRaw('CASE WHEN category_id = ? THEN 0 ELSE 1 END', [$expectedCategoryId]);
+        }
+        
         $products = $query->limit(200)->get();
         
-        return $products->map(function ($product) use ($normalized) {
+        return $products->map(function ($product) use ($normalized, $expectedCategoryId) {
             // Build full product name: brand + model for comparison
             $productFullName = trim(($product->brand->name ?? '') . ' ' . $product->model);
             $productNormalized = $this->normalizeDescription($productFullName);
@@ -364,6 +427,9 @@ class ProductMatcherService
             
             // Use the higher confidence
             $confidence = max($fullNameConfidence, $modelConfidence);
+            
+            // Apply category penalty
+            $confidence = $this->applyCategoryPenalty($confidence, $expectedCategoryId, $product->category_id);
             
             // For description-only matches, require higher confidence (0.75+)
             if ($confidence >= 0.75) {
@@ -383,19 +449,27 @@ class ProductMatcherService
      * Fallback fuzzy matching (only used if no high-confidence matches found)
      * This is less accurate but catches edge cases
      */
-    protected function findFuzzyMatches(ImportSessionItem $item): Collection
+    protected function findFuzzyMatches(ImportSessionItem $item, ?int $expectedCategoryId = null): Collection
     {
         $normalized = $this->normalizeDescription($item->original_description);
         
         // Get products - limit to prevent performance issues
-        // In production, you might want to add more filtering here
-        $products = Product::select('id', 'model', 'psm_code')
-            ->limit(500) // Limit for performance
-            ->get();
+        // Prioritize expected category if known
+        $query = Product::select('id', 'model', 'psm_code', 'category_id')
+            ->with('category');
         
-        return $products->map(function ($product) use ($normalized) {
+        if ($expectedCategoryId) {
+            $query->orderByRaw('CASE WHEN category_id = ? THEN 0 ELSE 1 END', [$expectedCategoryId]);
+        }
+        
+        $products = $query->limit(500)->get();
+        
+        return $products->map(function ($product) use ($normalized, $expectedCategoryId) {
             $productNormalized = $this->normalizeDescription($product->model);
             $confidence = $this->calculateSimilarity($normalized, $productNormalized);
+            
+            // Apply category penalty
+            $confidence = $this->applyCategoryPenalty($confidence, $expectedCategoryId, $product->category_id);
             
             if ($confidence >= 0.70) {
                 return [
@@ -493,6 +567,139 @@ class ProductMatcherService
         $terms = array_merge($terms, array_map('strtolower', $significantWords));
         
         return array_unique($terms);
+    }
+    
+    /**
+     * Extract or infer category ID from product description
+     * Looks for category-specific keywords like "lighting console", "amplifier", etc.
+     * 
+     * @param string $description Product description
+     * @return int|null Category ID if inferred, null otherwise
+     */
+    protected function extractCategoryFromDescription(string $description): ?int
+    {
+        $normalized = strtolower($description);
+        
+        // Define category keywords mapping
+        // Keywords that strongly indicate a category
+        $categoryKeywords = [
+            'lighting' => [
+                'lighting console', 'light console', 'grandma', 'grand ma', 'grandma3', 'grand ma 3',
+                'lighting desk', 'lighting controller', 'lighting board', 'dmx console',
+                'fixture', 'light', 'lamp', 'led', 'moving head', 'beam', 'wash',
+            ],
+            'sound' => [
+                'amplifier', 'amp', 'power amp', 'power amplifier', 'multichannel amplifier',
+                'compressor', 'gate', 'eq', 'equalizer', 'mixer', 'audio mixer',
+                'speaker', 'microphone', 'mic', 'monitor', 'subwoofer',
+            ],
+            'video' => [
+                'projector', 'display', 'screen', 'monitor', 'camera', 'video mixer',
+                'switcher', 'encoder', 'decoder',
+            ],
+        ];
+        
+        // Map category keywords to category names (case-insensitive search in DB)
+        $categoryNameMap = [
+            'lighting' => 'Lighting',
+            'sound' => 'Sound',
+            'video' => 'Video',
+        ];
+        
+        // Check for category keywords
+        foreach ($categoryKeywords as $categoryKey => $keywords) {
+            foreach ($keywords as $keyword) {
+                if (str_contains($normalized, strtolower($keyword))) {
+                    // Try to find the category by name
+                    $categoryName = $categoryNameMap[$categoryKey] ?? null;
+                    if ($categoryName) {
+                        $category = Category::where(function ($q) use ($categoryName) {
+                            $q->whereRaw('LOWER(name) = ?', [strtolower($categoryName)])
+                              ->orWhere('name', 'LIKE', "%{$categoryName}%");
+                        })->first();
+                        if ($category) {
+                            return $category->id;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Apply category penalty to confidence score
+     * Heavily penalizes matches across incompatible categories
+     * Only assigns 100% confidence when categories align
+     * 
+     * @param float $confidence Base confidence score (0.0 to 1.0)
+     * @param int|null $expectedCategoryId Expected category ID from description
+     * @param int|null $productCategoryId Actual product category ID
+     * @return float Adjusted confidence score
+     */
+    protected function applyCategoryPenalty(float $confidence, ?int $expectedCategoryId, ?int $productCategoryId): float
+    {
+        // If no expected category, return confidence as-is (no penalty)
+        if (!$expectedCategoryId) {
+            return $confidence;
+        }
+        
+        // If product has no category, apply small penalty (uncertainty)
+        if (!$productCategoryId) {
+            return $confidence * 0.85; // 15% penalty for missing category
+        }
+        
+        // Categories match - no penalty, can achieve 100% confidence
+        if ($expectedCategoryId === $productCategoryId) {
+            return $confidence;
+        }
+        
+        // Categories don't match - apply heavy penalty
+        // For cross-category matches, heavily reduce confidence
+        // Especially important for incompatible categories like Lighting vs Sound
+        
+        // Load category names to check for incompatible pairs
+        $expectedCategory = Category::find($expectedCategoryId);
+        $productCategory = Category::find($productCategoryId);
+        
+        if ($expectedCategory && $productCategory) {
+            $expectedName = strtolower($expectedCategory->name);
+            $productName = strtolower($productCategory->name);
+            
+            // Define incompatible category pairs (mutually exclusive)
+            $incompatiblePairs = [
+                ['lighting', 'sound'],
+                ['sound', 'lighting'],
+                ['lighting', 'video'],
+                ['video', 'lighting'],
+                // Add more as needed
+            ];
+            
+            // Check if this is an incompatible pair
+            $isIncompatible = false;
+            foreach ($incompatiblePairs as $pair) {
+                if (($expectedName === $pair[0] && $productName === $pair[1]) ||
+                    ($expectedName === $pair[1] && $productName === $pair[0])) {
+                    $isIncompatible = true;
+                    break;
+                }
+            }
+            
+            // Heavy penalty for incompatible categories (prevents 100% confidence)
+            if ($isIncompatible) {
+                // For incompatible categories, maximum confidence is 60%
+                // This ensures they never show as 100% matches
+                return min($confidence * 0.40, 0.60);
+            }
+            
+            // For other category mismatches, apply moderate penalty
+            // Still allows some confidence but not 100%
+            return min($confidence * 0.70, 0.85);
+        }
+        
+        // Fallback: apply standard penalty for category mismatch
+        return min($confidence * 0.70, 0.85);
     }
 }
 

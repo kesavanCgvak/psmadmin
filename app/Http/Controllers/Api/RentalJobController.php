@@ -38,6 +38,7 @@ class RentalJobController extends Controller
             'status' => ['nullable', Rule::in(['open', 'in_negotiation', 'accepted', 'cancelled', 'completed'])],
             'from_date' => ['nullable', 'date'],
             'to_date' => ['nullable', 'date', 'after_or_equal:from_date'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
         ]);
 
         try {
@@ -59,10 +60,12 @@ class RentalJobController extends Controller
                 $query->whereDate('to_date', '<=', $validated['to_date']);
             }
 
-            $jobs = $query->orderByDesc('created_at')->get();
+            $perPage = $validated['per_page'] ?? 10;
+            $jobs = $query->orderByDesc('created_at')->paginate($perPage);
+            // $jobs = $query->orderByDesc('created_at')->get();
 
             // Transform payload
-            $jobsTransformed = $jobs->map(function (RentalJob $job) {
+            $jobsTransformed = $jobs->getCollection()->map(function (RentalJob $job) {
                 return [
                     'id' => $job->id,
                     'name' => $job->name,
@@ -86,6 +89,12 @@ class RentalJobController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => $jobsTransformed,
+                'meta' => [
+                    'current_page' => $jobs->currentPage(),
+                    'per_page' => $jobs->perPage(),
+                    'total' => $jobs->total(),
+                    'last_page' => $jobs->lastPage(),
+                ],
             ]);
 
         } catch (\Throwable $e) {

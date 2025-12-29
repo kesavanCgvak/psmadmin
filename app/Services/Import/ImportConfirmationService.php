@@ -65,7 +65,7 @@ class ImportConfirmationService
                         $existingEquipment->update([
                             'quantity' => $existingEquipment->quantity + $importQuantity,
                             // Update software_code if provided and different
-                            'software_code' => $item->software_code ?? $existingEquipment->software_code,
+                            // 'software_code' => $item->software_code ?? $existingEquipment->software_code,
                         ]);
                     } else {
                         // Equipment doesn't exist - create new
@@ -135,7 +135,7 @@ class ImportConfirmationService
                         // Equipment exists - ADD quantities
                         $existingEquipment->update([
                             'quantity' => $existingEquipment->quantity + $importQuantity,
-                            'software_code' => $item->software_code ?? $existingEquipment->software_code,
+                            // 'software_code' => $item->software_code ?? $existingEquipment->software_code,
                         ]);
                     } else {
                         // Equipment doesn't exist - create new
