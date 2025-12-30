@@ -28,7 +28,7 @@ class SupplyJobController extends Controller
         // Validate query params
         $validated = $request->validate([
             'company_id' => 'required|integer|exists:companies,id',
-            'status' => 'nullable|string|in:pending,negotiating,accepted,cancelled,closed,partially_accepted',
+            'status' => 'nullable|string|in:open,negotiating,accepted,cancelled,closed,partially_accepted',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
             'page' => 'nullable|integer|min:1',
