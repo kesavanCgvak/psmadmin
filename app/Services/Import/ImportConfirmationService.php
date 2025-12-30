@@ -119,9 +119,10 @@ class ImportConfirmationService
                         'model' => $item->original_description,
                         'psm_code' => $this->generateNextPsmCode(),
                         'is_verified' => 0,
-                        'category_id' => $types['category_id'],
-                        'brand_id' => $types['brand_id'],
-                        'sub_category_id' => $types['sub_category_id'],
+                        // 'category_id' => $types['category_id'],
+                        // 'brand_id' => $types['brand_id'],
+                        // 'sub_category_id' => $types['sub_category_id'],
+
                     ]);
 
                     // ✅ ADD QUANTITIES: Check if equipment already exists for newly created product
