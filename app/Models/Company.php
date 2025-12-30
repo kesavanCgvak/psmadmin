@@ -212,11 +212,28 @@ class Company extends Model
     }
 
     /**
-     * Check if company can add more users (max 3 additional users)
+     * Check if company can add more users (uses configurable limit)
      */
     public function canAddMoreUsers(): bool
     {
-        return $this->additionalUsersCount() < 3;
+        $limit = \App\Models\Setting::getCompanyUserLimit();
+        return $this->users()->count() < $limit;
+    }
+
+    /**
+     * Get current user count for the company
+     */
+    public function getUserCount(): int
+    {
+        return $this->users()->count();
+    }
+
+    /**
+     * Get maximum user limit for companies
+     */
+    public function getMaxUserLimit(): int
+    {
+        return \App\Models\Setting::getCompanyUserLimit();
     }
 
 }

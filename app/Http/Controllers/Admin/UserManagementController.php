@@ -66,6 +66,16 @@ class UserManagementController extends Controller
 
         // Auto-assign account_type based on company if not provided
         $company = Company::find($request->company_id);
+        
+        // Check if company can add more users (configurable limit)
+        if ($company && !$company->canAddMoreUsers()) {
+            $currentCount = $company->getUserCount();
+            $maxLimit = $company->getMaxUserLimit();
+            return redirect()->back()
+                ->withErrors(['company_id' => "This company has reached the maximum allowed users ({$maxLimit}). Current users: {$currentCount}."])
+                ->withInput();
+        }
+        
         $accountType = $request->account_type ?: $company->account_type;
 
         // Normalize account type to match validation requirements (Provider/User)
@@ -551,12 +561,22 @@ class UserManagementController extends Controller
             $phoneFormat = $phoneFormats[$countryName] ?? "+$countryCode ###########";
         }
 
+        // Get user limit information
+        $currentUserCount = $company->getUserCount();
+        $maxUserLimit = $company->getMaxUserLimit();
+        $canCreateUser = $company->canAddMoreUsers();
+
         return response()->json([
             'country' => $company->country ? $company->country->name : null,
             'state' => $company->state ? $company->state->name : null,
             'phone_format' => $phoneFormat,
             'country_code' => $countryCode,
             'account_type' => $company->account_type,
+            'user_limit' => [
+                'current_user_count' => $currentUserCount,
+                'max_user_limit' => $maxUserLimit,
+                'can_create_user' => $canCreateUser,
+            ],
         ]);
     }
 }

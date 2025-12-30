@@ -150,6 +150,12 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     Route::post('/payment-settings/toggle', [\App\Http\Controllers\Admin\PaymentSettingsController::class, 'toggle'])
         ->name('payment-settings.toggle');
 
+    // User Restrictions
+    Route::get('/user-restrictions', [\App\Http\Controllers\Admin\UserRestrictionsController::class, 'index'])
+        ->name('user-restrictions.index');
+    Route::put('/user-restrictions', [\App\Http\Controllers\Admin\UserRestrictionsController::class, 'update'])
+        ->name('user-restrictions.update');
+
     // Subscription Management
     Route::get('/subscriptions', [\App\Http\Controllers\Admin\SubscriptionManagementController::class, 'index'])
         ->name('subscriptions.index');

@@ -75,6 +75,22 @@ class Setting extends Model
     }
 
     /**
+     * Get company user limit
+     */
+    public static function getCompanyUserLimit(): int
+    {
+        return (int) self::get('company_user_limit', 3); // Default to 3
+    }
+
+    /**
+     * Set company user limit
+     */
+    public static function setCompanyUserLimit(int $limit): bool
+    {
+        return self::set('company_user_limit', $limit, 'integer', 'Maximum number of users allowed per company');
+    }
+
+    /**
      * Cast value based on type
      */
     private static function castValue($value, string $type)

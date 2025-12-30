@@ -54,6 +54,11 @@
                                         @enderror
                                     </div>
                                     <small class="form-text text-muted" id="phoneFormatHint"></small>
+                                    <div id="userLimitInfo" style="display: none; margin-top: 10px;">
+                                        <div class="alert alert-info mb-0" id="userLimitAlert">
+                                            <i class="fas fa-info-circle"></i> <span id="userLimitText"></span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -654,6 +659,10 @@ $(document).ready(function() {
         const $hint = $('#phoneFormatHint');
         const $mobileHint = $('#mobileFormatHint');
         const $accountType = $('#account_type');
+        const $userLimitInfo = $('#userLimitInfo');
+        const $userLimitAlert = $('#userLimitAlert');
+        const $userLimitText = $('#userLimitText');
+        const $submitBtn = $('#submitBtn');
         const selectedOption = $(this).find('option:selected');
 
         if (!companyId) {
@@ -662,6 +671,8 @@ $(document).ready(function() {
             $('#account_type').val('');
             $('#account_type_display').val('Auto-assigned based on company');
             $('#account_type').removeClass('is-valid is-invalid');
+            $userLimitInfo.hide();
+            $submitBtn.prop('disabled', false).removeClass('btn-danger');
             return;
         }
 
@@ -709,10 +720,38 @@ $(document).ready(function() {
                     $('#account_type').removeClass('is-invalid').addClass('is-valid');
                     $('#account_type_display').removeClass('is-invalid').addClass('is-valid');
                 }
+
+                // Display user limit information
+                if (response.user_limit) {
+                    const currentCount = response.user_limit.current_user_count;
+                    const maxLimit = response.user_limit.max_user_limit;
+                    const canCreate = response.user_limit.can_create_user;
+
+                    if (canCreate) {
+                        $userLimitText.html(
+                            `Users: <strong>${currentCount}/${maxLimit}</strong> - You can create ${maxLimit - currentCount} more user(s).`
+                        );
+                        $userLimitAlert.removeClass('alert-danger').addClass('alert-info');
+                        $userLimitInfo.show();
+                        $submitBtn.prop('disabled', false).removeClass('btn-danger');
+                    } else {
+                        $userLimitText.html(
+                            `This company has reached the maximum allowed users (${maxLimit}). Current users: ${currentCount}.`
+                        );
+                        $userLimitAlert.removeClass('alert-info').addClass('alert-danger');
+                        $userLimitInfo.show();
+                        $submitBtn.prop('disabled', true).addClass('btn-danger');
+                    }
+                } else {
+                    $userLimitInfo.hide();
+                    $submitBtn.prop('disabled', false).removeClass('btn-danger');
+                }
             },
             error: function(xhr) {
                 console.error('Error fetching company details:', xhr);
                 // Account type should already be set from data attribute
+                $userLimitInfo.hide();
+                $submitBtn.prop('disabled', false).removeClass('btn-danger');
             }
         });
     });

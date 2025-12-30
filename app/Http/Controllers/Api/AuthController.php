@@ -515,6 +515,18 @@ class AuthController extends Controller
             // Get payment system status (whether payment is enabled/disabled system-wide)
             $paymentEnabled = Setting::isPaymentEnabled();
 
+            // Get user limit information for company users
+            $userLimitInfo = null;
+            if ($user->company) {
+                $currentUserCount = $user->company->getUserCount();
+                $maxUserLimit = $user->company->getMaxUserLimit();
+                $userLimitInfo = [
+                    'current_user_count' => $currentUserCount,
+                    'max_user_limit' => $maxUserLimit,
+                    'can_create_user' => $currentUserCount < $maxUserLimit,
+                ];
+            }
+
             return response()->json([
                 'token' => $token,
                 'message' => 'Login successful',
@@ -527,6 +539,7 @@ class AuthController extends Controller
                         ? 'Payment is required for new registrations'
                         : 'Payment is not required for new registrations',
                 ],
+                'user_limit' => $userLimitInfo,
                 'expires_in' => JWTAuth::factory()->getTTL() * 60,
             ]);
 

@@ -436,6 +436,12 @@ return [
             'icon_color' => 'success',
         ],
         [
+            'text' => 'User Restrictions',
+            'route' => 'admin.user-restrictions.index',
+            'icon' => 'fas fa-fw fa-users-cog',
+            'icon_color' => 'warning',
+        ],
+        [
             'text' => 'Subscriptions',
             'route' => 'admin.subscriptions.index',
             'icon' => 'fas fa-fw fa-receipt',
