@@ -69,7 +69,7 @@ class CompanyUserController extends Controller
                 'company_id' => $request->company_id,
                 'role' => $request->role,
                 'email' => $request->email,
-                'is_admin' => $request->input('is_admin', false),
+                'is_admin' => $request->role === 'admin',
             ]);
 
             $user->profile()->create([

@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Equipment;
 use App\Services\Import\ProductMatcherService;
 use App\Services\Import\TypeMatcherService;
+use Illuminate\Support\Facades\DB;
 
 class ImportConfirmationService
 {
@@ -58,7 +59,7 @@ class ImportConfirmationService
                         ->where('product_id', $rowData['product_id'])
                         ->first();
 
-                    $importQuantity = $item->quantity ?? 1;
+                    $importQuantity = $item->quantity ?? 0;
 
                     if ($existingEquipment) {
                         // Equipment exists - ADD quantities
@@ -227,9 +228,10 @@ class ImportConfirmationService
         $next = 1;
 
         if ($latest && preg_match('/PSM(\d+)/', $latest->psm_code, $m)) {
-            $next = ((int)$m[1]) + 1;
+            $next = ((int) $m[1]) + 1;
         }
 
+        // Keep 5-digit padding to match existing format
         return 'PSM' . str_pad($next, 5, '0', STR_PAD_LEFT);
     }
 }

@@ -40,8 +40,6 @@ class UserProfileController extends Controller
                 'profile_picture' => $path
             ]);
 
-            Log::info('Profile picture updated.', ['user_id' => $user->id]);
-
             return response()->json([
                 'success' => true,
                 'message' => 'Profile picture updated successfully.',
@@ -79,8 +77,6 @@ class UserProfileController extends Controller
 
             $user->password = Hash::make($request->new_password);
             $user->save();
-
-            Log::info('Password changed successfully.', ['user_id' => $user->id]);
 
             return response()->json([
                 'success' => true,
@@ -176,7 +172,7 @@ class UserProfileController extends Controller
             }
 
             // ✅ Update username in users table
-            $user->update(['name' => $request->username]);
+            $user->update(['username' => $request->username]);
 
             return response()->json([
                 'success' => true,
