@@ -245,9 +245,25 @@ class CompanyUserController extends Controller
                 return response()->json(['success' => false, 'message' => 'User not found'], 404);
             }
 
+            // Get company to fetch user limit info after deletion
+            $company = $authUser->company;
+
             $user->delete();
 
-            return response()->json(['success' => true, 'message' => 'User deleted successfully'], 200);
+            // Get updated user limit information after deletion
+            $currentUserCount = $company->getUserCount();
+            $maxUserLimit = $company->getMaxUserLimit();
+            $userLimitInfo = [
+                'current_user_count' => $currentUserCount,
+                'max_user_limit' => $maxUserLimit,
+                'can_create_user' => $currentUserCount < $maxUserLimit,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'message' => 'User deleted successfully',
+                'user_limit' => $userLimitInfo
+            ], 200);
 
         } catch (\Exception $e) {
             Log::error('Delete user failed', ['user_id' => $id, 'error' => $e->getMessage()]);

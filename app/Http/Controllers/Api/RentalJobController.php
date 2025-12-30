@@ -38,7 +38,7 @@ class RentalJobController extends Controller
             'status' => ['nullable', Rule::in(['open', 'in_negotiation', 'accepted', 'cancelled', 'completed'])],
             'from_date' => ['nullable', 'date'],
             'to_date' => ['nullable', 'date', 'after_or_equal:from_date'],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
         try {
@@ -60,12 +60,19 @@ class RentalJobController extends Controller
                 $query->whereDate('to_date', '<=', $validated['to_date']);
             }
 
-            $perPage = $validated['per_page'] ?? 10;
-            $jobs = $query->orderByDesc('created_at')->paginate($perPage);
-            // $jobs = $query->orderByDesc('created_at')->get();
+            //Pagination decision
+            $perPage = $validated['per_page'] ?? null;
 
-            // Transform payload
-            $jobsTransformed = $jobs->getCollection()->map(function (RentalJob $job) {
+            if ($perPage) {
+                $paginator = $query->paginate($perPage);
+                $collection = $paginator->getCollection();
+            } else {
+                $collection = $query->get();
+                $paginator = null;
+            }
+
+            //Transform data (shared for both cases)
+            $data = $collection->map(function (RentalJob $job) {
                 return [
                     'id' => $job->id,
                     'name' => $job->name,
@@ -76,26 +83,34 @@ class RentalJobController extends Controller
                     'products' => $job->products->map(function ($rp) {
                         $brand = $rp->product->brand->name ?? '';
                         $prod = $rp->product->name ?? $rp->product->model ?? '';
+
                         return [
                             'id' => $rp->product_id,
-                            'name' => trim($brand . ' - ' . $prod, ' -'),
+                            'name' => trim("{$brand} - {$prod}", ' -'),
                             'requested_quantity' => (int) $rp->requested_quantity,
                         ];
                     })->values(),
                     'provider_responses_count' => $job->supplyJobs->count(),
                 ];
-            });
+            })->values();
 
-            return response()->json([
+            //Build response
+            $response = [
                 'success' => true,
-                'data' => $jobsTransformed,
-                'meta' => [
-                    'current_page' => $jobs->currentPage(),
-                    'per_page' => $jobs->perPage(),
-                    'total' => $jobs->total(),
-                    'last_page' => $jobs->lastPage(),
-                ],
-            ]);
+                'data' => $data,
+            ];
+
+            //Pagination meta only when paginated
+            if ($paginator) {
+                $response['meta'] = [
+                    'current_page' => $paginator->currentPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'last_page' => $paginator->lastPage(),
+                ];
+            }
+
+            return response()->json($response);
 
         } catch (\Throwable $e) {
             report($e);

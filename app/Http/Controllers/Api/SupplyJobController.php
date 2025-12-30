@@ -39,7 +39,7 @@ class SupplyJobController extends Controller
         $status = $request->input('status');
         $startDate = $request->input('start_date');
         $endDate = $request->input('end_date');
-        $perPage = $request->input('per_page', 20); // default 20 per page
+        // $perPage = $request->input('per_page', 20); // default 20 per page
 
         // Security check
         if ($user->company_id !== $companyId && !$user->is_admin) {
@@ -77,39 +77,53 @@ class SupplyJobController extends Controller
             }
 
             // Paginate
-            $paginated = $query->paginate($perPage);
+            //Pagination decision
+            $perPage = $validated['per_page'] ?? null;
 
-            // Map response
-            $data = $paginated->getCollection()->map(function ($job) {
+            if ($perPage) {
+                $paginator = $query->paginate($perPage);
+                $collection = $paginator->getCollection();
+            } else {
+                $collection = $query->get();
+                $paginator = null;
+            }
+
+            //Transform data (works for both cases)
+            $data = $collection->map(function (SupplyJob $job) {
                 return [
                     'id' => $job->id,
                     'name' => $job->rentalJob?->name ?? '',
-                    'rental_job_id' => $job->rentalJob?->id ?? null,
-                    'start_date' => $job->rentalJob?->from_date ?? null,
-                    'end_date' => $job->rentalJob?->to_date ?? null,
+                    'rental_job_id' => $job->rentalJob?->id,
+                    'start_date' => $job->rentalJob?->from_date,
+                    'end_date' => $job->rentalJob?->to_date,
                     'status' => $job->status,
                     'products' => $job->products->map(function ($sp) {
-                        $brandName = $sp->product?->brand?->name ?? '';
-                        $productName = $sp->product?->model ?? '';
+                        $brand = $sp->product?->brand?->name ?? '';
+                        $model = $sp->product?->model ?? '';
+
                         return [
                             'id' => $sp->product_id,
-                            'name' => trim("{$brandName} - {$productName}", ' -')
+                            'name' => trim("{$brand} - {$model}", ' -'),
                         ];
-                    })->values()
+                    })->values(),
                 ];
-            });
+            })->values();
 
-            // Keep pagination meta
+            //Response
             $response = [
                 'success' => true,
                 'data' => $data,
-                'meta' => [
-                    'current_page' => $paginated->currentPage(),
-                    'last_page' => $paginated->lastPage(),
-                    'per_page' => $paginated->perPage(),
-                    'total' => $paginated->total(),
-                ]
             ];
+
+            //Pagination meta only when paginated
+            if ($paginator) {
+                $response['meta'] = [
+                    'current_page' => $paginator->currentPage(),
+                    'last_page' => $paginator->lastPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                ];
+            }
 
             return response()->json($response);
 
