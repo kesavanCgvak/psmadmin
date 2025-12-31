@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Support\ProductNormalizer;
+use App\Traits\NormalizesName;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\Product;
@@ -29,6 +30,7 @@ use Illuminate\Support\Str;
 
 class ProductController extends Controller
 {
+    use NormalizesName;
 
     public function search(Request $request)
     {
@@ -341,15 +343,62 @@ class ProductController extends Controller
             /** 1️⃣ Handle Category */
             $categoryId = $validated['category_id'] ?? null;
             if (isset($validated['category']['is_new']) && $validated['category']['is_new']) {
-                $category = Category::firstOrCreate(['name' => trim($validated['category']['name'])]);
+                $categoryName = trim($validated['category']['name']);
+                $normalizedName = $this->normalizeName($categoryName);
+                
+                // Check for duplicate using normalized name
+                $existingCategory = Category::all()->first(function ($cat) use ($normalizedName) {
+                    return $this->normalizeName($cat->name) === $normalizedName;
+                });
+                
+                if ($existingCategory) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Category already exists',
+                        'error' => 'A category with this name already exists in the system.',
+                        'data' => [
+                            'existing_category' => [
+                                'id' => $existingCategory->id,
+                                'name' => $existingCategory->name,
+                            ]
+                        ]
+                    ], 409);
+                }
+                
+                $category = Category::create(['name' => $categoryName]);
                 $categoryId = $category->id;
             }
 
             /** 2️⃣ Handle SubCategory */
             $subCategoryId = $validated['sub_category_id'] ?? null;
             if (isset($validated['sub_category']['is_new']) && $validated['sub_category']['is_new']) {
-                $subCategory = SubCategory::firstOrCreate([
-                    'name' => trim($validated['sub_category']['name']),
+                $subCategoryName = trim($validated['sub_category']['name']);
+                $normalizedName = $this->normalizeName($subCategoryName);
+                
+                // Check for duplicate sub-category under the same category
+                $existingSubCategory = SubCategory::where('category_id', $categoryId)
+                    ->get()
+                    ->first(function ($subCat) use ($normalizedName) {
+                        return $this->normalizeName($subCat->name) === $normalizedName;
+                    });
+                
+                if ($existingSubCategory) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Sub-category already exists',
+                        'error' => 'A sub-category with this name already exists under the selected category.',
+                        'data' => [
+                            'existing_sub_category' => [
+                                'id' => $existingSubCategory->id,
+                                'name' => $existingSubCategory->name,
+                                'category_id' => $existingSubCategory->category_id,
+                            ]
+                        ]
+                    ], 409);
+                }
+                
+                $subCategory = SubCategory::create([
+                    'name' => $subCategoryName,
                     'category_id' => $categoryId,
                 ]);
                 $subCategoryId = $subCategory->id;
@@ -358,7 +407,29 @@ class ProductController extends Controller
             /** 3️⃣ Handle Brand */
             $brandId = $validated['brand_id'] ?? null;
             if (isset($validated['brand']['is_new']) && $validated['brand']['is_new']) {
-                $brand = Brand::firstOrCreate(['name' => trim($validated['brand']['name'])]);
+                $brandName = trim($validated['brand']['name']);
+                $normalizedName = $this->normalizeName($brandName);
+                
+                // Check for duplicate using normalized name
+                $existingBrand = Brand::all()->first(function ($b) use ($normalizedName) {
+                    return $this->normalizeName($b->name) === $normalizedName;
+                });
+                
+                if ($existingBrand) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Brand already exists',
+                        'error' => 'A brand with this name already exists in the system.',
+                        'data' => [
+                            'existing_brand' => [
+                                'id' => $existingBrand->id,
+                                'name' => $existingBrand->name,
+                            ]
+                        ]
+                    ], 409);
+                }
+                
+                $brand = Brand::create(['name' => $brandName]);
                 $brandId = $brand->id;
             }
 
@@ -753,15 +824,64 @@ class ProductController extends Controller
             // 1. Handle Category
             $categoryId = $validated['category_id'] ?? null;
             if (isset($validated['category']['is_new']) && $validated['category']['is_new']) {
-                $category = Category::create(['name' => $validated['category']['name']]);
+                $categoryName = trim($validated['category']['name']);
+                $normalizedName = $this->normalizeName($categoryName);
+                
+                // Check for duplicate using normalized name
+                $existingCategory = Category::all()->first(function ($cat) use ($normalizedName) {
+                    return $this->normalizeName($cat->name) === $normalizedName;
+                });
+                
+                if ($existingCategory) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Category already exists',
+                        'error' => 'A category with this name already exists in the system.',
+                        'data' => [
+                            'existing_category' => [
+                                'id' => $existingCategory->id,
+                                'name' => $existingCategory->name,
+                            ]
+                        ]
+                    ], 409);
+                }
+                
+                $category = Category::create(['name' => $categoryName]);
                 $categoryId = $category->id;
             }
 
             // 2. Handle SubCategory
             $subCategoryId = $validated['sub_category_id'] ?? null;
             if (isset($validated['sub_category']['is_new']) && $validated['sub_category']['is_new']) {
+                $subCategoryName = trim($validated['sub_category']['name']);
+                $normalizedName = $this->normalizeName($subCategoryName);
+                
+                // Check for duplicate sub-category under the same category
+                $existingSubCategory = SubCategory::where('category_id', $categoryId)
+                    ->get()
+                    ->first(function ($subCat) use ($normalizedName) {
+                        return $this->normalizeName($subCat->name) === $normalizedName;
+                    });
+                
+                if ($existingSubCategory) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Sub-category already exists',
+                        'error' => 'A sub-category with this name already exists under the selected category.',
+                        'data' => [
+                            'existing_sub_category' => [
+                                'id' => $existingSubCategory->id,
+                                'name' => $existingSubCategory->name,
+                                'category_id' => $existingSubCategory->category_id,
+                            ]
+                        ]
+                    ], 409);
+                }
+                
                 $subCategory = SubCategory::create([
-                    'name' => $validated['sub_category']['name'],
+                    'name' => $subCategoryName,
                     'category_id' => $categoryId,
                 ]);
                 $subCategoryId = $subCategory->id;
@@ -770,7 +890,30 @@ class ProductController extends Controller
             // 3. Handle Brand
             $brandId = $validated['brand_id'] ?? null;
             if (isset($validated['brand']['is_new']) && $validated['brand']['is_new']) {
-                $brand = Brand::create(['name' => $validated['brand']['name']]);
+                $brandName = trim($validated['brand']['name']);
+                $normalizedName = $this->normalizeName($brandName);
+                
+                // Check for duplicate using normalized name
+                $existingBrand = Brand::all()->first(function ($b) use ($normalizedName) {
+                    return $this->normalizeName($b->name) === $normalizedName;
+                });
+                
+                if ($existingBrand) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Brand already exists',
+                        'error' => 'A brand with this name already exists in the system.',
+                        'data' => [
+                            'existing_brand' => [
+                                'id' => $existingBrand->id,
+                                'name' => $existingBrand->name,
+                            ]
+                        ]
+                    ], 409);
+                }
+                
+                $brand = Brand::create(['name' => $brandName]);
                 $brandId = $brand->id;
             }
 

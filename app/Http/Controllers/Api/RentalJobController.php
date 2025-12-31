@@ -47,7 +47,8 @@ class RentalJobController extends Controller
                     'products.product.brand',
                     'supplyJobs:id,rental_job_id'
                 ])
-                ->where('user_id', $user->id);
+                ->where('user_id', $user->id)
+                ->orderBy('created_at', 'desc');
 
             // optional filters
             if (!empty($validated['status'])) {
