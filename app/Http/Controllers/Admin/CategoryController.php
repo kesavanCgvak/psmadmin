@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Services\BulkDeletionService;
+use App\Traits\NormalizesName;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class CategoryController extends Controller
 {
+    use NormalizesName;
     /**
      * Display a listing of the categories.
      */
@@ -33,7 +35,7 @@ class CategoryController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|unique:categories,name',
+            'name' => 'required|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -42,8 +44,22 @@ class CategoryController extends Controller
                 ->withInput();
         }
 
+        // Normalize the name for duplicate checking
+        $normalizedName = $this->normalizeName($request->name);
+        
+        // Check for duplicate using normalized name (case-insensitive, symbol-agnostic)
+        $existingCategory = Category::all()->first(function ($category) use ($normalizedName) {
+            return $this->normalizeName($category->name) === $normalizedName;
+        });
+
+        if ($existingCategory) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A category with this name already exists.'])
+                ->withInput();
+        }
+
         Category::create([
-            'name' => $request->name,
+            'name' => trim($request->name),
         ]);
 
         return redirect()->route('admin.categories.index')
@@ -73,7 +89,7 @@ class CategoryController extends Controller
     public function update(Request $request, Category $category)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|unique:categories,name,' . $category->id,
+            'name' => 'required|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -82,8 +98,35 @@ class CategoryController extends Controller
                 ->withInput();
         }
 
+        // Normalize the name for duplicate checking
+        $normalizedName = $this->normalizeName($request->name);
+        $currentNormalizedName = $this->normalizeName($category->name);
+        
+        // Allow update if the normalized name is unchanged
+        if ($normalizedName === $currentNormalizedName) {
+            $category->update([
+                'name' => trim($request->name),
+            ]);
+
+            return redirect()->route('admin.categories.index')
+                ->with('success', 'Category updated successfully.');
+        }
+        
+        // Check for duplicate using normalized name (excluding current category)
+        $existingCategory = Category::where('id', '!=', $category->id)
+            ->get()
+            ->first(function ($cat) use ($normalizedName) {
+                return $this->normalizeName($cat->name) === $normalizedName;
+            });
+
+        if ($existingCategory) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A category with this name already exists.'])
+                ->withInput();
+        }
+
         $category->update([
-            'name' => $request->name,
+            'name' => trim($request->name),
         ]);
 
         return redirect()->route('admin.categories.index')

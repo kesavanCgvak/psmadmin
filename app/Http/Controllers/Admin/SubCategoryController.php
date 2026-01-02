@@ -7,12 +7,14 @@ use App\Models\SubCategory;
 use App\Models\Category;
 use App\Models\Product;
 use App\Services\BulkDeletionService;
+use App\Traits\NormalizesName;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 
 class SubCategoryController extends Controller
 {
+    use NormalizesName;
     /**
      * Display a listing of the sub-categories.
      */
@@ -47,7 +49,26 @@ class SubCategoryController extends Controller
                 ->withInput();
         }
 
-        SubCategory::create($request->all());
+        // Normalize the name for duplicate checking
+        $normalizedName = $this->normalizeName($request->name);
+        
+        // Check for duplicate sub-category under the same category using normalized name
+        $existingSubCategory = SubCategory::where('category_id', $request->category_id)
+            ->get()
+            ->first(function ($subCategory) use ($normalizedName) {
+                return $this->normalizeName($subCategory->name) === $normalizedName;
+            });
+
+        if ($existingSubCategory) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A sub-category with this name already exists under the selected category.'])
+                ->withInput();
+        }
+
+        SubCategory::create([
+            'category_id' => $request->category_id,
+            'name' => trim($request->name),
+        ]);
 
         return redirect()->route('admin.subcategories.index')
             ->with('success', 'Sub-category created successfully.');
@@ -95,7 +116,39 @@ class SubCategoryController extends Controller
                 ->withInput();
         }
 
-        $subcategory->update($request->all());
+        // Normalize the name for duplicate checking
+        $normalizedName = $this->normalizeName($request->name);
+        $currentNormalizedName = $this->normalizeName($subcategory->name);
+        
+        // Allow update if the normalized name is unchanged and category is unchanged
+        if ($normalizedName === $currentNormalizedName && $subcategory->category_id == $request->category_id) {
+            $subcategory->update([
+                'category_id' => $request->category_id,
+                'name' => trim($request->name),
+            ]);
+
+            return redirect()->route('admin.subcategories.index')
+                ->with('success', 'Sub-category updated successfully.');
+        }
+        
+        // Check for duplicate sub-category under the same category using normalized name (excluding current sub-category)
+        $existingSubCategory = SubCategory::where('category_id', $request->category_id)
+            ->where('id', '!=', $subcategory->id)
+            ->get()
+            ->first(function ($subCat) use ($normalizedName) {
+                return $this->normalizeName($subCat->name) === $normalizedName;
+            });
+
+        if ($existingSubCategory) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A sub-category with this name already exists under the selected category.'])
+                ->withInput();
+        }
+
+        $subcategory->update([
+            'category_id' => $request->category_id,
+            'name' => trim($request->name),
+        ]);
 
         return redirect()->route('admin.subcategories.index')
             ->with('success', 'Sub-category updated successfully.');

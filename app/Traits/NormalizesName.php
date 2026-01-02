@@ -5,30 +5,25 @@ namespace App\Traits;
 trait NormalizesName
 {
     /**
-     * Normalize a name for duplicate comparison.
-     * - Convert to lowercase
-     * - Trim whitespace
-     * - Normalize common symbols and special characters
+     * Normalize a name for duplicate comparison
+     * - Case-insensitive
+     * - Trim spaces
+     * - Remove symbols (keep only alphanumeric and spaces)
      * 
      * @param string $name
      * @return string
      */
-    public static function normalizeName(string $name): string
+    protected function normalizeName(string $name): string
     {
-        // Convert to lowercase and trim
-        $normalized = strtolower(trim($name));
+        // Convert to lowercase
+        $normalized = strtolower($name);
         
-        // Normalize common symbols and special characters
-        // Replace multiple spaces with single space
-        $normalized = preg_replace('/\s+/', ' ', $normalized);
+        // Remove all non-alphanumeric characters except spaces
+        $normalized = preg_replace('/[^a-z0-9\s]/', '', $normalized);
         
-        // Normalize common punctuation and symbols
-        $normalized = str_replace(['-', '_', '.', ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}'], '', $normalized);
-        
-        // Remove accents and diacritics (optional - can be enabled if needed)
-        // $normalized = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalized);
+        // Trim and normalize whitespace (multiple spaces to single space)
+        $normalized = preg_replace('/\s+/', ' ', trim($normalized));
         
         return $normalized;
     }
 }
-
