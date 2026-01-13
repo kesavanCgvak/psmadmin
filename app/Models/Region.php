@@ -29,7 +29,7 @@ class Region extends Model
 
         static::saving(function ($region) {
             if ($region->isDirty('name')) {
-                $region->normalized_name = self::normalizeName($region->name);
+                $region->normalized_name = self::normalizeNameStatic($region->name);
             }
         });
     }
@@ -43,7 +43,7 @@ class Region extends Model
      */
     public static function isDuplicate(string $name, ?int $excludeId = null): bool
     {
-        $normalizedName = self::normalizeName($name);
+        $normalizedName = self::normalizeNameStatic($name);
         
         $query = self::where('normalized_name', $normalizedName);
         

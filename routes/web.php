@@ -112,6 +112,16 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     Route::post('/currencies/bulk-delete', [\App\Http\Controllers\Admin\CurrencyManagementController::class, 'bulkDelete'])
         ->name('admin.currencies.bulk-delete');
 
+    // Date Formats
+    Route::resource('date-formats', \App\Http\Controllers\Admin\DateFormatManagementController::class);
+    Route::post('/date-formats/bulk-delete', [\App\Http\Controllers\Admin\DateFormatManagementController::class, 'bulkDelete'])
+        ->name('date-formats.bulk-delete');
+
+    // Pricing Schemes
+    Route::resource('pricing-schemes', \App\Http\Controllers\Admin\PricingSchemeManagementController::class);
+    Route::post('/pricing-schemes/bulk-delete', [\App\Http\Controllers\Admin\PricingSchemeManagementController::class, 'bulkDelete'])
+        ->name('pricing-schemes.bulk-delete');
+
     // Rental Software
     Route::resource('rental-software', \App\Http\Controllers\Admin\RentalSoftwareManagementController::class);
     Route::post('/rental-software/bulk-delete', [\App\Http\Controllers\Admin\RentalSoftwareManagementController::class, 'bulkDelete'])
@@ -171,6 +181,22 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
         ->name('ajax.check-username');
     Route::get('/ajax/company/{company}/phone-format', [\App\Http\Controllers\Admin\UserManagementController::class, 'getPhoneFormat'])
         ->name('ajax.phone-format');
+
+    // Support Request Management
+    Route::resource('issue-types', \App\Http\Controllers\Admin\IssueTypeController::class);
+
+    // Contact Sales Management
+    Route::resource('contact-sales', \App\Http\Controllers\Admin\ContactSalesController::class)
+        ->only(['index', 'show', 'update', 'destroy'])
+        ->parameters(['contact-sales' => 'contactSales']);
+
+    // Terms and Conditions Management
+    Route::get('/terms-and-conditions', [\App\Http\Controllers\Admin\TermsAndConditionsController::class, 'index'])
+        ->name('terms-and-conditions.index');
+    Route::get('/terms-and-conditions/edit', [\App\Http\Controllers\Admin\TermsAndConditionsController::class, 'edit'])
+        ->name('terms-and-conditions.edit');
+    Route::put('/terms-and-conditions', [\App\Http\Controllers\Admin\TermsAndConditionsController::class, 'update'])
+        ->name('terms-and-conditions.update');
 });
 
 // Clear application cache

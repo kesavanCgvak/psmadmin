@@ -120,8 +120,8 @@ class AuthController extends Controller
                 'latitude' => $latitude,
                 'longitude' => $longitude,
                 'currency_id' => 1, // Default currency ID
-                'date_format' => 'MM/DD/YYYY',
-                'pricing_scheme' => 'Day Price',
+                'date_format_id' => 1, // Default date format ID
+                'pricing_scheme_id' => 1, // Default pricing scheme ID
             ]);
 
             //Create user
@@ -148,10 +148,10 @@ class AuthController extends Controller
             // Build profile payload explicitly so we can log and avoid nulls
             $profileData = [
                 'full_name' => $request->name ?? $request->username,
-                'birthday'  => $request->birthday, // stored as VARCHAR in DB (e.g. MM-DD)
+                'birthday' => $request->birthday, // stored as VARCHAR in DB (e.g. MM-DD)
                 // user_profiles.email column is NOT nullable in DB, so make sure we never send null here
-                'email'     => $request->email ?? $user->email ?? '',
-                'mobile'    => $request->mobile,
+                'email' => $request->email ?? $user->email ?? '',
+                'mobile' => $request->mobile,
             ];
 
             Log::info('Profile payload before create', ['profile_data' => $profileData]);
@@ -342,9 +342,177 @@ class AuthController extends Controller
     }
 
     /**
-     * Login user and return token
+     * Summary of login
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
      */
     public function login(Request $request)
+    {
+        try {
+            // 1️⃣ Validate credentials
+            $validator = Validator::make($request->all(), [
+                'username' => 'required|string',
+                'password' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            // 2️⃣ Attempt authentication (NO TOKEN YET)
+            if (!auth()->attempt($request->only('username', 'password'))) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Invalid username or password',
+                ], 401);
+            }
+
+            $user = auth()->user();
+
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unable to retrieve user information',
+                ], 500);
+            }
+
+            // 3️⃣ Account safety checks
+            if ($user->is_blocked) {
+                auth()->logout();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Your account has been blocked. Contact support.',
+                ], 403);
+            }
+
+            if (!$user->email_verified) {
+                auth()->logout();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Please verify your email before logging in.',
+                ], 403);
+            }
+
+            // 4️⃣ Payment & subscription enforcement (BEFORE TOKEN)
+            $paymentEnabled = Setting::isPaymentEnabled();
+            $subscriptionStatus = [
+                'has_subscription' => false,
+                'is_active' => false,
+                'is_trialing' => false,
+                'status' => 'none',
+            ];
+
+            if ($paymentEnabled && $user->company) {
+
+                // Load only what is needed
+                $user->load([
+                    'company.subscription'
+                ]);
+
+                $subscriptionMode = $user->company->subscription_mode;
+
+                if ($subscriptionMode === 'paid') {
+
+                    $subscription = $user->company->subscription;
+
+                    if ($subscription) {
+                        $subscriptionStatus = [
+                            'has_subscription' => true,
+                            'is_active' => $subscription->isActive(),
+                            'is_trialing' => $subscription->isOnTrial(),
+                            'is_payment_failed' => $subscription->isPaymentFailed(),
+                            'status' => $subscription->stripe_status,
+                            'trial_ends_at' => $subscription->trial_ends_at?->format('c'),
+                            'current_period_end' => $subscription->current_period_end?->format('c'),
+                            'plan_name' => $subscription->plan_name,
+                            'amount' => (float) $subscription->amount,
+                            'currency' => $subscription->currency,
+                            'payment_required' => $subscription->isPaymentFailed(),
+                            'is_company_subscription' => true,
+                            'company_id' => $user->company_id,
+                        ];
+                    }
+
+                    // 🚫 BLOCK NON-ADMIN USERS
+                    if (!$subscription || !$subscription->isActive()) {
+
+                        if (!$user->is_admin) {
+                            auth()->logout();
+                            return response()->json([
+                                'status' => 'error',
+                                'message' => 'Your company subscription has expired. Please contact your administrator.',
+                                'subscription' => $subscriptionStatus,
+                            ], 403);
+                        }
+
+                        // ✅ Admin allowed to login
+                        $subscriptionStatus['admin_override'] = true;
+                        $subscriptionStatus['message'] =
+                            'Subscription expired. Please update your payment details to restore access.';
+                    }
+                }
+            }
+
+            // 5️⃣ Generate JWT ONLY AFTER ALL CHECKS
+            $token = JWTAuth::fromUser($user);
+
+            // 6️⃣ Load remaining relations (post-auth, optimized)
+            $user->load([
+                'profile',
+                'company.currency',
+                'company.rentalSoftware',
+            ]);
+
+            // 7️⃣ Company user limits
+            $userLimitInfo = null;
+            if ($user->company) {
+                $current = $user->company->getUserCount();
+                $max = $user->company->getMaxUserLimit();
+
+                $userLimitInfo = [
+                    'current_user_count' => $current,
+                    'max_user_limit' => $max,
+                    'can_create_user' => $current < $max,
+                ];
+            }
+
+            // 8️⃣ Final response (UNCHANGED CONTRACT)
+            return response()->json([
+                'token' => $token,
+                'message' => 'Login successful',
+                'user_id' => $user->id,
+                'user' => new UserResource($user),
+                'subscription' => $subscriptionStatus,
+                'payment' => [
+                    'enabled' => $paymentEnabled,
+                    'message' => $paymentEnabled
+                        ? 'Payment is required for new registrations'
+                        : 'Payment is not required for new registrations',
+                ],
+                'user_limit' => $userLimitInfo,
+                'expires_in' => JWTAuth::factory()->getTTL() * 60,
+            ]);
+
+        } catch (\Throwable $e) {
+            \Log::error('Login error', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Something went wrong. Please try again later.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Login user and return token
+     */
+    public function loginOld(Request $request)
     {
         try {
             $validator = Validator::make($request->all(), [
@@ -412,31 +580,31 @@ class AuthController extends Controller
             if ($user->company) {
                 // Check account_type (could be 'provider' or 'Provider')
                 $accountType = strtolower($user->company->account_type ?? '');
-                
+
                 if ($accountType === 'provider') {
                     // Load company subscription explicitly - try multiple approaches
                     $user->company->load('subscription');
-                    
+
                     // If relationship didn't load, try direct query
                     if (!$user->company->subscription) {
                         $companySubscription = Subscription::where('company_id', $user->company->id)
-                            ->where(function($query) {
+                            ->where(function ($query) {
                                 $query->where('account_type', 'provider')
-                                      ->orWhere('account_type', 'Provider');
+                                    ->orWhere('account_type', 'Provider');
                             })
                             ->latest()
                             ->first();
-                        
+
                         if ($companySubscription) {
                             $user->company->setRelation('subscription', $companySubscription);
                         }
                     }
-                    
+
                     // Use company subscription if found
                     if ($user->company->subscription) {
                         $subscription = $user->company->subscription;
                         $isCompanySubscription = true;
-                        
+
                         Log::info('Provider company user login - using company subscription', [
                             'user_id' => $user->id,
                             'company_id' => $user->company->id,
@@ -478,7 +646,7 @@ class AuthController extends Controller
             } else {
                 // For provider company users without subscription, provide helpful message
                 $userAccountType = $user->company ? strtolower($user->company->account_type ?? '') : '';
-                
+
                 if ($user->company && $userAccountType === 'provider') {
                     $subscriptionStatus = [
                         'has_subscription' => false,

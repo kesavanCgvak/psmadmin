@@ -68,7 +68,14 @@ class ProductMatcherService
             $matches = $matches->merge($descriptionMatches);
         }
         
-        // Strategy 4: Fuzzy match as fallback (only if no high-confidence matches found)
+        // Strategy 4: Direct model search fallback (for products with NULL normalized fields)
+        // Only if we have a model number and no matches found yet
+        if ($modelNumber && $matches->isEmpty()) {
+            $directModelMatches = $this->findDirectModelMatches($modelNumber, $item, $expectedCategoryId);
+            $matches = $matches->merge($directModelMatches);
+        }
+        
+        // Strategy 5: Fuzzy match as fallback (only if no high-confidence matches found)
         if ($matches->where('confidence', '>=', 0.85)->isEmpty()) {
             $fuzzyMatches = $this->findFuzzyMatches($item, $expectedCategoryId);
             $matches = $matches->merge($fuzzyMatches);
@@ -81,6 +88,66 @@ class ProductMatcherService
             ->sortByDesc('confidence')
             ->take(10)
             ->values();
+    }
+    
+    /**
+     * Direct model search fallback - searches raw model column
+     * Used when normalized_model is NULL or matching fails
+     * This catches products that haven't been normalized yet
+     */
+    protected function findDirectModelMatches(string $modelNumber, ImportSessionItem $item, ?int $expectedCategoryId = null): Collection
+    {
+        // Normalize the model number for comparison
+        $normalizedModelNumber = strtolower(preg_replace('/[^a-z0-9]/', '', $modelNumber));
+        
+        if (strlen($normalizedModelNumber) < 2) {
+            return collect();
+        }
+        
+        // Search products by raw model column (case-insensitive, ignoring special chars)
+        $query = Product::with(['brand', 'category'])
+            ->where(function ($q) use ($normalizedModelNumber, $modelNumber) {
+                // Match exact model (case-insensitive, ignoring special chars)
+                $q->whereRaw('LOWER(REPLACE(REPLACE(REPLACE(model, "-", ""), " ", ""), "_", "")) = ?', [$normalizedModelNumber])
+                  // Or match if model contains the normalized code
+                  ->orWhereRaw('LOWER(REPLACE(REPLACE(REPLACE(model, "-", ""), " ", ""), "_", "")) LIKE ?', ['%' . $normalizedModelNumber . '%'])
+                  // Also try matching the original model number with special chars
+                  ->orWhereRaw('LOWER(model) LIKE ?', ['%' . strtolower($modelNumber) . '%']);
+            });
+        
+        // Prioritize category matches if expected category is known
+        if ($expectedCategoryId) {
+            $query->orderByRaw(
+                "CASE 
+                    WHEN category_id = ? THEN 0
+                    ELSE 1
+                 END",
+                [$expectedCategoryId]
+            );
+        }
+        
+        return $query->limit(20)->get()->map(function ($product) use ($normalizedModelNumber, $expectedCategoryId) {
+            // Calculate confidence based on how well the model matches
+            $productModelNormalized = strtolower(preg_replace('/[^a-z0-9]/', '', $product->model));
+            
+            $confidence = 0.85; // Default for direct model match
+            if ($productModelNormalized === $normalizedModelNumber) {
+                $confidence = 0.90; // Exact match
+            } elseif (str_contains($productModelNormalized, $normalizedModelNumber) || 
+                      str_contains($normalizedModelNumber, $productModelNormalized)) {
+                $confidence = 0.85; // Partial match
+            }
+            
+            // Apply category penalty
+            $confidence = $this->applyCategoryPenalty($confidence, $expectedCategoryId, $product->category_id);
+            
+            return [
+                'product_id' => $product->id,
+                'psm_code' => $product->psm_code,
+                'confidence' => $confidence,
+                'match_type' => 'direct_model',
+            ];
+        });
     }
     
     /**
@@ -99,18 +166,33 @@ class ProductMatcherService
         $normalizedFull = ProductNormalizer::normalizeFullName(null, $description);
         
         // Build query using normalized columns
+        // ✅ FIX: Add fallback to search raw model column for products with NULL normalized fields
         $query = Product::leftJoin('brands', 'products.brand_id', '=', 'brands.id')
-            ->where(function ($q) use ($normalizedCode, $normalizedFull) {
-                // Match by normalized model code (handles DML-1122, DML1122, etc.)
+            ->where(function ($q) use ($normalizedCode, $normalizedFull, $description) {
+                // Strategy 1: Match by normalized model code (handles DML-1122, DML1122, etc.)
                 if ($normalizedCode && ProductNormalizer::isValidNormalizedCode($normalizedCode)) {
-                    $q->where('products.normalized_model', $normalizedCode)
-                      ->orWhere('products.normalized_model', 'LIKE', '%' . $normalizedCode . '%');
+                    $q->where(function ($subQ) use ($normalizedCode) {
+                        $subQ->where('products.normalized_model', $normalizedCode)
+                             ->orWhere('products.normalized_model', 'LIKE', '%' . $normalizedCode . '%');
+                    });
                 }
                 
-                // Match by normalized full name (handles "Apogee SSM -", "EV-DML1122", etc.)
+                // Strategy 2: Match by normalized full name (handles "Apogee SSM -", "EV-DML1122", etc.)
                 if ($normalizedFull) {
-                    $q->orWhere('products.normalized_full_name', $normalizedFull)
-                      ->orWhere('products.normalized_full_name', 'LIKE', '%' . $normalizedFull . '%');
+                    $q->orWhere(function ($subQ) use ($normalizedFull) {
+                        $subQ->where('products.normalized_full_name', $normalizedFull)
+                             ->orWhere('products.normalized_full_name', 'LIKE', '%' . $normalizedFull . '%');
+                    });
+                }
+                
+                // Strategy 3: FALLBACK - Match by raw model column (for products with NULL normalized_model)
+                if ($normalizedCode && ProductNormalizer::isValidNormalizedCode($normalizedCode)) {
+                    $normalizedModelCode = strtolower(preg_replace('/[^a-z0-9]/', '', $description));
+                    $q->orWhere(function ($subQ) use ($normalizedModelCode) {
+                        $subQ->whereRaw('LOWER(REPLACE(REPLACE(REPLACE(products.model, "-", ""), " ", ""), "_", "")) = ?', [$normalizedModelCode])
+                             ->orWhereRaw('LOWER(REPLACE(REPLACE(REPLACE(products.model, "-", ""), " ", ""), "_", "")) LIKE ?', ['%' . $normalizedModelCode . '%'])
+                             ->whereNull('products.normalized_model'); // Only use fallback if normalized_model is NULL
+                    });
                 }
             })
             ->select('products.*')
@@ -171,6 +253,7 @@ class ProductMatcherService
     /**
      * Find products with exact or near-exact model number match
      * Uses normalized_model column for efficient matching
+     * FALLBACK: Also searches raw model column for products with NULL normalized_model
      */
     protected function findExactModelMatches(string $modelNumber, ImportSessionItem $item, ?int $expectedCategoryId = null): Collection
     {
@@ -182,12 +265,31 @@ class ProductMatcherService
         }
         
         // Build query using normalized_model column
+        // ✅ FIX: Also search raw model column as fallback for products with NULL normalized_model or when normalized doesn't match
         $query = Product::with(['brand', 'category'])
-            ->where(function ($q) use ($normalizedCode) {
-                // Exact match on normalized_model
-                $q->where('normalized_model', $normalizedCode)
-                  // Also check if normalized_model contains the code (handles prefixes like "EV-DML1122")
-                  ->orWhere('normalized_model', 'LIKE', '%' . $normalizedCode . '%');
+            ->where(function ($q) use ($normalizedCode, $modelNumber) {
+                // Strategy 1: Match by normalized_model (preferred, uses index)
+                $q->where(function ($subQ) use ($normalizedCode) {
+                    $subQ->where('normalized_model', $normalizedCode)
+                         ->orWhere('normalized_model', 'LIKE', '%' . $normalizedCode . '%');
+                });
+                
+                // Strategy 2: FALLBACK - Match by raw model column
+                // This handles cases where:
+                // - normalized_model is NULL
+                // - normalized_model doesn't match but raw model does (e.g., "M-267" vs "M-267 Microphone Mixer")
+                // Normalize the model on-the-fly for comparison
+                $normalizedModelNumber = strtolower(preg_replace('/[^a-z0-9]/', '', $modelNumber));
+                $q->orWhere(function ($subQ) use ($normalizedModelNumber, $modelNumber) {
+                    // Match exact model (case-insensitive, ignoring special chars)
+                    // Example: "M-267" matches "M-267" or "M-267 Microphone Mixer"
+                    $subQ->whereRaw('LOWER(REPLACE(REPLACE(REPLACE(model, "-", ""), " ", ""), "_", "")) = ?', [$normalizedModelNumber])
+                         // Or match if model starts with the normalized code (prefix match)
+                         // This ensures "M-267" matches "M-267 Microphone Mixer"
+                         ->orWhereRaw('LOWER(REPLACE(REPLACE(REPLACE(model, "-", ""), " ", ""), "_", "")) LIKE ?', [$normalizedModelNumber . '%'])
+                         // Also try matching the original model number with special chars (for exact prefix match)
+                         ->orWhereRaw('LOWER(model) LIKE ?', [strtolower($modelNumber) . '%']);
+                });
             });
         
         // Prioritize category matches if expected category is known
@@ -197,29 +299,59 @@ class ProductMatcherService
                     WHEN category_id = ? AND normalized_model = ? THEN 0
                     WHEN normalized_model = ? THEN 1
                     WHEN category_id = ? AND normalized_model LIKE ? THEN 2
-                    ELSE 3
+                    WHEN category_id = ? AND normalized_model IS NULL THEN 3
+                    WHEN normalized_model IS NULL THEN 4
+                    ELSE 5
                  END",
-                [$expectedCategoryId, $normalizedCode, $normalizedCode, $expectedCategoryId, '%' . $normalizedCode . '%']
+                [$expectedCategoryId, $normalizedCode, $normalizedCode, $expectedCategoryId, '%' . $normalizedCode . '%', $expectedCategoryId]
             );
         } else {
             $query->orderByRaw(
-                "CASE WHEN normalized_model = ? THEN 0 ELSE 1 END",
-                [$normalizedCode]
+                "CASE 
+                    WHEN normalized_model = ? THEN 0
+                    WHEN normalized_model LIKE ? THEN 1
+                    WHEN normalized_model IS NULL THEN 2
+                    ELSE 3
+                 END",
+                [$normalizedCode, '%' . $normalizedCode . '%']
             );
         }
         
-        return $query->get()->map(function ($product) use ($normalizedCode, $expectedCategoryId) {
-            // Start with base confidence
-            $confidence = $product->normalized_model === $normalizedCode ? 0.95 : 0.90;
+        return $query->get()->map(function ($product) use ($normalizedCode, $expectedCategoryId, $modelNumber) {
+            // Determine confidence based on match type
+            $confidence = 0.90; // Default confidence
+            
+            // If normalized_model matches, higher confidence
+            if ($product->normalized_model && $product->normalized_model === $normalizedCode) {
+                $confidence = 0.95;
+            } elseif ($product->normalized_model && str_contains($product->normalized_model, $normalizedCode)) {
+                $confidence = 0.90;
+            } elseif (!$product->normalized_model) {
+                // Product has NULL normalized_model - we matched via raw model column
+                // Normalize product's model on-the-fly for comparison
+                $productNormalized = ProductNormalizer::normalizeCode($product->model);
+                if ($productNormalized === $normalizedCode) {
+                    $confidence = 0.92; // Slightly lower than normalized match but still high
+                } else {
+                    $confidence = 0.85; // Partial match via raw model
+                }
+            }
             
             // Apply category penalty
             $confidence = $this->applyCategoryPenalty($confidence, $expectedCategoryId, $product->category_id);
+            
+            $matchType = 'exact_model';
+            if ($product->normalized_model && $product->normalized_model !== $normalizedCode) {
+                $matchType = 'partial_model';
+            } elseif (!$product->normalized_model) {
+                $matchType = 'exact_model_fallback'; // Indicates we used raw model column
+            }
             
             return [
                 'product_id' => $product->id,
                 'psm_code' => $product->psm_code,
                 'confidence' => $confidence,
-                'match_type' => $product->normalized_model === $normalizedCode ? 'exact_model' : 'partial_model',
+                'match_type' => $matchType,
             ];
         });
     }
@@ -227,6 +359,7 @@ class ProductMatcherService
     /**
      * Find products by PSM code when model matches
      * Uses normalized_model for efficient matching
+     * ✅ FIX: Add fallback to search raw model column for products with NULL normalized_model
      * Applies category penalties to prevent cross-category false matches
      */
     protected function findByPsmCodeViaModel(string $modelNumber, ?int $expectedCategoryId = null): Collection
@@ -238,10 +371,22 @@ class ProductMatcherService
         }
         
         // Find a product with matching normalized model that has a PSM code
+        // ✅ FIX: Also search raw model column as fallback
         // Prioritize products with matching category if expected category is known
-        $query = Product::where(function ($q) use ($normalizedCode) {
-            $q->where('normalized_model', $normalizedCode)
-              ->orWhere('normalized_model', 'LIKE', '%' . $normalizedCode . '%');
+        $query = Product::where(function ($q) use ($normalizedCode, $modelNumber) {
+            // Strategy 1: Match by normalized_model (preferred)
+            $q->where(function ($subQ) use ($normalizedCode) {
+                $subQ->where('normalized_model', $normalizedCode)
+                     ->orWhere('normalized_model', 'LIKE', '%' . $normalizedCode . '%');
+            });
+            
+            // Strategy 2: FALLBACK - Match by raw model column (for products with NULL normalized_model)
+            $normalizedModelNumber = strtolower(preg_replace('/[^a-z0-9]/', '', $modelNumber));
+            $q->orWhere(function ($subQ) use ($normalizedModelNumber) {
+                $subQ->whereRaw('LOWER(REPLACE(REPLACE(REPLACE(model, "-", ""), " ", ""), "_", "")) = ?', [$normalizedModelNumber])
+                     ->orWhereRaw('LOWER(REPLACE(REPLACE(REPLACE(model, "-", ""), " ", ""), "_", "")) LIKE ?', ['%' . $normalizedModelNumber . '%'])
+                     ->whereNull('normalized_model'); // Only use fallback if normalized_model is NULL
+            });
         })
         ->whereNotNull('psm_code');
         

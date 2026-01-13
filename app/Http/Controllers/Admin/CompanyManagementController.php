@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\Currency;
 use App\Models\RentalSoftware;
+use App\Models\DateFormat;
+use App\Models\PricingScheme;
 use App\Models\Region;
 use App\Models\Country;
 use App\Models\StateProvince;
@@ -39,9 +41,11 @@ class CompanyManagementController extends Controller
         $cities = collect(); // Empty collection
         $currencies = Currency::orderBy('name')->get();
         $rentalSoftwares = RentalSoftware::orderBy('name')->get();
+        $dateFormats = DateFormat::orderBy('name')->get();
+        $pricingSchemes = PricingScheme::orderBy('name')->get();
         $returnToUserCreate = $request->query('return_to_user_create', false);
 
-        return view('admin.companies.create', compact('regions', 'countries', 'states', 'cities', 'currencies', 'rentalSoftwares', 'returnToUserCreate'));
+        return view('admin.companies.create', compact('regions', 'countries', 'states', 'cities', 'currencies', 'rentalSoftwares', 'dateFormats', 'pricingSchemes', 'returnToUserCreate'));
     }
 
     /**
@@ -65,7 +69,10 @@ class CompanyManagementController extends Controller
             'currency_id' => 'nullable|exists:currencies,id',
             'rental_software_id' => 'nullable|exists:rental_softwares,id',
             'date_format' => 'nullable|string|max:255',
+            'date_format_id' => 'nullable|exists:date_formats,id',
             'pricing_scheme' => 'nullable|string|max:255',
+            'pricing_scheme_id' => 'nullable|exists:pricing_schemes,id',
+            'subscription_mode' => 'nullable|in:free,paid',
         ], [
             'account_type.required' => 'Company type is required.',
             'account_type.in' => 'Company type must be either User or Provider.',
@@ -77,7 +84,12 @@ class CompanyManagementController extends Controller
                 ->withInput();
         }
 
-        $company = Company::create($request->all());
+        $data = $request->all();
+        // Set default subscription_mode to 'paid' if not provided
+        if (!isset($data['subscription_mode'])) {
+            $data['subscription_mode'] = 'paid';
+        }
+        $company = Company::create($data);
 
         // Check if we should redirect back to user create page
         if ($request->input('return_to_user_create')) {
@@ -110,8 +122,10 @@ class CompanyManagementController extends Controller
         $cities = City::where('state_id', $company->state_id)->orderBy('name')->get();
         $currencies = Currency::orderBy('name')->get();
         $rentalSoftwares = RentalSoftware::orderBy('name')->get();
+        $dateFormats = DateFormat::orderBy('name')->get();
+        $pricingSchemes = PricingScheme::orderBy('name')->get();
 
-        return view('admin.companies.edit', compact('company', 'regions', 'countries', 'states', 'cities', 'currencies', 'rentalSoftwares'));
+        return view('admin.companies.edit', compact('company', 'regions', 'countries', 'states', 'cities', 'currencies', 'rentalSoftwares', 'dateFormats', 'pricingSchemes'));
     }
 
     /**
@@ -134,7 +148,10 @@ class CompanyManagementController extends Controller
             'currency_id' => 'nullable|exists:currencies,id',
             'rental_software_id' => 'nullable|exists:rental_softwares,id',
             'date_format' => 'nullable|string|max:255',
+            'date_format_id' => 'nullable|exists:date_formats,id',
             'pricing_scheme' => 'nullable|string|max:255',
+            'pricing_scheme_id' => 'nullable|exists:pricing_schemes,id',
+            'subscription_mode' => 'nullable|in:free,paid',
         ]);
 
         if ($validator->fails()) {

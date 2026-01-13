@@ -9,6 +9,7 @@ use App\Services\Import\ImportConfirmationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
@@ -76,10 +77,25 @@ class ImportController extends Controller
         ]);
 
         try {
+            DB::beginTransaction();
+
             $analyzer->stageUpload($session, $request->file('file'));
+
+            // ✅ Explicitly commit the transaction to ensure database is updated
+            DB::commit();
 
             // Reload session to get updated stats
             $session->refresh();
+
+            // ✅ DEBUG: Log session state after upload
+            Log::info('Import Upload - Session after commit', [
+                'session_id' => $session->id,
+                'user_id' => $session->user_id,
+                'company_id' => $session->company_id,
+                'status' => $session->status,
+                'total_rows' => $session->total_rows,
+                'valid_rows' => $session->valid_rows,
+            ]);
 
             // Get rejected rows with their rejection reasons
             $rejectedItems = $session->items()
@@ -99,6 +115,8 @@ class ImportController extends Controller
                 'success' => true,
                 'message' => 'File uploaded and staged successfully',
                 'data' => [
+                    'session_id' => $session->id, // ✅ Include session ID for frontend verification
+                    'status' => $session->status, // ✅ Include status for verification
                     'total_rows' => $session->total_rows,
                     'valid_rows' => $session->valid_rows,
                     'rejected_rows' => $session->rejected_rows,
@@ -107,6 +125,7 @@ class ImportController extends Controller
             ]);
 
         } catch (ValidationException $e) {
+            DB::rollBack();
             // Return validation errors in consistent format
             return response()->json([
                 'success' => false,
@@ -115,6 +134,7 @@ class ImportController extends Controller
             ], 422);
 
         } catch (\Throwable $e) {
+            DB::rollBack();
             report($e);
 
             return response()->json([
@@ -189,17 +209,69 @@ class ImportController extends Controller
         try {
             $user = $request->user();
 
+            // ✅ DEBUG: Log query parameters
+            Log::info('Import Index - Query parameters', [
+                'user_id' => $user->id,
+                'company_id' => $user->company_id,
+                'status_filter' => ImportSession::STATUS_ACTIVE,
+            ]);
+
+            // ✅ Filter by both user_id and company_id for security
+            // Only return active sessions (explicitly exclude cancelled and confirmed)
+            // ✅ CRITICAL FIX: Force read from write connection to avoid read replica lag
+            // In production with read replicas, writes go to master but reads might hit replica
+            // before replication completes, causing sessions to appear missing
+            // Solution: Use write PDO explicitly - this forces read from write/master connection
             $sessions = ImportSession::where('user_id', $user->id)
+                ->where('company_id', $user->company_id)
                 ->where('status', ImportSession::STATUS_ACTIVE)
+                ->useWritePdo() // ✅ CRITICAL: Force read from write connection (avoids replica lag)
                 ->withCount(['items as pending_items' => function ($query) {
                     $query->where('status', '!=', 'confirmed');
                 }])
                 ->orderBy('created_at', 'desc')
                 ->get();
 
+            // ✅ DEBUG: Log query results
+            Log::info('Import Index - Query results', [
+                'count' => $sessions->count(),
+                'sessions' => $sessions->map(function ($s) {
+                    return [
+                        'id' => $s->id,
+                        'status' => $s->status,
+                        'user_id' => $s->user_id,
+                        'company_id' => $s->company_id,
+                    ];
+                })->toArray(),
+            ]);
+
+            // ✅ DEBUG: Also check raw database query
+            $rawSessions = DB::table('import_sessions')
+                ->where('user_id', $user->id)
+                ->where('company_id', $user->company_id)
+                ->where('status', ImportSession::STATUS_ACTIVE)
+                ->get();
+
+            Log::info('Import Index - Raw DB query results', [
+                'count' => $rawSessions->count(),
+                'sessions' => $rawSessions->map(function ($s) {
+                    return [
+                        'id' => $s->id,
+                        'status' => $s->status,
+                        'user_id' => $s->user_id,
+                        'company_id' => $s->company_id,
+                    ];
+                })->toArray(),
+            ]);
+
+            // ✅ Additional safety: Double-check that all returned sessions are active (defense in depth)
+            $sessions = $sessions->filter(function ($session) {
+                return $session->status === ImportSession::STATUS_ACTIVE;
+            });
+
             return response()->json([
                 'success' => true,
-                'data' => $sessions->map(function ($session) {
+                'data' => $sessions->values()->map(function ($session) {
                     // Determine current stage/step
                     $stage = $this->determineSessionStage($session);
 
@@ -520,14 +592,37 @@ class ImportController extends Controller
     /**
      * Cancel an import session
      */
-    public function cancel(ImportSession $session): JsonResponse
+    public function cancel(Request $request, ImportSession $session): JsonResponse
     {
+        $user = $request->user();
+         Log::info('Import Index - Query parameters', [
+                'user_id' => $user->id,
+                'company_id' => $user->company_id,
+                'status_filter' => ImportSession::STATUS_CANCELLED,
+            ]);
+
+        // ✅ Explicit authorization: User can only cancel sessions from their company
+        if ($user->company_id !== $session->company_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: You can only cancel import sessions from your company',
+            ], 403);
+        }
+
         $this->authorize('update', $session);
 
         try {
+            DB::beginTransaction();
+
             $session->update([
                 'status' => ImportSession::STATUS_CANCELLED,
             ]);
+
+            // ✅ Explicitly commit the transaction to ensure database is updated
+            DB::commit();
+
+            // ✅ Refresh the model to ensure it reflects the database state
+            $session->refresh();
 
             return response()->json([
                 'success' => true,
@@ -535,6 +630,7 @@ class ImportController extends Controller
             ]);
 
         } catch (\Throwable $e) {
+            DB::rollBack();
             report($e);
 
             return response()->json([

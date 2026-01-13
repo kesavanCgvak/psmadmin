@@ -21,10 +21,11 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="region_id">Region</label>
+                            <label for="region_id">Region <span class="text-danger">*</span></label>
                             <select class="form-control @error('region_id') is-invalid @enderror"
                                     id="region_id"
-                                    name="region_id">
+                                    name="region_id"
+                                    required>
                                 <option value="">-- Select Region --</option>
                                 @foreach($regions as $region)
                                     <option value="{{ $region->id }}" {{ old('region_id') == $region->id ? 'selected' : '' }}>

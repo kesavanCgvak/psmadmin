@@ -135,4 +135,18 @@ return [
         'address' => env('MAIL_TO_ADMIN', 'noreply@prosubmarket.com'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Support Inbox Email
+    |--------------------------------------------------------------------------
+    |
+    | Email address where support requests should be sent.
+    |
+    */
+    'support_inbox' => env('SUPPORT_INBOX_EMAIL', 'support@secondwarehouse.com'),
+
+    /** Sales Inbox Email   */
+
+    'sales_inbox' => env('SALES_INBOX_EMAIL', 'contact@secondwarehouse.com'),
+
 ];

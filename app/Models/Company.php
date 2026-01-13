@@ -16,7 +16,9 @@ class Company extends Model
         'image3',
         'currency_id',
         'date_format',
+        'date_format_id',
         'pricing_scheme',
+        'pricing_scheme_id',
         'rental_software_id',
         'region_id',
         'country_id',
@@ -30,7 +32,7 @@ class Company extends Model
         'latitude',
         'longitude',
         'hide_from_gear_finder',
-
+        'subscription_mode',
     ];
 
     public function users()
@@ -71,6 +73,16 @@ class Company extends Model
     public function currency()
     {
         return $this->belongsTo(Currency::class);
+    }
+
+    public function dateFormat()
+    {
+        return $this->belongsTo(DateFormat::class);
+    }
+
+    public function pricingScheme()
+    {
+        return $this->belongsTo(PricingScheme::class);
     }
 
     public function region()

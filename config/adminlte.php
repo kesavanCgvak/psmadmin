@@ -391,6 +391,18 @@ return [
             'icon_color' => 'success',
         ],
         [
+            'text' => 'Date Formats',
+            'route' => 'admin.date-formats.index',
+            'icon' => 'fas fa-fw fa-calendar-alt',
+            'icon_color' => 'info',
+        ],
+        [
+            'text' => 'Pricing Schemes',
+            'route' => 'admin.pricing-schemes.index',
+            'icon' => 'fas fa-fw fa-tags',
+            'icon_color' => 'warning',
+        ],
+        [
             'text' => 'Rental Software',
             'route' => 'admin.rental-software.index',
             'icon' => 'fas fa-fw fa-laptop-code',
@@ -428,12 +440,31 @@ return [
             'icon' => 'fas fa-fw fa-truck',
             'icon_color' => 'success',
         ],
+        ['header' => 'SUPPORT MANAGEMENT'],
+        [
+            'text' => 'Issue Types',
+            'route' => 'admin.issue-types.index',
+            'icon' => 'fas fa-fw fa-question-circle',
+            'icon_color' => 'info',
+        ],
+        [
+            'text' => 'Contact Sales',
+            'route' => 'admin.contact-sales.index',
+            'icon' => 'fas fa-fw fa-handshake',
+            'icon_color' => 'success',
+        ],
         ['header' => 'SYSTEM SETTINGS'],
         [
             'text' => 'Payment Settings',
             'route' => 'admin.payment-settings.index',
             'icon' => 'fas fa-fw fa-credit-card',
             'icon_color' => 'success',
+        ],
+        [
+            'text' => 'Terms and Conditions',
+            'route' => 'admin.terms-and-conditions.index',
+            'icon' => 'fas fa-fw fa-file-contract',
+            'icon_color' => 'info',
         ],
         [
             'text' => 'User Restrictions',

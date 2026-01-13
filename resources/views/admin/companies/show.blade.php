@@ -100,6 +100,15 @@
                         <dt class="col-sm-3">Pricing Scheme</dt>
                         <dd class="col-sm-9">{{ $company->pricing_scheme ?? 'N/A' }}</dd>
 
+                        <dt class="col-sm-3">Subscription Mode</dt>
+                        <dd class="col-sm-9">
+                            @if($company->subscription_mode === 'free')
+                                <span class="badge badge-secondary">Free</span>
+                            @else
+                                <span class="badge badge-success">Paid</span>
+                            @endif
+                        </dd>
+
                         <dt class="col-sm-3">Search Priority</dt>
                         <dd class="col-sm-9">{{ $company->search_priority ?? 'N/A' }}</dd>
 

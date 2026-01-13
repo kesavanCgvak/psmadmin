@@ -159,11 +159,21 @@ class CompanyUserController extends Controller
     {
         try {
             $authUser = JWTAuth::parseToken()->authenticate();
+
+            if (!$authUser || !$authUser->company) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Company not found'
+                ], 404);
+            }
+
             $company = $authUser->company;
 
             $users = $company->users()
-                ->with(['profile:id,user_id,full_name,email,mobile'])
                 ->select(['id', 'is_company_default_contact', 'is_admin'])
+                ->with([
+                    'profile:id,user_id,full_name,email,mobile'
+                ])
                 ->get()
                 ->map(function ($user) {
                     return [
@@ -176,14 +186,31 @@ class CompanyUserController extends Controller
                     ];
                 });
 
+            // Company user limits
+            $current = $company->getUserCount();
+            $max = $company->getMaxUserLimit();
+
+            $userLimitInfo = [
+                'current_user_count' => $current,
+                'max_user_limit' => $max,
+                'can_create_user' => $current < $max,
+            ];
+
             return response()->json([
                 'success' => true,
-                'users' => $users
+                'users' => $users,
+                'user_limit' => $userLimitInfo
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Failed to fetch company users', ['error' => $e->getMessage()]);
-            return response()->json(['success' => false, 'message' => 'Unable to fetch company users'], 500);
+            Log::error('Failed to fetch company users', [
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to fetch company users'
+            ], 500);
         }
     }
 
@@ -231,32 +258,61 @@ class CompanyUserController extends Controller
         try {
             $authUser = JWTAuth::parseToken()->authenticate();
 
-            if ($authUser->role !== 'admin') {
-                return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+            if (!$authUser || !$authUser->company) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Company not found'
+                ], 404);
             }
 
-            if ($id == $authUser->id) {
-                return response()->json(['success' => false, 'message' => 'Cannot delete your own account'], 403);
+            // Authorization (consistent)
+            if (!$authUser->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
             }
 
-            $user = User::where('company_id', $authUser->company_id)->where('id', $id)->first();
+            // Validation: prevent self delete
+            if ((int) $id === (int) $authUser->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot delete your own account'
+                ], 403);
+            }
+
+            $company = $authUser->company;
+
+            $user = User::where('company_id', $company->id)
+                ->where('id', $id)
+                ->first();
 
             if (!$user) {
-                return response()->json(['success' => false, 'message' => 'User not found'], 404);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
             }
 
-            // Get company to fetch user limit info after deletion
-            $company = $authUser->company;
+            // safety check  to avoid breaking behavior
+            if ($user->is_company_default_contact) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot delete company default contact'
+                ], 403);
+            }
+
 
             $user->delete();
 
-            // Get updated user limit information after deletion
-            $currentUserCount = $company->getUserCount();
-            $maxUserLimit = $company->getMaxUserLimit();
+            // Company user limits (after deletion)
+            $current = $company->getUserCount();
+            $max = $company->getMaxUserLimit();
+
             $userLimitInfo = [
-                'current_user_count' => $currentUserCount,
-                'max_user_limit' => $maxUserLimit,
-                'can_create_user' => $currentUserCount < $maxUserLimit,
+                'current_user_count' => $current,
+                'max_user_limit' => $max,
+                'can_create_user' => $current < $max,
             ];
 
             return response()->json([
@@ -266,11 +322,17 @@ class CompanyUserController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Delete user failed', ['user_id' => $id, 'error' => $e->getMessage()]);
-            return response()->json(['success' => false, 'message' => 'Failed to delete user'], 500);
+            Log::error('Delete user failed', [
+                'target_user_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete user'
+            ], 500);
         }
     }
-
 
     /**
      * Make or remove admin privileges for a company user

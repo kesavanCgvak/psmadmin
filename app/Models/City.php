@@ -31,7 +31,7 @@ class City extends Model
 
         static::saving(function ($city) {
             if ($city->isDirty('name')) {
-                $city->normalized_name = self::normalizeName($city->name);
+                $city->normalized_name = self::normalizeNameStatic($city->name);
             }
         });
     }
@@ -47,7 +47,7 @@ class City extends Model
      */
     public static function isDuplicate(string $name, int $countryId, ?int $stateId = null, ?int $excludeId = null): bool
     {
-        $normalizedName = self::normalizeName($name);
+        $normalizedName = self::normalizeNameStatic($name);
         
         $query = self::where('country_id', $countryId)
             ->where('normalized_name', $normalizedName);

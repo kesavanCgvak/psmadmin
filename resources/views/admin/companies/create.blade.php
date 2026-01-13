@@ -63,6 +63,37 @@
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
                 </div>
+
+                <div class="form-group">
+                    <label for="subscription_mode">Subscription Mode <span class="text-danger">*</span></label>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input @error('subscription_mode') is-invalid @enderror"
+                               type="radio"
+                               name="subscription_mode"
+                               id="subscription_mode_paid"
+                               value="paid"
+                               {{ old('subscription_mode', 'paid') === 'paid' ? 'checked' : '' }}
+                               required>
+                        <label class="form-check-label" for="subscription_mode_paid">
+                            <strong>Paid</strong>
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input @error('subscription_mode') is-invalid @enderror"
+                               type="radio"
+                               name="subscription_mode"
+                               id="subscription_mode_free"
+                               value="free"
+                               {{ old('subscription_mode') === 'free' ? 'checked' : '' }}>
+                        <label class="form-check-label" for="subscription_mode_free">
+                            <strong>Free</strong>
+                        </label>
+                    </div>
+                    @error('subscription_mode')
+                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                    @enderror
+                    <small class="form-text text-muted">Default is Paid for new companies</small>
+                </div>
             </div>
         </div>
 
@@ -297,36 +328,41 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="date_format">Date Format</label>
-                            <select class="form-control @error('date_format') is-invalid @enderror"
-                                    id="date_format"
-                                    name="date_format">
+                            <label for="date_format_id">Date Format</label>
+                            <select class="form-control @error('date_format_id') is-invalid @enderror"
+                                    id="date_format_id"
+                                    name="date_format_id">
                                 <option value="">-- Select Format --</option>
-                                <option value="MM/DD/YYYY" {{ old('date_format') == 'MM/DD/YYYY' ? 'selected' : '' }}>MM/DD/YYYY</option>
-                                <option value="DD/MM/YYYY" {{ old('date_format') == 'DD/MM/YYYY' ? 'selected' : '' }}>DD/MM/YYYY</option>
-                                <!-- <option value="YYYY-MM-DD" {{ old('date_format') == 'YYYY-MM-DD' ? 'selected' : '' }}>YYYY-MM-DD</option> -->
+                                @foreach($dateFormats as $dateFormat)
+                                    <option value="{{ $dateFormat->id }}" {{ old('date_format_id') == $dateFormat->id ? 'selected' : '' }}>
+                                        {{ $dateFormat->name }} ({{ $dateFormat->format }})
+                                    </option>
+                                @endforeach
                             </select>
-                            @error('date_format')
+                            @error('date_format_id')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">Or use legacy format field below</small>
                         </div>
                     </div>
 
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="pricing_scheme">Pricing Scheme</label>
-                            <select class="form-control @error('pricing_scheme') is-invalid @enderror"
-                                    id="pricing_scheme"
-                                    name="pricing_scheme">
+                            <label for="pricing_scheme_id">Pricing Scheme</label>
+                            <select class="form-control @error('pricing_scheme_id') is-invalid @enderror"
+                                    id="pricing_scheme_id"
+                                    name="pricing_scheme_id">
                                 <option value="">-- Select Scheme --</option>
-                                <option value="Day Price" {{ old('pricing_scheme') == 'Day Price' ? 'selected' : '' }}>Day Price</option>
-                                <option value="Week Price" {{ old('pricing_scheme') == 'Week Price' ? 'selected' : '' }}>Week Price</option>
-                                <option value="Month Price" {{ old('pricing_scheme') == 'Month Price' ? 'selected' : '' }}>Month Price</option>
-                                <option value="Custom" {{ old('pricing_scheme') == 'Custom' ? 'selected' : '' }}>Custom</option>
+                                @foreach($pricingSchemes as $pricingScheme)
+                                    <option value="{{ $pricingScheme->id }}" {{ old('pricing_scheme_id') == $pricingScheme->id ? 'selected' : '' }}>
+                                        {{ $pricingScheme->name }} ({{ $pricingScheme->code }})
+                                    </option>
+                                @endforeach
                             </select>
-                            @error('pricing_scheme')
+                            @error('pricing_scheme_id')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">Or use legacy scheme field below</small>
                         </div>
                     </div>
                 </div>

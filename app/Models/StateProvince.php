@@ -32,7 +32,7 @@ class StateProvince extends Model
 
         static::saving(function ($state) {
             if ($state->isDirty('name')) {
-                $state->normalized_name = self::normalizeName($state->name);
+                $state->normalized_name = self::normalizeNameStatic($state->name);
             }
         });
     }
@@ -47,7 +47,7 @@ class StateProvince extends Model
      */
     public static function isDuplicate(string $name, int $countryId, ?int $excludeId = null): bool
     {
-        $normalizedName = self::normalizeName($name);
+        $normalizedName = self::normalizeNameStatic($name);
         
         $query = self::where('country_id', $countryId)
             ->where('normalized_name', $normalizedName);

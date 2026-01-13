@@ -63,20 +63,31 @@ class ProductNormalizer
 
     /**
      * Extract model code from a description (e.g., "EV DML1122 Speaker" -> "DML1122")
-     * Handles formats like: DML-1122, DML1122, DML 1122, DN-360, EOS R5, SSM
+     * Handles formats like: DML-1122, DML1122, DML 1122, DN-360, EOS R5, SSM, M-267
      *
      * @param string $description
      * @return string|null
      */
     public static function extractModelCode(string $description): ?string
     {
-        // Pattern: 2-10 letters + optional separator + 1-6 digits
+        // Pattern 1: Single letter + separator + digits (e.g., "M-267", "A-123", "X-500")
+        // This handles cases like "M-267 4-Channel" -> "M-267"
+        if (preg_match('/\b([A-Z][-\s]\d{1,6})\b/i', $description, $matches)) {
+            return $matches[1];
+        }
+
+        // Pattern 2: Single letter directly followed by digits (e.g., "M267", "A123")
+        if (preg_match('/\b([A-Z]\d{2,6})\b/i', $description, $matches)) {
+            return $matches[1];
+        }
+
+        // Pattern 3: 2-10 letters + optional separator + 1-6 digits
         // Matches: DML1122, DML-1122, DML 1122, DN-360, EOS R5, SSM (if followed by space/end)
         if (preg_match('/\b([A-Z]{2,10}[-\s]?\d{1,6})\b/i', $description, $matches)) {
             return $matches[1];
         }
 
-        // Also try shorter patterns for codes like "SSM", "R2", "X1" (2-5 letters + 1-3 digits)
+        // Pattern 4: Shorter patterns for codes like "SSM", "R2", "X1" (2-5 letters + 1-3 digits)
         if (preg_match('/\b([A-Z]{2,5}[-\s]?\d{1,3})\b/i', $description, $matches)) {
             return $matches[1];
         }

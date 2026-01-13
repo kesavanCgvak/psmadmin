@@ -45,6 +45,7 @@
                         <th>Location</th>
                         <th>Currency</th>
                         <th>Rental Software</th>
+                        <th>Subscription Mode</th>
                         <th>Users</th>
                         <th>Equipment</th>
                         <th>Rating</th>
@@ -79,6 +80,13 @@
                                     <span class="badge badge-info">{{ $company->rentalSoftware->name }}</span>
                                 @else
                                     <span class="text-muted">N/A</span>
+                                @endif
+                            </td>
+                            <td>
+                                @if($company->subscription_mode === 'free')
+                                    <span class="badge badge-secondary">Free</span>
+                                @else
+                                    <span class="badge badge-success">Paid</span>
                                 @endif
                             </td>
                             <td><span class="badge badge-primary">{{ $company->users_count }}</span></td>
@@ -131,9 +139,9 @@
         $(document).ready(function() {
             var table = initResponsiveDataTable('companiesTable', {
                 "columnDefs": [
-                    { "orderable": false, "targets": [0, 8, 10] },
+                    { "orderable": false, "targets": [0, 9, 11] },
                     { "responsivePriority": 1, "targets": 2 },
-                    { "responsivePriority": 2, "targets": 10 }
+                    { "responsivePriority": 2, "targets": 11 }
                 ]
             });
 

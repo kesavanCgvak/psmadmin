@@ -27,6 +27,12 @@ use App\Http\Controllers\Api\UserProfileController;
 use App\Http\Controllers\Api\EquipmentController;
 use App\Http\Controllers\Api\UserOfferController;
 use App\Http\Controllers\Api\JobNegotiationController;
+use App\Http\Controllers\Api\DateFormatController;
+use App\Http\Controllers\Api\PricingSchemeController;
+use App\Http\Controllers\Api\SupportRequestController;
+use App\Http\Controllers\Api\TermsAndConditionsController;
+use App\Http\Controllers\Api\CompanyUserLimitController;
+use App\Http\Controllers\Api\MailTestController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
@@ -40,9 +46,20 @@ Route::post('/auth/refresh', [AuthController::class, 'refresh']);
 
 // Registration availability checks (public, JSON body)
 Route::post('/registration/availability', [RegistrationCheckController::class, 'checkAvailability']);
+Route::post('/contact-sales', [SupportRequestController::class, 'contactSales']);
+
+// Mail Test API (public, for testing and debugging mail configuration only)
+Route::post('/mail/test', [MailTestController::class, 'testEmail']);
+
 
 // Payment status check (public endpoint for frontend)
 Route::get('/payment/status', [\App\Http\Controllers\Api\PaymentStatusController::class, 'status']);
+
+// Company user limit (public endpoint for frontend)
+Route::get('/company-user-limit', [CompanyUserLimitController::class, 'getLimit']);
+
+// Terms and Conditions (public endpoint)
+Route::get('/terms-and-conditions', [TermsAndConditionsController::class, 'index']);
 
 
 
@@ -70,6 +87,9 @@ Route::middleware('jwt.verify')->group(function () {
     Route::get('/sub-categories', [SubCategoryController::class, 'index']);
     Route::get('/categories/{id}/sub-categories', [SubCategoryController::class, 'getByCategory'])
         ->whereNumber('id');
+
+    // Issue Types
+    Route::get('/issue-types', [\App\Http\Controllers\Api\IssueTypeController::class, 'index']);
 });
 
 // ------------------------------
@@ -87,6 +107,8 @@ Route::middleware('jwt.verify')->group(function () {
     Route::patch('/profile/update-mobile', [UserProfileController::class, 'updateMobile']);
     Route::get('/rental-softwares', [RentalSoftwareController::class, 'index']);
     Route::get('/currencies', [CurrencyController::class, 'index']);
+    Route::get('/date-formats', [DateFormatController::class, 'index']);
+    Route::get('/pricing-schemes', [PricingSchemeController::class, 'index']);
 });
 
 // ------------------------------
@@ -244,6 +266,9 @@ Route::middleware('jwt.verify')->group(function () {
     // Comment management
     Route::put('/comments/{commentId}', [CommentController::class, 'update']);
     Route::delete('/comments/{commentId}', [CommentController::class, 'destroy']);
+
+    // Support Request API
+    Route::post('/support-request', [SupportRequestController::class, 'store']);
 });
 
 
@@ -266,7 +291,10 @@ Route::middleware('jwt.verify')->group(function () {
     // Billing History APIs
     Route::get('/subscription/billing-history', [\App\Http\Controllers\Api\SubscriptionController::class, 'billingHistory']);
     Route::get('/subscription/invoice/{invoiceId}', [\App\Http\Controllers\Api\SubscriptionController::class, 'downloadInvoice']);
+
 });
+
+// Contact Sales API (public, no authentication required)
 // Route::middleware(['jwt.verify'])->group(function () {
 //     Route::post('/rental-jobs/{jobId}/offers', [UserOfferController::class, 'sendOfferToProvider']);
 // });

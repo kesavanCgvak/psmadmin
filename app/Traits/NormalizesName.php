@@ -15,6 +15,20 @@ trait NormalizesName
      */
     protected function normalizeName(string $name): string
     {
+        return self::normalizeNameStatic($name);
+    }
+
+    /**
+     * Static version of normalizeName for use in static contexts
+     * - Case-insensitive
+     * - Trim spaces
+     * - Remove symbols (keep only alphanumeric and spaces)
+     * 
+     * @param string $name
+     * @return string
+     */
+    protected static function normalizeNameStatic(string $name): string
+    {
         // Convert to lowercase
         $normalized = strtolower($name);
         

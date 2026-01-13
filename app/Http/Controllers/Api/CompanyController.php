@@ -111,8 +111,8 @@ class CompanyController extends Controller
             }
             $preferences = [
                 'currency_id' => $company->currency_id,
-                'date_format' => $company->date_format,
-                'pricing_scheme' => $company->pricing_scheme,
+                'date_format_id' => $company->date_format_id,
+                'pricing_scheme_id' => $company->pricing_scheme_id,
                 'hide_from_gear_finder' => $company->hide_from_gear_finder,
                 'rental_software_id' => $company->rental_software_id,
             ];
@@ -147,7 +147,6 @@ class CompanyController extends Controller
         }
     }
 
-
     /**
      * Update company preferences
      */
@@ -167,20 +166,48 @@ class CompanyController extends Controller
             // Validate payload
             $validated = $request->validate([
                 'currency_id' => 'nullable|integer|exists:currencies,id',
-                'date_format' => 'nullable|string|max:20',
-                'pricing_scheme' => 'nullable|string|max:50',
+                'date_format_id' => 'nullable|integer|exists:date_formats,id',
+                'pricing_scheme_id' => 'nullable|integer|exists:pricing_schemes,id',
                 'rental_software_id' => 'nullable|integer|exists:rental_softwares,id',
             ]);
 
             // Update only provided fields
             $company->update($validated);
 
-            $preferences = [
-                'currency_id' => $company->currency_id,
-                'date_format' => $company->date_format,
-                'pricing_scheme' => $company->pricing_scheme,
-                'rental_software_id' => $company->rental_software_id,
-            ];
+            // Reload relationships
+            $company->load(['currency', 'rentalSoftware', 'dateFormat', 'pricingScheme']);
+
+            // Format response with full objects
+            $preferences = [];
+
+            // Currency object
+            if ($company->currency) {
+                $preferences['currency'] = [
+                    'id' => $company->currency->id,
+                    'name' => $company->currency->name,
+                    'code' => $company->currency->code,
+                    'symbol' => $company->currency->symbol,
+                ];
+            }
+
+            // Rental Software object
+            if ($company->rentalSoftware) {
+                $preferences['rental_software'] = [
+                    'id' => $company->rentalSoftware->id,
+                    'name' => $company->rentalSoftware->name,
+                    'version' => $company->rentalSoftware->version ?? '',
+                ];
+            }
+
+            // Date Format string
+            if ($company->dateFormat) {
+                $preferences['date_format'] = $company->dateFormat->format;
+            }
+
+            // Pricing Scheme string (using name)
+            if ($company->pricingScheme) {
+                $preferences['pricing_scheme'] = $company->pricingScheme->name;
+            }
 
             return response()->json([
                 'success' => true,

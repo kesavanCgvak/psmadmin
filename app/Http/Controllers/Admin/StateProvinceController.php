@@ -39,6 +39,7 @@ class StateProvinceController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
+            'region_id' => 'required|exists:regions,id',
             'country_id' => 'required|exists:countries,id',
             'name' => 'required|string|max:150',
             'code' => 'nullable|string|max:10',
