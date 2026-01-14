@@ -149,21 +149,23 @@ class EquipmentController extends Controller
             // });
 
             $formatted = $equipments->map(function ($equipment) {
-                $brandName = $equipment->product->brand->name ?? null;
-                $modelName = $equipment->product->model ?? 'Unknown Model';
+                $product   = $equipment->product;
+                $brandName = $product->brand->name ?? null;
+                $modelName = $product->model ?? 'Unknown Model';
 
                 return [
                     'id' => $equipment->id,
-                    'product_id' => $equipment->product->id,
+                    'product_id' => $product->id,
                     'product_label' => $brandName
                         ? "{$brandName} - {$modelName}"
                         : $modelName, // show only model if brand is missing
-                    'psm_code' => $equipment->product->psm_code,
+                    'psm_code' => $product->psm_code,
+                    'webpage_url' => $product->webpage_url, // 🔗 product webpage URL
                     'software_code' => $equipment->software_code,
                     'quantity' => $equipment->quantity,
                     'price' => $equipment->price,
                     'description' => $equipment->description,
-                    'is_verified' => $equipment->product->is_verified,
+                    'is_verified' => $product->is_verified,
                     'images' => $equipment->images->map(function ($img) {
                         return [
                             'id' => $img->id,
