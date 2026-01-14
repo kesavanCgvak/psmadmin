@@ -26,8 +26,9 @@ class RentalJobController extends Controller
 {
 
     /**
-     * LIST: Rental jobs created by the logged-in user (summary).
-     * Supports filters . Secure & light-weight.
+     * LIST: Rental jobs created by users in the same company (summary).
+     * Supports filters. Secure & light-weight.
+     * All users in the same company can see all rental jobs created by any user in that company.
      */
     public function index(Request $request)
     {
@@ -42,12 +43,16 @@ class RentalJobController extends Controller
         ]);
 
         try {
+            // Filter by company_id: Get all rental jobs from users in the same company
+            // Use whereHas to filter through the user relationship by company_id
             $query = RentalJob::query()
+                ->whereHas('user', function ($q) use ($user) {
+                    $q->where('company_id', $user->company_id);
+                })
                 ->with([
                     'products.product.brand',
                     'supplyJobs:id,rental_job_id'
                 ])
-                ->where('user_id', $user->id)
                 ->orderBy('created_at', 'desc');
 
             // optional filters
@@ -127,6 +132,7 @@ class RentalJobController extends Controller
     /**
      * DETAIL: Basic rental job details only.
      * Returns basic info + list of suppliers (basic info only).
+     * All users in the same company can view rental jobs created by any user in that company.
      */
     public function show(Request $request, $id)
     {
@@ -134,12 +140,14 @@ class RentalJobController extends Controller
 
         try {
             $job = RentalJob::with([
+                'user:id,company_id', // Load user to check company
                 'supplyJobs:id,rental_job_id,provider_id,status', // Basic supply job info
                 'supplyJobs.providerCompany:id,name', // Company name only
             ])->findOrFail($id);
 
-            // Security: only owner or admin can view
-            if ($job->user_id !== $user->id && !$user->is_admin) {
+            // Security: only users from the same company or admin can view
+            $jobCreatorCompanyId = $job->user->company_id ?? null;
+            if ($jobCreatorCompanyId !== $user->company_id && !$user->is_admin) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized to view this rental job.'
@@ -189,17 +197,21 @@ class RentalJobController extends Controller
     /**
      * SUPPLIER DETAILS: Get detailed supplier information for a specific supply job.
      * Returns only the products offered by this supplier, with requested vs supplied quantities, pricing, and latest offer.
+     * All users in the same company can view supplier details for rental jobs created by any user in that company.
      */
     public function supplierDetails(Request $request, int $rentalJobId, int $supplyJobId)
     {
         $user = auth('api')->user();
 
         try {
-            // 1. Verify rental job exists and user has access
-            $rentalJob = RentalJob::select(['id', 'user_id'])
+            // 1. Verify rental job exists and user has access (check by company, not individual user)
+            $rentalJob = RentalJob::with('user:id,company_id')
+                ->select(['id', 'user_id'])
                 ->findOrFail($rentalJobId);
 
-            if ($rentalJob->user_id !== $user->id && !$user->is_admin) {
+            // Security: only users from the same company or admin can view
+            $jobCreatorCompanyId = $rentalJob->user->company_id ?? null;
+            if ($jobCreatorCompanyId !== $user->company_id && !$user->is_admin) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized to view this rental job.'

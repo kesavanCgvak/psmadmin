@@ -65,9 +65,11 @@ class ProductController extends Controller
             $draw = $request->get('draw');
             $start = $request->get('start', 0);
             $length = $request->get('length', 25);
-            $searchValue = $request->get('search')['value'] ?? '';
-            $orderColumn = $request->get('order')[0]['column'] ?? 0;
-            $orderDir = $request->get('order')[0]['dir'] ?? 'desc';
+            $search = $request->get('search', []);
+            $searchValue = is_array($search) && isset($search['value']) ? $search['value'] : '';
+            $order = $request->get('order', []);
+            $orderColumn = (is_array($order) && isset($order[0]['column'])) ? $order[0]['column'] : 0;
+            $orderDir = (is_array($order) && isset($order[0]['dir'])) ? $order[0]['dir'] : 'desc';
 
             // Column mapping for ordering
             $columns = ['id', 'brand_id', 'model', 'category_id', 'sub_category_id', 'psm_code', 'is_verified', 'created_at'];
