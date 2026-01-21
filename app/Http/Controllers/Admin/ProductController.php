@@ -234,9 +234,18 @@ class ProductController extends Controller
             return Category::select(['id', 'name'])->orderBy('name')->get();
         });
 
-        $subCategories = Cache::remember('subcategories_list', 3600, function () {
-            return SubCategory::select(['id', 'name', 'category_id'])->orderBy('name')->get();
-        });
+        // Only load sub-categories for the selected category (if one exists from old input)
+        // This prevents showing all sub-categories when a category is already selected
+        $selectedCategoryId = old('category_id');
+        if ($selectedCategoryId) {
+            $subCategories = SubCategory::select(['id', 'name', 'category_id'])
+                ->where('category_id', $selectedCategoryId)
+                ->orderBy('name')
+                ->get();
+        } else {
+            // If no category selected, pass empty collection
+            $subCategories = collect([]);
+        }
 
         $brands = Cache::remember('brands_list', 3600, function () {
             return Brand::select(['id', 'name'])->orderBy('name')->get();
@@ -322,8 +331,11 @@ class ProductController extends Controller
             return Category::select(['id', 'name'])->orderBy('name')->get();
         });
 
+        // Use old category_id if available (from validation errors), otherwise use product's category_id
+        $categoryId = old('category_id', $product->category_id);
+        
         $subCategories = SubCategory::select(['id', 'name', 'category_id'])
-            ->where('category_id', $product->category_id)
+            ->where('category_id', $categoryId)
             ->orderBy('name')
             ->get();
 

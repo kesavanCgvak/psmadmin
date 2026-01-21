@@ -122,6 +122,7 @@ class AuthController extends Controller
                 'currency_id' => 1, // Default currency ID
                 'date_format_id' => 1, // Default date format ID
                 'pricing_scheme_id' => 1, // Default pricing scheme ID
+                'rating' => 5, // Default rating
             ]);
 
             //Create user

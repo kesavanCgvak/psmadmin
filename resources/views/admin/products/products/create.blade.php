@@ -141,11 +141,11 @@
 @section('js')
     <script>
         $(document).ready(function() {
-            // Load subcategories when category is selected
-            $('#category_id').on('change', function() {
-                var categoryId = $(this).val();
-                var subCategorySelect = $('#sub_category_id');
-
+            var subCategorySelect = $('#sub_category_id');
+            var oldSubCategoryId = '{{ old('sub_category_id') }}';
+            
+            // Function to load subcategories
+            function loadSubCategories(categoryId, preserveSelection) {
                 subCategorySelect.html('<option value="">-- Loading... --</option>');
 
                 if (categoryId) {
@@ -156,7 +156,8 @@
                         success: function(data) {
                             subCategorySelect.html('<option value="">-- Select Sub-Category --</option>');
                             $.each(data, function(key, subCategory) {
-                                subCategorySelect.append('<option value="' + subCategory.id + '">' + subCategory.name + '</option>');
+                                var selected = (preserveSelection && subCategory.id == oldSubCategoryId) ? 'selected' : '';
+                                subCategorySelect.append('<option value="' + subCategory.id + '" ' + selected + '>' + subCategory.name + '</option>');
                             });
                         },
                         error: function() {
@@ -166,7 +167,19 @@
                 } else {
                     subCategorySelect.html('<option value="">-- Select Sub-Category --</option>');
                 }
+            }
+            
+            // Load subcategories when category is selected
+            $('#category_id').on('change', function() {
+                var categoryId = $(this).val();
+                loadSubCategories(categoryId, false);
             });
+            
+            // On page load, if a category is already selected (from old input), load its sub-categories
+            var selectedCategoryId = $('#category_id').val();
+            if (selectedCategoryId) {
+                loadSubCategories(selectedCategoryId, true);
+            }
         });
     </script>
 @stop

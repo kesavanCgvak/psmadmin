@@ -61,10 +61,32 @@ class ImportAnalyzerService
                 continue; // Skip header row
             }
 
-            // Excel format: Column A = quantity, Column B = description, Column C = software_code
+            // Excel format:
+            // Column A = quantity
+            // Column B = description
+            // Column C = software_code (optional)
+            // Column D = price (optional)
             $quantity = (int)($row[0] ?? 1);
             $description = trim($row[1] ?? '');
             $softwareCode = trim($row[2] ?? '');
+            $priceRaw = $row[3] ?? null;
+
+            $rejectionMessages = [];
+
+            // Normalize and validate price (optional column)
+            $price = null;
+            if ($priceRaw !== null && $priceRaw !== '') {
+                // Allow numeric values, including decimals
+                if (!is_numeric($priceRaw)) {
+                    $rejectionMessages[] = 'Invalid price: must be a numeric value.';
+                } else {
+                    $price = (float) $priceRaw;
+                    // Disallow negative prices
+                    if ($price < 0) {
+                        $rejectionMessages[] = 'Invalid price: negative values are not allowed.';
+                    }
+                }
+            }
 
             // Skip completely empty rows
             if (empty($description)) {
@@ -86,6 +108,15 @@ class ImportAnalyzerService
                 // ✅ If validation fails BUT we found potential matches, allow it through
                 // The matching algorithm will handle it during analysis
                 if (!$hasPotentialMatches) {
+                    $descriptionErrors = $e->errors()['description'] ?? [];
+                    if (!empty($descriptionErrors)) {
+                        $rejectionMessages = array_merge($rejectionMessages, $descriptionErrors);
+                    }
+
+                    if (empty($rejectionMessages)) {
+                        $rejectionMessages[] = 'Invalid or meaningless description.';
+                    }
+
                     // No potential matches found - reject it
                     $session->items()->create([
                         'excel_row_number' => $index + 1, // ✅ FIX: Excel row numbering (row 2, 3, 4...)
@@ -93,7 +124,8 @@ class ImportAnalyzerService
                         'quantity' => $quantity,
                         'software_code' => $softwareCode ?: null,
                         'status' => 'rejected',
-                        'rejection_reason' => implode('; ', $e->errors()['description'] ?? []),
+                        'price' => $price,
+                        'rejection_reason' => implode('; ', $rejectionMessages),
                     ]);
                     $rejectedRows++;
                     continue;
@@ -101,7 +133,23 @@ class ImportAnalyzerService
                 // If we reach here, validation failed but has potential matches - continue to create as pending
             }
 
-            // Valid row - extract model and normalize using ProductNormalizer
+            // If we have price validation errors but description is otherwise acceptable,
+            // reject the row with price-related messages.
+            if (!empty($rejectionMessages)) {
+                $session->items()->create([
+                    'excel_row_number' => $index + 1,
+                    'original_description' => $description,
+                    'quantity' => $quantity,
+                    'software_code' => $softwareCode ?: null,
+                    'price' => $price,
+                    'status' => 'rejected',
+                    'rejection_reason' => implode('; ', $rejectionMessages),
+                ]);
+                $rejectedRows++;
+                continue;
+            }
+
+            // Valid row (description + price) - extract model and normalize using ProductNormalizer
             $detectedModel = ProductNormalizer::extractModelCode($description);
             $normalizedCode = $detectedModel ? ProductNormalizer::normalizeCode($detectedModel) : null;
             $normalizedFull = ProductNormalizer::normalizeFullName(null, $description);
@@ -112,6 +160,7 @@ class ImportAnalyzerService
                 'detected_model' => $detectedModel,
                 'normalized_model' => $normalizedCode ?? $normalizedFull, // Use normalized code or full name
                 'quantity' => $quantity,
+                'price' => $price,
                 'software_code' => $softwareCode ?: null,
                 'status' => 'pending',
             ]);

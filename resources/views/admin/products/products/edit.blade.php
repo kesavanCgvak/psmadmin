@@ -140,14 +140,12 @@
 @section('js')
     <script>
         $(document).ready(function() {
-            // Store the original sub_category_id for edit mode
+            var subCategorySelect = $('#sub_category_id');
+            // Store the original sub_category_id for edit mode (from old input or product)
             var originalSubCategoryId = '{{ old('sub_category_id', $product->sub_category_id) }}';
-
-            // Load subcategories when category is selected
-            $('#category_id').on('change', function() {
-                var categoryId = $(this).val();
-                var subCategorySelect = $('#sub_category_id');
-
+            
+            // Function to load subcategories
+            function loadSubCategories(categoryId, preserveSelection) {
                 subCategorySelect.html('<option value="">-- Loading... --</option>');
 
                 if (categoryId) {
@@ -158,7 +156,7 @@
                         success: function(data) {
                             subCategorySelect.html('<option value="">-- Select Sub-Category --</option>');
                             $.each(data, function(key, subCategory) {
-                                var selected = (subCategory.id == originalSubCategoryId) ? 'selected' : '';
+                                var selected = (preserveSelection && subCategory.id == originalSubCategoryId) ? 'selected' : '';
                                 subCategorySelect.append('<option value="' + subCategory.id + '" ' + selected + '>' + subCategory.name + '</option>');
                             });
                         },
@@ -169,7 +167,21 @@
                 } else {
                     subCategorySelect.html('<option value="">-- Select Sub-Category --</option>');
                 }
+            }
+
+            // Load subcategories when category is selected
+            $('#category_id').on('change', function() {
+                var categoryId = $(this).val();
+                loadSubCategories(categoryId, true);
             });
+            
+            // On page load, if category changed (from old input), reload sub-categories
+            var selectedCategoryId = $('#category_id').val();
+            var originalCategoryId = '{{ $product->category_id }}';
+            // If category was changed in the form submission, reload sub-categories
+            if (selectedCategoryId && selectedCategoryId != originalCategoryId) {
+                loadSubCategories(selectedCategoryId, true);
+            }
         });
     </script>
 @stop
