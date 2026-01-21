@@ -20,6 +20,7 @@ class ImportSessionItem extends Model
         'detected_model',
         'normalized_model',
         'quantity',
+        'price',
         'software_code',
         'status',
         'rejection_reason',
