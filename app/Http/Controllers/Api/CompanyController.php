@@ -1052,6 +1052,16 @@ class CompanyController extends Controller
 
             // 5️⃣ Final response map (no queries inside)
             $formatted = $companies->map(function ($company) use ($userRatings, $blockedCompanies) {
+                // Calculate average rating: use company_ratings average if available, otherwise fall back to companies.rating
+                $avgRating = null;
+                if ($company->ratings_avg_rating !== null) {
+                    // Company has ratings in company_ratings table, use the average
+                    $avgRating = $company->ratings_avg_rating;
+                } else {
+                    // No ratings in company_ratings table, fall back to default rating from companies.rating
+                    $avgRating = $company->rating ?? 0;
+                }
+
                 return [
                     'id' => $company->id,
                     'name' => $company->name,
@@ -1062,8 +1072,8 @@ class CompanyController extends Controller
                     'state' => $company->state?->name ?? null,
                     'country' => $company->country?->name ?? null,
 
-                    // Ratings
-                    'average_rating' => round($company->ratings_avg_rating ?? 0, 1),
+                    // Ratings: use company_ratings average if available, otherwise fall back to companies.rating
+                    'average_rating' => round($avgRating, 1),
                     'user_rating' => $userRatings[$company->id] ?? null,
 
                     // Block status
