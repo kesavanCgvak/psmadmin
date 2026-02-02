@@ -32,8 +32,9 @@ class ProductMatcherService
         $extractedBrandId = $this->extractBrandFromDescription($description);
         $extractedBrandName = $extractedBrandId ? $this->getBrandName($extractedBrandId) : null;
         
-        // Extract meaningful words from description (excluding brand name)
+        // Extract meaningful words from description (excluding brand name if found)
         $searchWords = $this->extractWordsForMatching($description);
+        
         if ($extractedBrandName) {
             // Remove brand name from search words
             // Handle both full brand name and individual words if brand name has multiple words
@@ -56,6 +57,11 @@ class ProductMatcherService
             // Re-index array after filtering
             $searchWords = array_values($searchWords);
         }
+        // ✅ If no brand found, use ALL words from description for matching (no brand removal)
+        
+        // ✅ NEW: Identify key terms (model numbers, brand identifiers) vs generic words
+        // Do this after brand removal so we have the final search words
+        $keyTerms = $this->identifyKeyTerms($searchWords);
         
         // STEP 2: Build query - match by brand OR product name/model words
         // Category and sub-category are completely ignored
@@ -66,7 +72,7 @@ class ProductMatcherService
         
         // Build the WHERE clause: brand_id = X OR (model contains word1 OR word2 OR ...)
         // If brand is found, prioritize brand matches, but also allow word matches
-        // If no brand found, search by words only
+        // If no brand found, search by product name/model words only
         $query->where(function ($q) use ($extractedBrandId, $searchWords, &$hasBrandMatch, &$hasWordMatch) {
             // Option 1: Match by brand (if brand was extracted) - PRIORITY
             if ($extractedBrandId) {
@@ -76,11 +82,9 @@ class ProductMatcherService
             }
             
             // Option 2: Match by product name/model words (if we have search words)
-            // This is secondary/fallback - allows matching products from other brands too
             if (!empty($searchWords)) {
-                // Only add OR clause if we also have brand match
-                // This ensures we get brand matches AND word matches from other brands
                 if ($extractedBrandId) {
+                    // Brand found - also search by words (from other brands)
                     $q->orWhere(function ($subQ) use ($searchWords) {
                         foreach ($searchWords as $word) {
                             $wordLower = strtolower($word);
@@ -89,12 +93,15 @@ class ProductMatcherService
                         }
                     });
                 } else {
-                    // No brand found - search by words only
+                    // ✅ No brand found - search by product name/model words only
+                    // Prioritize products that match multiple words (especially key terms)
                     $q->where(function ($subQ) use ($searchWords) {
                         foreach ($searchWords as $word) {
                             $wordLower = strtolower($word);
                             // Match word anywhere in product model (normalized, case-insensitive)
                             $subQ->orWhereRaw('LOWER(model) LIKE ?', ['%' . $wordLower . '%']);
+                            // Also try normalized_model for better matching
+                            $subQ->orWhereRaw('LOWER(normalized_model) LIKE ?', ['%' . $wordLower . '%']);
                         }
                     });
                 }
@@ -108,18 +115,56 @@ class ProductMatcherService
         }
         
         // Order by brand match first (if brand was found), then by relevance
+        // ✅ When no brand found, prioritize products that match the start of description (likely brand/model)
         if ($extractedBrandId) {
             $query->orderByRaw('CASE WHEN brand_id = ? THEN 0 ELSE 1 END', [$extractedBrandId]);
+        } elseif (!empty($keyTerms)) {
+            // Prioritize products where model starts with key terms (likely same brand/model)
+            $firstKeyTerm = strtolower($keyTerms[0]);
+            $query->orderByRaw('CASE WHEN LOWER(model) LIKE ? THEN 0 ELSE 1 END', [$firstKeyTerm . '%']);
         }
         
         // Get products that match either brand OR product name/model words
         $products = $query->limit(500)->get();
         
         // STEP 3: Calculate confidence for each product
-        $matches = $products->map(function ($product) use ($searchWords, $extractedBrandId, $extractedBrandName) {
+        $description = $item->original_description;
+        $descriptionNormalized = strtolower(preg_replace('/[^a-z0-9\s]/', ' ', $description));
+        $descriptionNormalized = preg_replace('/\s+/', ' ', trim($descriptionNormalized));
+        $descriptionWords = $this->extractWordsForMatching($description);
+        
+        // ✅ NEW: Identify key terms (model numbers, brand-like identifiers) vs generic words
+        $keyTerms = $this->identifyKeyTerms($descriptionWords);
+        $genericWords = array_diff($descriptionWords, $keyTerms);
+        
+        $matches = $products->map(function ($product) use ($searchWords, $extractedBrandId, $extractedBrandName, $description, $descriptionNormalized, $descriptionWords, $keyTerms, $genericWords) {
             $confidence = 0.0;
             $matchTypes = [];
             $matchCount = 0;
+            
+            // ✅ CRITICAL: Check for exact or near-exact model match first
+            $productModelNormalized = strtolower(preg_replace('/[^a-z0-9\s]/', ' ', $product->model));
+            $productModelNormalized = preg_replace('/\s+/', ' ', trim($productModelNormalized));
+            
+            // Extract words from product model for comparison
+            $productModelWords = $this->extractWordsForMatching($product->model);
+            
+            // Check if description and product model are very similar (exact or near-exact match)
+            $descriptionWordsLower = array_map('strtolower', $descriptionWords);
+            $productModelWordsLower = array_map('strtolower', $productModelWords);
+            
+            // Count how many description words appear in product model
+            $matchingWords = array_intersect($descriptionWordsLower, $productModelWordsLower);
+            $matchCount = count($matchingWords);
+            $totalDescriptionWords = count($descriptionWords);
+            
+            // ✅ NEW: Count key term matches vs generic word matches
+            $keyTermsLower = array_map('strtolower', $keyTerms);
+            $genericWordsLower = array_map('strtolower', $genericWords);
+            $matchingKeyTerms = array_intersect($keyTermsLower, $productModelWordsLower);
+            $matchingGenericWords = array_intersect($genericWordsLower, $productModelWordsLower);
+            $keyTermMatchCount = count($matchingKeyTerms);
+            $genericWordMatchCount = count($matchingGenericWords);
             
             // Calculate brand match score (independent)
             $brandScore = 0.0;
@@ -130,54 +175,88 @@ class ProductMatcherService
                 $matchTypes[] = 'brand_match';
             }
             
+            // ✅ EXACT MATCH DETECTION: If most/all words match, it's likely the same product
+            $isExactMatch = false;
+            if ($totalDescriptionWords > 0) {
+                $matchRatio = $matchCount / $totalDescriptionWords;
+                
+                // If 80%+ of words match, consider it a near-exact match
+                if ($matchRatio >= 0.80 && $matchCount >= 3) {
+                    $isExactMatch = true;
+                    $matchTypes[] = 'near_exact_match';
+                }
+                
+                // If all words match, it's an exact match
+                if ($matchCount === $totalDescriptionWords && $totalDescriptionWords >= 3) {
+                    $isExactMatch = true;
+                    $matchTypes[] = 'exact_match';
+                }
+            }
+            
             // Calculate product name/model word match score (independent)
             $wordScore = 0.0;
-            if (!empty($searchWords)) {
-                $productWords = $this->extractWordsForMatching($product->model);
-                
-                // Count matching words (case-insensitive, normalized)
-                $searchWordsLower = array_map('strtolower', $searchWords);
-                $productWordsLower = array_map('strtolower', $productWords);
-                
-                $matchingWords = array_intersect($searchWordsLower, $productWordsLower);
-                $matchCount = count($matchingWords);
-                $totalSearchWords = count($searchWords);
-                
-                if ($totalSearchWords > 0) {
-                    // Base score: percentage of search words that matched
-                    $wordScore = $matchCount / $totalSearchWords;
+            if ($totalDescriptionWords > 0) {
+                // ✅ CRITICAL: Require minimum matches, especially key terms
+                // If only 1 generic word matches, heavily penalize (likely false match)
+                if ($matchCount === 1 && $keyTermMatchCount === 0 && $genericWordMatchCount === 1) {
+                    // Single generic word match - very low confidence (likely false positive)
+                    $wordScore = 0.20; // Heavily penalized
+                } elseif ($matchCount < 2) {
+                    // Less than 2 words match - low confidence
+                    $wordScore = 0.30;
+                } else {
+                    // Base score: percentage of description words that matched
+                    $wordScore = $matchCount / $totalDescriptionWords;
                     
-                    // Boost score based on number of matching words
-                    if ($matchCount >= 4) {
-                        $wordScore = min(1.0, $wordScore + 0.30); // Strong match - increased boost
-                    } elseif ($matchCount >= 3) {
-                        $wordScore = min(1.0, $wordScore + 0.25); // Good match - increased boost
-                    } elseif ($matchCount >= 2) {
-                        $wordScore = min(1.0, $wordScore + 0.20); // Decent match - increased boost
-                    } elseif ($matchCount >= 1) {
-                        $wordScore = min(1.0, $wordScore + 0.15); // Weak match - increased boost
+                    // ✅ Boost for key term matches (model numbers, brand identifiers)
+                    if ($keyTermMatchCount > 0) {
+                        $keyTermRatio = $keyTermMatchCount / max(1, count($keyTerms));
+                        $wordScore += ($keyTermRatio * 0.40); // Strong boost for key terms
                     }
                     
-                    if ($matchCount > 0) {
-                        $matchTypes[] = 'word_match';
-                        if ($matchCount === $totalSearchWords && $totalSearchWords >= 3) {
-                            $matchTypes[] = 'exact_word_match';
-                        }
+                    // Boost score based on number of matching words
+                    if ($matchCount >= 5) {
+                        $wordScore = min(1.0, $wordScore + 0.35); // Very strong match
+                    } elseif ($matchCount >= 4) {
+                        $wordScore = min(1.0, $wordScore + 0.30); // Strong match
+                    } elseif ($matchCount >= 3) {
+                        $wordScore = min(1.0, $wordScore + 0.25); // Good match
+                    } elseif ($matchCount >= 2) {
+                        $wordScore = min(1.0, $wordScore + 0.20); // Decent match
+                    }
+                    
+                    // ✅ Penalize if only generic words match (no key terms)
+                    if ($keyTermMatchCount === 0 && $genericWordMatchCount > 0 && $matchCount < 3) {
+                        $wordScore *= 0.60; // Reduce confidence if no key terms match
+                    }
+                }
+                
+                if ($matchCount > 0) {
+                    $matchTypes[] = 'word_match';
+                    if ($keyTermMatchCount > 0) {
+                        $matchTypes[] = 'key_term_match';
                     }
                 }
             }
             
-            // Combine scores: prioritize brand matches, but also consider word matches
-            // If brand matches, start with high confidence
-            if ($hasBrandMatch) {
+            // Combine scores: prioritize exact matches and brand matches
+            if ($isExactMatch && $hasBrandMatch) {
+                // Exact match with brand = 100% confidence
+                $confidence = 1.0;
+            } elseif ($isExactMatch) {
+                // Exact match without brand = 95% confidence
+                $confidence = 0.95;
+            } elseif ($hasBrandMatch) {
                 // Brand match = base confidence of 0.70
                 $confidence = 0.70;
                 
                 // Add word match bonus if words also match
                 if ($matchCount > 0) {
                     // Strong boost for word matches when brand also matches
-                    if ($matchCount >= 3) {
-                        $confidence = min(1.0, $confidence + 0.30); // Strong word match
+                    if ($matchCount >= 4) {
+                        $confidence = min(1.0, $confidence + 0.30); // Very strong word match
+                    } elseif ($matchCount >= 3) {
+                        $confidence = min(1.0, $confidence + 0.25); // Strong word match
                     } elseif ($matchCount >= 2) {
                         $confidence = min(1.0, $confidence + 0.20); // Good word match
                     } elseif ($matchCount >= 1) {
@@ -188,16 +267,28 @@ class ProductMatcherService
                 // No brand match - rely on word matching only
                 $confidence = $wordScore;
                 
-                // Lower threshold for word-only matches (at least 0.50 if 2+ words match)
-                if ($matchCount >= 2) {
+                // ✅ Require minimum 2 word matches for word-only matches (reduces false positives)
+                if ($matchCount < 2) {
+                    // Less than 2 words - very low confidence
+                    $confidence = max(0.20, $confidence);
+                } elseif ($matchCount >= 2 && $keyTermMatchCount > 0) {
+                    // 2+ words with key terms - good confidence
+                    $confidence = max(0.60, $confidence);
+                } elseif ($matchCount >= 3) {
+                    // 3+ words - decent confidence
                     $confidence = max(0.50, $confidence);
+                } else {
+                    // 2 words but no key terms - moderate confidence
+                    $confidence = max(0.40, $confidence);
                 }
             }
             
             // Determine primary match type
             $matchType = 'unknown';
-            if (in_array('exact_word_match', $matchTypes)) {
-                $matchType = 'exact_word_match';
+            if (in_array('exact_match', $matchTypes)) {
+                $matchType = 'exact_match';
+            } elseif (in_array('near_exact_match', $matchTypes)) {
+                $matchType = 'near_exact_match';
             } elseif (in_array('brand_match', $matchTypes) && in_array('word_match', $matchTypes)) {
                 $matchType = 'brand_and_word_match';
             } elseif (in_array('brand_match', $matchTypes)) {
@@ -219,17 +310,21 @@ class ProductMatcherService
         });
         
         // Filter by minimum confidence threshold
-        // Lower threshold to ensure we catch brand matches and word matches
-        // Brand matches get at least 0.70, word matches need at least 0.50
-        $effectiveThreshold = 0.50; // Always use 0.50 to catch all potential matches
+        // ✅ Increased threshold to reduce false positives (single generic word matches)
+        // Require at least 0.40 confidence (2+ word matches or key term matches)
+        $effectiveThreshold = 0.40;
         $matches = $matches->where('confidence', '>=', $effectiveThreshold);
         
         // Sort by confidence (descending)
-        // Prioritize matches with both brand AND word match, then by confidence
+        // Prioritize exact matches, then brand+word matches, then by confidence
         $matches = $matches->sortByDesc(function ($match) {
-            // Higher priority if both brand and word match
+            // Highest priority: exact or near-exact matches
+            $exactMatchBonus = (in_array($match['match_type'], ['exact_match', 'near_exact_match'])) ? 2.0 : 0.0;
+            // High priority: both brand and word match
             $bothMatchBonus = ($match['brand_match'] && $match['word_match']) ? 1.0 : 0.0;
-            return [$bothMatchBonus, $match['confidence']];
+            // Medium priority: brand match only
+            $brandMatchBonus = $match['brand_match'] ? 0.5 : 0.0;
+            return [$exactMatchBonus, $bothMatchBonus, $brandMatchBonus, $match['confidence']];
         });
         
         return $matches->take(10)->values();
@@ -336,12 +431,33 @@ class ProductMatcherService
                              ($position < 10 && preg_match('/^' . preg_quote($brandNameNormalized, '/') . '\b/i', $normalized)));
             }
             
-            // Also try original brand name (without normalization)
-            if (!$matches && preg_match('/\b' . preg_quote($brandName, '/') . '\b/i', $normalized, $matchesArray, PREG_OFFSET_CAPTURE)) {
-                $matches = true;
-                $position = $matchesArray[0][1]; // Get position in string
-                $isAtStart = ($position === 0 || 
-                             ($position < 10 && preg_match('/^' . preg_quote($brandName, '/') . '\b/i', $normalized)));
+            // Also try original brand name (without normalization) - handles special chars like asterisks
+            if (!$matches) {
+                // Escape special regex characters but preserve asterisks and other special chars for literal matching
+                $escapedBrandName = preg_quote($brandName, '/');
+                // Replace escaped asterisks back to literal asterisks (preg_quote escapes them)
+                $escapedBrandName = str_replace('\\*', '*', $escapedBrandName);
+                
+                if (preg_match('/\b' . $escapedBrandName . '\b/i', $normalized, $matchesArray, PREG_OFFSET_CAPTURE)) {
+                    $matches = true;
+                    $position = $matchesArray[0][1]; // Get position in string
+                    $isAtStart = ($position === 0 || 
+                                 ($position < 10 && preg_match('/^' . $escapedBrandName . '\b/i', $normalized)));
+                }
+            }
+            
+            // ✅ ADDITIONAL: Try matching brand name at the start of description (common pattern)
+            // This handles cases like "VARI*LITE" where word boundary might not work perfectly
+            if (!$matches) {
+                $escapedBrandName = preg_quote($brandName, '/');
+                $escapedBrandName = str_replace('\\*', '*', $escapedBrandName);
+                
+                // Check if description starts with brand name (with optional space/separator)
+                if (preg_match('/^' . $escapedBrandName . '[\s\-]/i', $normalized, $matchesArray, PREG_OFFSET_CAPTURE)) {
+                    $matches = true;
+                    $position = 0;
+                    $isAtStart = true;
+                }
             }
             
             if ($matches) {
@@ -390,5 +506,51 @@ class ProductMatcherService
     {
         $brand = \App\Models\Brand::find($brandId);
         return $brand ? $brand->name : null;
+    }
+    
+    /**
+     * Identify key terms (model numbers, brand identifiers) vs generic words
+     * Key terms are:
+     * - Model numbers (e.g., "VL3500", "DN-360", "MAC350")
+     * - Brand-like identifiers (uppercase words, words with special chars)
+     * - Words at the start of description (likely brand/model)
+     * 
+     * Generic words are common descriptive terms that appear in many products
+     * 
+     * @param array $words Array of words from description
+     * @return array Array of key terms
+     */
+    protected function identifyKeyTerms(array $words): array
+    {
+        $keyTerms = [];
+        $genericWords = ['led', 'wash', 'fixture', 'light', 'profile', 'shuttering', 'moving', 'head', 'speaker', 'cable', 'system', 'unit', 'device'];
+        
+        foreach ($words as $index => $word) {
+            $wordLower = strtolower($word);
+            
+            // Skip generic words
+            if (in_array($wordLower, $genericWords)) {
+                continue;
+            }
+            
+            // Model numbers: alphanumeric with optional hyphens/special chars (e.g., "VL3500", "DN-360", "MAC350")
+            if (preg_match('/^[A-Z0-9][A-Z0-9\-*]+[0-9]+/i', $word)) {
+                $keyTerms[] = $word;
+                continue;
+            }
+            
+            // Words with uppercase letters (likely brand/model identifiers)
+            if (preg_match('/[A-Z]/', $word) && strlen($word) >= 2) {
+                $keyTerms[] = $word;
+                continue;
+            }
+            
+            // First 2-3 words are often brand/model identifiers
+            if ($index < 3 && strlen($word) >= 3) {
+                $keyTerms[] = $word;
+            }
+        }
+        
+        return array_unique($keyTerms);
     }
 }

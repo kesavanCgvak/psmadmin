@@ -133,6 +133,12 @@
                     opportunity with <strong>{{ $user_company}}</strong>.
                 </p>
 
+                @if(!empty($is_similar_request))
+                    <p style="margin-top: 15px; padding: 12px; background-color: #e8f4fd; border-left: 4px solid #1a73e8; font-size: 14px; line-height: 1.5;">
+                        <strong>Note:</strong> The requester is also open to similar or equivalent products. Please contact the requester if you can offer suitable alternatives.
+                    </p>
+                @endif
+
                 <p style="font-size: 13px; color: #666; line-height: 1.6;">
                     <strong>Pro Subrental Marketplace</strong> connects rental companies to help you maximize
                     equipment utilization and grow your network in the rental industry.

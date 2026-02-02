@@ -221,9 +221,9 @@ class SupplyJobController extends Controller
             $loggedInCompany = $user->company_id;
 
             // Default values
-            $canSendOffer = false;
-            $canCancelNegotiation = false;
-            $canHandshake = false;
+            $canSendOffer = true;
+            $canCancelNegotiation = true;
+            $canHandshake = true;
 
             // If we have an offer, adjust permission
             if ($latestOffer) {

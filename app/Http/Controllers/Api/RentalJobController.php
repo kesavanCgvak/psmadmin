@@ -261,9 +261,9 @@ class RentalJobController extends Controller
             $loggedInCompany = $user->company_id;
 
             // Default
-            $canSendOffer = false;
-            $canCancel = false;
-            $canHandshake = false;
+            $canSendOffer = true;
+            $canCancel = true;
+            $canHandshake = true;
 
             if ($latestOffer) {
 

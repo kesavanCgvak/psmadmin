@@ -12,10 +12,15 @@ class SupplyJob extends Model
 {
     use HasFactory;
 
+    protected $casts = [
+        'is_similar_request' => 'boolean',
+    ];
+
     protected $fillable = [
         'rental_job_id',
         'provider_id',
         'status',
+        'is_similar_request',
         'quote_price',
         'notes',
         'packing_date',

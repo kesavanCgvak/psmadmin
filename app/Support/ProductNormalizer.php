@@ -9,6 +9,7 @@ class ProductNormalizer
     /**
      * Normalize product codes/model numbers by removing all non-alphanumeric characters
      * Examples: "DML-1122" -> "dml1122", "DML 1122" -> "dml1122", "SSM" -> "ssm"
+     * Preserves decimal points in numeric contexts: "13.5" -> "13.5" (not "135")
      *
      * @param string|null $value
      * @return string|null
@@ -20,8 +21,16 @@ class ProductNormalizer
         }
 
         $value = Str::lower(trim($value));
+
+        // First, preserve decimal points that are between digits (numeric decimals)
+        // Replace decimal points in numeric contexts with a temporary placeholder
+        $value = preg_replace('/(\d)\.(\d)/', '$1__DECIMAL__$2', $value);
+
         // Remove everything except letters and digits
         $value = preg_replace('/[^a-z0-9]/', '', $value);
+
+        // Restore decimal points from placeholder
+        $value = str_replace('__DECIMAL__', '.', $value);
 
         return $value ?: null;
     }
@@ -29,6 +38,7 @@ class ProductNormalizer
     /**
      * Normalize full product name (brand + model) by removing special characters and metadata
      * Examples: "Apogee SSM -" -> "apogeessm", "EV-DML1122" -> "evdml1122"
+     * Preserves decimal points in numeric contexts: "13.5" -> "13.5" (not "135")
      *
      * @param string|null $brand
      * @param string|null $model
@@ -43,17 +53,24 @@ class ProductNormalizer
         }
 
         $full = Str::lower($full);
-        
+
         // Strip bracket/parenthesis metadata like [Amazon], (Fox), trailing hyphens
         $full = preg_replace('/\s*\[[^\]]+\]\s*/', ' ', $full);
         $full = preg_replace('/\s*\([^\)]+\)\s*/', ' ', $full);
-        
+
         // Remove trailing/leading hyphens and spaces
         $full = preg_replace('/^[\s\-]+|[\s\-]+$/', '', $full);
-        
+
+        // Preserve decimal points that are between digits (numeric decimals)
+        // Replace decimal points in numeric contexts with a temporary placeholder
+        $full = preg_replace('/(\d)\.(\d)/', '$1__DECIMAL__$2', $full);
+
         // Remove non-alphanumeric but keep spaces temporarily
         $full = preg_replace('/[^a-z0-9\s]/', ' ', $full);
-        
+
+        // Restore decimal points from placeholder
+        $full = str_replace('__DECIMAL__', '.', $full);
+
         // Normalize whitespace
         $full = preg_replace('/\s+/', ' ', trim($full));
 
@@ -104,27 +121,34 @@ class ProductNormalizer
     public static function normalizeDescription(string $description): string
     {
         $text = Str::lower(trim($description));
-        
+
         // Remove bracketed content (metadata like [Amazon], [Fox])
         $text = preg_replace('/\s*\[[^\]]+\]\s*/', ' ', $text);
-        
+
         // Remove parenthesized content that looks like metadata
         $text = preg_replace('/\s*\([^\)]+\)\s*/', ' ', $text);
-        
+
         // Normalize brand names - common variations
         $text = preg_replace('/\bklark[-\s]?teknik\b/i', 'klarkteknik', $text);
         $text = preg_replace('/\bkt\b/i', 'klarkteknik', $text);
-        
+
         // Normalize common abbreviations
         $text = preg_replace('/\bprofessional\b/i', 'pro', $text);
         $text = preg_replace('/\bequalizer\b/i', 'eq', $text);
-        
+
+        // Preserve decimal points that are between digits (numeric decimals)
+        // Replace decimal points in numeric contexts with a temporary placeholder
+        $text = preg_replace('/(\d)\.(\d)/', '$1__DECIMAL__$2', $text);
+
         // Remove special characters but keep spaces
         $text = preg_replace('/[^a-z0-9\s]/', ' ', $text);
-        
+
+        // Restore decimal points from placeholder
+        $text = str_replace('__DECIMAL__', '.', $text);
+
         // Normalize whitespace
         $text = preg_replace('/\s+/', ' ', trim($text));
-        
+
         return $text;
     }
 

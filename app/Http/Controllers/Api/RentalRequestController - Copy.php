@@ -12,6 +12,7 @@ use App\Models\RentalJobProduct;
 use App\Models\RentalJobComment;
 use App\Models\JobOffer;
 use App\Models\Equipment;
+use App\Models\Currency;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,8 +48,7 @@ class RentalRequestController extends Controller
             'company_products.*.products.*.product_id' => 'required|integer|exists:products,id',
             'company_products.*.products.*.requested_quantity' => 'required|integer|min:1',
             'company_products.*.private_message' => 'nullable|string',
-            'company_products.*.initial_offer' => 'nullable|numeric|min:0',
-            'company_products.*.is_similar' => 'nullable|boolean'
+            'company_products.*.initial_offer' => 'nullable|numeric|min:0'
         ]);
 
         try {
@@ -67,7 +67,9 @@ class RentalRequestController extends Controller
                 ]);
 
                 /**
-                 * Aggregate products across all companies
+                 * ===========================================
+                 * FIX: Aggregate products across all companies
+                 * ===========================================
                  */
                 $productTotals = collect($validated['company_products'])
                     ->flatMap(fn($cp) => $cp['products'])
@@ -81,81 +83,73 @@ class RentalRequestController extends Controller
                         'requested_quantity' => $totalQuantity,
                         'fulfilled_quantity' => 0,
                         'status' => 'pending',
-                        'company_id' => null
+                        'company_id' => null // aggregated, so not per company
                     ]);
                 }
 
                 /**
-                 * Pre-load all companies, products and equipment in bulk (avoids N+1)
-                 */
-                $companyIds = collect($validated['company_products'])->pluck('company_id')->unique()->values()->all();
-                $productIds = collect($validated['company_products'])
-                    ->flatMap(fn($cp) => collect($cp['products'])->pluck('product_id'))
-                    ->unique()->values()->all();
-
-                $companies = Company::with(['getDefaultcontact', 'currency'])
-                    ->whereIn('id', $companyIds)
-                    ->get()
-                    ->keyBy('id');
-
-                $products = Product::whereIn('id', $productIds)->get()->keyBy('id');
-
-                $equipmentRows = Equipment::whereIn('company_id', $companyIds)
-                    ->whereIn('product_id', $productIds)
-                    ->get();
-                $equipmentByCompanyProduct = $equipmentRows->groupBy('company_id')->map->keyBy('product_id');
-
-                /**
+                 * ===========================================
                  * Per company supply job creation
+                 * ===========================================
                  */
                 foreach ($validated['company_products'] as $companyData) {
-                    $companyId = $companyData['company_id'];
-                    $company = $companies->get($companyId);
-                    $receiverCurrencyId = $company->currency_id ?? null;
-                    $currencySymbol = $company->relationLoaded('currency') && $company->currency
-                        ? $company->currency->symbol
-                        : '';
 
-                    $isSimilarRequest = (bool) ($companyData['is_similar'] ?? false);
+                    // Create supply job for this company
                     $supplyJob = SupplyJob::create([
                         'rental_job_id' => $rentalJob->id,
-                        'provider_id' => $companyId,
-                        'status' => 'pending',
-                        'is_similar_request' => $isSimilarRequest,
+                        'provider_id' => $companyData['company_id'],
+                        'status' => 'pending'
                     ]);
 
                     $productsForMail = [];
-                    $companyEquipment = $equipmentByCompanyProduct->get($companyId, collect());
 
+                    // Requested products per company
                     foreach ($companyData['products'] as $product) {
-                        $productId = $product['product_id'];
-                        $equipment = $companyEquipment->get($productId);
-                        $pricePerUnit = $equipment?->price;
 
+                        // Find the equipment for this product and company
+                        $equipment = Equipment::where('company_id', $companyData['company_id'])
+                            ->where('product_id', $product['product_id'])
+                            ->first();
+
+                        // Get the price from equipment if available
+                        $pricePerUnit = $equipment ? $equipment->price : null;
+
+                        // Supply job product (per supplier)
                         SupplyJobProduct::create([
                             'supply_job_id' => $supplyJob->id,
-                            'product_id' => $productId,
+                            'product_id' => $product['product_id'],
                             'required_quantity' => $product['requested_quantity'],
                             'offered_quantity' => $product['requested_quantity'],
                             'price_per_unit' => $pricePerUnit,
                         ]);
 
-                        $productModel = $products->get($productId);
-                        if ($productModel) {
+                        // Prepare data for email
+                        $productData = Product::with([
+                            'getEquipment' => function ($q) use ($companyData) {
+                                $q->where('company_id', $companyData['company_id']);
+                            }
+                        ])->find($product['product_id']);
+
+                        if ($productData) {
                             $productsForMail[] = [
-                                'model' => $productModel->model,
+                                'model' => $productData->model,
                                 'requested_quantity' => $product['requested_quantity'],
-                                'psm_code' => $productModel->psm_code,
-                                'software_code' => $equipment?->software_code,
+                                'psm_code' => $productData->psm_code,
+                                'software_code' => optional($productData->getEquipment)->software_code,
                                 'price_per_unit' => $pricePerUnit,
                                 'total_price' => $pricePerUnit ? $pricePerUnit * $product['requested_quantity'] : 0,
                             ];
                         }
                     }
 
+                    //Calculate total quote price for this supply job
                     $totalQuotePrice = collect($productsForMail)->sum('total_price');
+
+                    //Update supply job with quote price
                     $supplyJob->update(['quote_price' => $totalQuotePrice]);
 
+
+                    // Private message per supplier
                     if (!empty($companyData['private_message'])) {
                         RentalJobComment::create([
                             'rental_job_id' => $rentalJob->id,
@@ -166,22 +160,40 @@ class RentalRequestController extends Controller
                         ]);
                     }
 
+                    // Initial offer
                     if (array_key_exists('initial_offer', $companyData) || $totalQuotePrice > 0) {
+                        $receiverCurrency = Company::find($companyData['company_id'])->currency_id ?? null;
                         $totalPrice = $companyData['initial_offer'] ?? null;
                         $totalPrice = ($totalPrice && $totalPrice > 0) ? $totalPrice : $totalQuotePrice;
                         JobOffer::create([
                             'rental_job_id' => $rentalJob->id,
                             'supply_job_id' => $supplyJob->id,
                             'sender_company_id' => $user->company_id,
-                            'receiver_company_id' => $companyId,
+                            'receiver_company_id' => $companyData['company_id'],
                             'version' => 1,
                             'total_price' => $totalPrice,
-                            'currency_id' => $receiverCurrencyId,
+                            'currency_id' => $receiverCurrency ?? null,
                             'last_offer_by' => $user->company_id,
                             'status' => 'pending'
                         ]);
                     }
 
+                    // Currency symbol
+                    $currencySymbol = '';
+                    // if ($user->company->currency_id) {
+                    //     $currency = Currency::find($user->company->currency_id);
+                    //     $currencySymbol = $currency ? $currency->symbol : '';
+                    // }
+                    if ($receiverCurrency) {
+                        $currency = Currency::find($receiverCurrency);
+                        $currencySymbol = $currency ? $currency->symbol : $currencySymbol;
+                    }
+                    /**
+                     * ==============================
+                     * Email Notification (per company)
+                     * ==============================
+                     */
+                    $company = Company::with('getDefaultcontact')->find($companyData['company_id']);
                     if ($company && $company->getDefaultcontact) {
                         $mailContent = [
                             'rental_name' => $validated['name'],
@@ -197,11 +209,14 @@ class RentalRequestController extends Controller
                             'initial_offer' => $companyData['initial_offer'] ?? null,
                             'currency_symbol' => $currencySymbol,
                             'products' => $productsForMail,
-                            'is_similar_request' => $isSimilarRequest,
+
+                            // Requesting user details
                             'user_name' => $user->profile->full_name ?? $user->name ?? 'Unknown User',
                             'user_email' => $user->profile->email ?? null,
                             'user_mobile' => $user->profile->mobile ?? null,
                             'user_company' => $user->company->name ?? 'N/A',
+
+                            // Supplier company details
                             'supplier_company_name' => $company->name,
                         ];
 
