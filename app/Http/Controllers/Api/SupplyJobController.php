@@ -10,6 +10,10 @@ use App\Models\RentalJobProduct;
 use App\Models\JobOffer;
 use App\Models\Currency;
 use App\Models\SupplyJobProduct;
+use App\Models\JobRating;
+use App\Models\JobRatingReply;
+use App\Models\Company;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Auth;
@@ -28,7 +32,7 @@ class SupplyJobController extends Controller
         // Validate query params
         $validated = $request->validate([
             'company_id' => 'required|integer|exists:companies,id',
-            'status' => 'nullable|string|in:pending,negotiating,accepted,cancelled,closed,partially_accepted,completed',
+            'status' => 'nullable|string|in:pending,negotiating,accepted,cancelled,closed,partially_accepted,completed,completed_pending_rating,rated',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
             'page' => 'nullable|integer|min:1',
@@ -166,6 +170,8 @@ class SupplyJobController extends Controller
         try {
             $supplyJob = SupplyJob::with([
                 'rentalJob:id,name,from_date,to_date,delivery_address',
+                'rentalJob.jobRating',
+                'ratingReply',
                 'products.product:id,model,brand_id',
                 'products.product.brand:id,name',
                 'offers:id,supply_job_id,version,total_price,status',
@@ -292,6 +298,18 @@ class SupplyJobController extends Controller
                 ],
             ];
 
+            if ($supplyJob->status === 'rated' && $supplyJob->rentalJob?->jobRating?->rated_at) {
+                $jobRating = $supplyJob->rentalJob->jobRating;
+                $reply = $supplyJob->ratingReply;
+                $data['job_rating'] = [
+                    'rating' => (int) $jobRating->rating,
+                    'comment' => $jobRating->comment,
+                    'rated_at' => $jobRating->rated_at->toIso8601String(),
+                    'provider_reply' => $reply?->reply,
+                    'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
+                ];
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => $data,
@@ -408,6 +426,164 @@ class SupplyJobController extends Controller
         } catch (\Throwable $e) {
             report($e);
             return response()->json(['success' => false, 'message' => 'Failed to cancel supply job.'], 500);
+        }
+    }
+
+    /**
+     * Provider marks a supply job as completed.
+     * Updates supply job and linked rental job to completed_pending_rating.
+     * Triggers rating request to renter.
+     */
+    public function complete(Request $request, int $id)
+    {
+        $user = Auth::user();
+
+        try {
+            $supplyJob = SupplyJob::with('rentalJob')->findOrFail($id);
+
+            if ((int) $user->company_id !== (int) $supplyJob->provider_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized for this supply job.'
+                ], 403);
+            }
+
+            if (!in_array($supplyJob->status, ['accepted', 'partially_accepted'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only jobs in accepted or partially accepted status can be marked as completed.'
+                ], 400);
+            }
+
+            DB::transaction(function () use ($supplyJob) {
+                $supplyJob->update(['status' => 'completed_pending_rating']);
+
+                if ($supplyJob->rentalJob) {
+                    $supplyJob->rentalJob->update(['status' => 'completed_pending_rating']);
+                }
+            });
+
+            $supplyJob->refresh();
+            $supplyJob->load(['rentalJob:id,name,from_date,to_date,user_id', 'providerCompany:id,name']);
+
+            $emails = [];
+            $rentalJob = $supplyJob->rentalJob;
+            if ($rentalJob) {
+                $rentalUser = User::with('profile')->find($rentalJob->user_id);
+                if ($rentalUser?->profile?->email) {
+                    $emails[] = $rentalUser->profile->email;
+                }
+                $companyId = $rentalUser?->company_id ?? null;
+                if ($companyId) {
+                    $requesterCompany = Company::with('defaultContact.profile')->find($companyId);
+                    if ($requesterCompany?->defaultContact?->profile?->email) {
+                        $emails[] = $requesterCompany->defaultContact->profile->email;
+                    }
+                }
+                $emails = array_unique(array_filter($emails));
+                foreach ($emails as $email) {
+                    Mail::send('emails.jobRatingRequest', [
+                        'rental_job_name' => $rentalJob->name,
+                        'provider_name' => $supplyJob->providerCompany->name ?? 'Provider',
+                    ], function ($message) use ($email) {
+                        $message->to($email)
+                            ->subject('Rate Your Completed Job - Pro Subrental Marketplace')
+                            ->from(config('mail.from.address'), config('mail.from.name'));
+                    });
+                }
+            }
+
+            $data = [
+                'id' => $supplyJob->id,
+                'status' => $supplyJob->status,
+                'name' => $supplyJob->rentalJob?->name ?? '',
+                'rental_job_id' => $supplyJob->rental_job_id,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Job marked as completed. Renter will be asked to rate.',
+                'data' => $data,
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Supply job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to mark job as completed.'], 500);
+        }
+    }
+
+    /**
+     * Provider replies to the renter's rating comment.
+     */
+    public function ratingReply(Request $request, int $id)
+    {
+        $user = Auth::user();
+
+        $validated = $request->validate([
+            'reply' => 'required|string|max:2000',
+        ]);
+
+        $reply = trim($validated['reply']);
+        if ($reply === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Reply cannot be empty.'
+            ], 422);
+        }
+
+        try {
+            $supplyJob = SupplyJob::with(['rentalJob.jobRating'])->findOrFail($id);
+
+            if ((int) $user->company_id !== (int) $supplyJob->provider_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized for this supply job.'
+                ], 403);
+            }
+
+            if ($supplyJob->status !== 'rated') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Job must be in rated status to submit a reply.'
+                ], 400);
+            }
+
+            $jobRating = $supplyJob->rentalJob?->jobRating;
+            if (!$jobRating || !$jobRating->rated_at) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No rating exists for this job.'
+                ], 400);
+            }
+
+            $replyModel = JobRatingReply::updateOrCreate(
+                ['supply_job_id' => $supplyJob->id],
+                [
+                    'job_rating_id' => $jobRating->id,
+                    'reply' => $reply,
+                    'replied_at' => now(),
+                ]
+            );
+
+            $jobRatingArray = [
+                'rating' => (int) $jobRating->rating,
+                'comment' => $jobRating->comment,
+                'rated_at' => $jobRating->rated_at->toIso8601String(),
+                'provider_reply' => $replyModel->reply,
+                'provider_replied_at' => $replyModel->replied_at->toIso8601String(),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Reply submitted successfully',
+                'data' => ['job_rating' => $jobRatingArray],
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Supply job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to submit reply.'], 500);
         }
     }
 

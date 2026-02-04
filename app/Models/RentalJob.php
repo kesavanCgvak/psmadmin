@@ -53,6 +53,11 @@ class RentalJob extends Model
         return $this->hasMany(JobOffer::class, 'rental_job_id');
     }
 
+    public function jobRating()
+    {
+        return $this->hasOne(JobRating::class, 'rental_job_id');
+    }
+
     public function getTotalRequestedQuantityAttribute()
     {
         return $this->products->sum('requested_quantity');

@@ -64,5 +64,10 @@ class SupplyJob extends Model
         return $this->hasMany(RentalJobComment::class);
     }
 
+    public function ratingReply()
+    {
+        return $this->hasOne(JobRatingReply::class, 'supply_job_id');
+    }
+
 }
 

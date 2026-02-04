@@ -11,6 +11,7 @@ use App\Models\Company;
 use App\Models\User;
 use App\Models\UserProfile;
 use App\Models\JobOffer;
+use App\Models\JobRating;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\RentalJobBasicsUpdated;
 use App\Mail\RentalJobQuantityUpdated;
@@ -659,6 +660,107 @@ class RentalJobActionsController extends Controller
                 'message' => 'Failed to cancel rental job.',
                 'error' => $e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * Renter submits a star rating (and optional comment) for a completed job.
+     */
+    public function rate(Request $request, int $id)
+    {
+        $user = auth('api')->user();
+
+        $validated = $request->validate([
+            'rating' => 'required|integer|min:1|max:5',
+            'comment' => 'nullable|string|max:2000',
+        ]);
+
+        try {
+            $rentalJob = RentalJob::with('user')->findOrFail($id);
+
+            if ((int) $rentalJob->user->company_id !== (int) $user->company_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized for this rental job.'
+                ], 403);
+            }
+
+            if ($rentalJob->status !== 'completed_pending_rating') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Job must be in completed (pending rating) status to submit a rating.'
+                ], 400);
+            }
+
+            DB::transaction(function () use ($rentalJob, $validated) {
+                JobRating::updateOrCreate(
+                    ['rental_job_id' => $rentalJob->id],
+                    [
+                        'rating' => $validated['rating'],
+                        'comment' => $validated['comment'] ?? null,
+                        'rated_at' => now(),
+                        'skipped_at' => null,
+                    ]
+                );
+
+                $rentalJob->update(['status' => 'rated']);
+
+                SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->where('status', 'completed_pending_rating')
+                    ->update(['status' => 'rated']);
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rating submitted successfully',
+                'data' => [],
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Rental job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to submit rating.'], 500);
+        }
+    }
+
+    /**
+     * Renter explicitly skips rating.
+     */
+    public function rateSkip(Request $request, int $id)
+    {
+        $user = auth('api')->user();
+
+        try {
+            $rentalJob = RentalJob::with('user')->findOrFail($id);
+
+            if ((int) $rentalJob->user->company_id !== (int) $user->company_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized for this rental job.'
+                ], 403);
+            }
+
+            if ($rentalJob->status !== 'completed_pending_rating') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Job must be in completed (pending rating) status to skip rating.'
+                ], 400);
+            }
+
+            JobRating::updateOrCreate(
+                ['rental_job_id' => $rentalJob->id],
+                ['skipped_at' => now()]
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rating skipped. You can rate later from this job.',
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Rental job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to skip rating.'], 500);
         }
     }
 

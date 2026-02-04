@@ -36,7 +36,7 @@ class RentalJobController extends Controller
 
         // Validate query params
         $validated = $request->validate([
-            'status' => ['nullable', Rule::in(['open', 'in_negotiation', 'accepted', 'cancelled', 'completed','partially_accepted'])],
+            'status' => ['nullable', Rule::in(['open', 'in_negotiation', 'accepted', 'cancelled', 'completed', 'partially_accepted', 'completed_pending_rating', 'rated', 'closed'])],
             'from_date' => ['nullable', 'date'],
             'to_date' => ['nullable', 'date', 'after_or_equal:from_date'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
@@ -51,7 +51,8 @@ class RentalJobController extends Controller
                 })
                 ->with([
                     'products.product.brand',
-                    'supplyJobs:id,rental_job_id'
+                    'supplyJobs:id,rental_job_id',
+                    'jobRating.replies',
                 ])
                 ->orderBy('created_at', 'desc');
 
@@ -79,7 +80,7 @@ class RentalJobController extends Controller
 
             //Transform data (shared for both cases)
             $data = $collection->map(function (RentalJob $job) {
-                return [
+                $item = [
                     'id' => $job->id,
                     'name' => $job->name,
                     'from_date' => $job->from_date,
@@ -98,6 +99,19 @@ class RentalJobController extends Controller
                     })->values(),
                     'provider_responses_count' => $job->supplyJobs->count(),
                 ];
+                if ($job->jobRating && $job->jobRating->rated_at) {
+                    $item['job_rating'] = [
+                        'rating' => (int) $job->jobRating->rating,
+                        'comment' => $job->jobRating->comment,
+                        'rated_at' => $job->jobRating->rated_at->toIso8601String(),
+                    ];
+                    $latestReply = $job->jobRating->replies->sortByDesc('replied_at')->first();
+                    if ($latestReply) {
+                        $item['job_rating']['provider_reply'] = $latestReply->reply;
+                        $item['job_rating']['provider_replied_at'] = $latestReply->replied_at->toIso8601String();
+                    }
+                }
+                return $item;
             })->values();
 
             //Build response
@@ -143,6 +157,7 @@ class RentalJobController extends Controller
                 'user:id,company_id', // Load user to check company
                 'supplyJobs:id,rental_job_id,provider_id,status', // Basic supply job info
                 'supplyJobs.providerCompany:id,name', // Company name only
+                'jobRating.replies',
             ])->findOrFail($id);
 
             // Security: only users from the same company or admin can view
@@ -174,6 +189,19 @@ class RentalJobController extends Controller
                 'status' => $job->status,
                 'suppliers' => $suppliers,
             ];
+
+            if ($job->jobRating && $job->jobRating->rated_at) {
+                $payload['job_rating'] = [
+                    'rating' => (int) $job->jobRating->rating,
+                    'comment' => $job->jobRating->comment,
+                    'rated_at' => $job->jobRating->rated_at->toIso8601String(),
+                ];
+                $latestReply = $job->jobRating->replies->sortByDesc('replied_at')->first();
+                if ($latestReply) {
+                    $payload['job_rating']['provider_reply'] = $latestReply->reply;
+                    $payload['job_rating']['provider_replied_at'] = $latestReply->replied_at->toIso8601String();
+                }
+            }
 
             return response()->json([
                 'success' => true,
