@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\DB;
+use App\Jobs\SyncUserToHubSpot;
 
 
 class AuthController extends Controller
@@ -791,6 +792,9 @@ class AuthController extends Controller
             $user->token = null; // clear token after verification
             $user->save();
 
+            // Dispatch HubSpot sync after successful email verification (non-blocking).
+            SyncUserToHubSpot::dispatch($user->id);
+
             Log::info('User account verified successfully.', [
                 'user_id' => $user->id,
                 'email' => $user->email ?? null
@@ -832,6 +836,10 @@ class AuthController extends Controller
         $user->email_verified = 1;
         $user->token = null; // clear token
         $user->save();
+
+        // Dispatch HubSpot sync after successful email verification (non-blocking).
+        Log::info('Dispatching HubSpot sync job for user ID: ' . $user->id);
+        SyncUserToHubSpot::dispatch($user->id);
 
         return response()->json([
             'success' => true,
