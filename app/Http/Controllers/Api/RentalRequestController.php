@@ -46,8 +46,11 @@ class RentalRequestController extends Controller
             'company_products.*.products' => 'required|array|min:1',
             'company_products.*.products.*.product_id' => 'required|integer|exists:products,id',
             'company_products.*.products.*.requested_quantity' => 'required|integer|min:1',
+            // Per-product similar flag (preferred)
+            'company_products.*.products.*.is_similar' => 'nullable|boolean',
             'company_products.*.private_message' => 'nullable|string',
             'company_products.*.initial_offer' => 'nullable|numeric|min:0',
+            // Deprecated: company-level similar flag (kept for backward compatibility)
             'company_products.*.is_similar' => 'nullable|boolean'
         ]);
 
@@ -116,7 +119,14 @@ class RentalRequestController extends Controller
                         ? $company->currency->symbol
                         : '';
 
-                    $isSimilarRequest = (bool) ($companyData['is_similar'] ?? false);
+                    // Determine whether this company is open to similar products
+                    // Prefer per-product flags, fall back to legacy company-level flag.
+                    $productsPayload = $companyData['products'] ?? [];
+                    $hasProductLevelSimilar = collect($productsPayload)->contains(function ($product) {
+                        return !empty($product['is_similar']);
+                    });
+                    $isSimilarRequest = $hasProductLevelSimilar || (bool) ($companyData['is_similar'] ?? false);
+
                     $supplyJob = SupplyJob::create([
                         'rental_job_id' => $rentalJob->id,
                         'provider_id' => $companyId,
@@ -138,6 +148,7 @@ class RentalRequestController extends Controller
                             'required_quantity' => $product['requested_quantity'],
                             'offered_quantity' => $product['requested_quantity'],
                             'price_per_unit' => $pricePerUnit,
+                            'is_similar' => (bool) ($product['is_similar'] ?? false),
                         ]);
 
                         $productModel = $products->get($productId);
@@ -145,6 +156,7 @@ class RentalRequestController extends Controller
                             $productsForMail[] = [
                                 'model' => $productModel->model,
                                 'requested_quantity' => $product['requested_quantity'],
+                                'is_similar' => (bool) ($product['is_similar'] ?? false),
                                 'psm_code' => $productModel->psm_code,
                                 'software_code' => $equipment?->software_code,
                                 'price_per_unit' => $pricePerUnit,

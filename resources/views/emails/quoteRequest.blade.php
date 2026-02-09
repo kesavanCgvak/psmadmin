@@ -93,6 +93,7 @@
                             <th align="left">PSM Code</th>
                             <th align="left">Software Code</th>
                             <th align="left">Qty</th>
+                            <th align="left">Similar OK?</th>
                             <th align="left">Price</th>
                             <th align="left">Total Price</th>
                         </tr>
@@ -114,6 +115,13 @@
                                 <td>{{ $product['psm_code'] ?? '—' }}</td>
                                 <td>{{ $product['software_code'] ?? '—' }}</td>
                                 <td>{{ $product['requested_quantity'] ?? '-' }}</td>
+                                <td>
+                                    @if(!empty($product['is_similar']))
+                                        Yes
+                                    @else
+                                        No
+                                    @endif
+                                </td>
                                 <td>{{ $currency_symbol }}{{ number_format($product['price_per_unit'] ?? 0, 2) }}</td>
                                 <td>{{ $currency_symbol }}{{ number_format($itemTotal, 2) }}</td>
                             </tr>
@@ -121,7 +129,7 @@
 
                         <!-- ✅ Grand Total Row -->
                         <tr style="border-top: 2px solid #ddd; background-color: #f9f9f9;">
-                            <td colspan="5" align="right" style="font-weight: bold; padding-right: 10px;">Grand Total:
+                            <td colspan="6" align="right" style="font-weight: bold; padding-right: 10px;">Grand Total:
                             </td>
                             <td style="font-weight: bold;">{{ $currency_symbol }}{{ number_format($grandTotal, 2) }}</td>
                         </tr>
