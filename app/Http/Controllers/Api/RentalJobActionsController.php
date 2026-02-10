@@ -693,18 +693,22 @@ class RentalJobActionsController extends Controller
             }
 
             DB::transaction(function () use ($rentalJob, $validated) {
-                JobRating::updateOrCreate(
-                    ['rental_job_id' => $rentalJob->id],
-                    [
-                        'rating' => $validated['rating'],
-                        'comment' => $validated['comment'] ?? null,
-                        'rated_at' => now(),
-                        'skipped_at' => null,
-                    ]
-                );
-
+                $pendingSupplyJobs = SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->where('status', 'completed_pending_rating')
+                    ->get();
+                foreach ($pendingSupplyJobs as $sj) {
+                    JobRating::updateOrCreate(
+                        ['supply_job_id' => $sj->id],
+                        [
+                            'rental_job_id' => $rentalJob->id,
+                            'rating' => $validated['rating'],
+                            'comment' => $validated['comment'] ?? null,
+                            'rated_at' => now(),
+                            'skipped_at' => null,
+                        ]
+                    );
+                }
                 $rentalJob->update(['status' => 'rated']);
-
                 SupplyJob::where('rental_job_id', $rentalJob->id)
                     ->where('status', 'completed_pending_rating')
                     ->update(['status' => 'rated']);
@@ -747,14 +751,29 @@ class RentalJobActionsController extends Controller
                 ], 400);
             }
 
-            JobRating::updateOrCreate(
-                ['rental_job_id' => $rentalJob->id],
-                ['skipped_at' => now()]
-            );
+            DB::transaction(function () use ($rentalJob) {
+                $pendingSupplyJobs = SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->where('status', 'completed_pending_rating')
+                    ->get();
+                foreach ($pendingSupplyJobs as $sj) {
+                    JobRating::updateOrCreate(
+                        ['supply_job_id' => $sj->id],
+                        [
+                            'rental_job_id' => $rentalJob->id,
+                            'skipped_at' => now(),
+                        ]
+                    );
+                }
+                $rentalJob->update(['status' => 'rated']);
+                SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->where('status', 'completed_pending_rating')
+                    ->update(['status' => 'rated']);
+            });
 
             return response()->json([
                 'success' => true,
-                'message' => 'Rating skipped. You can rate later from this job.',
+                'message' => 'Rating skipped.',
+                'data' => [],
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json(['success' => false, 'message' => 'Rental job not found.'], 404);

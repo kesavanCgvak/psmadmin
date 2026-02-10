@@ -51,8 +51,10 @@ class RentalJobController extends Controller
                 })
                 ->with([
                     'products.product.brand',
-                    'supplyJobs:id,rental_job_id',
-                    'jobRating.replies',
+                    'supplyJobs:id,rental_job_id,provider_id,status',
+                    'supplyJobs.providerCompany:id,name',
+                    'supplyJobs.jobRating',
+                    'supplyJobs.ratingReply',
                 ])
                 ->orderBy('created_at', 'desc');
 
@@ -78,8 +80,27 @@ class RentalJobController extends Controller
                 $paginator = null;
             }
 
-            //Transform data (shared for both cases)
+            //Transform data: include suppliers array so Rating column can show all company ratings
             $data = $collection->map(function (RentalJob $job) {
+                $suppliers = $job->supplyJobs->map(function ($sj) {
+                    $supplier = [
+                        'supply_job_id' => $sj->id,
+                        'company_name' => $sj->providerCompany->name ?? 'Unknown',
+                        'status' => $sj->status,
+                    ];
+                    if ($sj->jobRating && $sj->jobRating->rated_at) {
+                        $reply = $sj->ratingReply;
+                        $supplier['supplier_rating'] = [
+                            'rating' => (int) $sj->jobRating->rating,
+                            'comment' => $sj->jobRating->comment,
+                            'rated_at' => $sj->jobRating->rated_at->toIso8601String(),
+                            'provider_reply' => $reply?->reply,
+                            'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
+                        ];
+                    }
+                    return $supplier;
+                })->values();
+
                 $item = [
                     'id' => $job->id,
                     'name' => $job->name,
@@ -98,18 +119,21 @@ class RentalJobController extends Controller
                         ];
                     })->values(),
                     'provider_responses_count' => $job->supplyJobs->count(),
+                    'suppliers' => $suppliers,
                 ];
-                if ($job->jobRating && $job->jobRating->rated_at) {
+
+                // Fallback: single job_rating when one supplier (for backward compatibility)
+                $ratedSupplier = $job->supplyJobs->first(fn ($sj) => $sj->jobRating && $sj->jobRating->rated_at);
+                if ($ratedSupplier) {
+                    $jr = $ratedSupplier->jobRating;
+                    $reply = $ratedSupplier->ratingReply;
                     $item['job_rating'] = [
-                        'rating' => (int) $job->jobRating->rating,
-                        'comment' => $job->jobRating->comment,
-                        'rated_at' => $job->jobRating->rated_at->toIso8601String(),
+                        'rating' => (int) $jr->rating,
+                        'comment' => $jr->comment,
+                        'rated_at' => $jr->rated_at->toIso8601String(),
+                        'provider_reply' => $reply?->reply,
+                        'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
                     ];
-                    $latestReply = $job->jobRating->replies->sortByDesc('replied_at')->first();
-                    if ($latestReply) {
-                        $item['job_rating']['provider_reply'] = $latestReply->reply;
-                        $item['job_rating']['provider_replied_at'] = $latestReply->replied_at->toIso8601String();
-                    }
                 }
                 return $item;
             })->values();
@@ -154,10 +178,11 @@ class RentalJobController extends Controller
 
         try {
             $job = RentalJob::with([
-                'user:id,company_id', // Load user to check company
-                'supplyJobs:id,rental_job_id,provider_id,status', // Basic supply job info
-                'supplyJobs.providerCompany:id,name', // Company name only
-                'jobRating.replies',
+                'user:id,company_id',
+                'supplyJobs:id,rental_job_id,provider_id,status',
+                'supplyJobs.providerCompany:id,name',
+                'supplyJobs.jobRating',
+                'supplyJobs.ratingReply',
             ])->findOrFail($id);
 
             // Security: only users from the same company or admin can view
@@ -169,15 +194,26 @@ class RentalJobController extends Controller
                 ], 403);
             }
 
-            // Build suppliers array with basic info only
+            // Build suppliers array: supplier_rating only from this supply job's rating (never copy to others)
             $suppliers = $job->supplyJobs->map(function ($sj) {
-                return [
+                $supplier = [
                     'supply_job_id' => $sj->id,
                     'rental_job_id' => $sj->rental_job_id,
                     'company_id' => $sj->providerCompany->id ?? null,
                     'company_name' => $sj->providerCompany->name ?? 'Unknown',
                     'status' => $sj->status,
                 ];
+                if ($sj->jobRating && $sj->jobRating->rated_at) {
+                    $reply = $sj->ratingReply;
+                    $supplier['supplier_rating'] = [
+                        'rating' => (int) $sj->jobRating->rating,
+                        'comment' => $sj->jobRating->comment,
+                        'rated_at' => $sj->jobRating->rated_at->toIso8601String(),
+                        'provider_reply' => $reply?->reply,
+                        'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
+                    ];
+                }
+                return $supplier;
             })->values();
 
             $payload = [
@@ -190,16 +226,18 @@ class RentalJobController extends Controller
                 'suppliers' => $suppliers,
             ];
 
-            if ($job->jobRating && $job->jobRating->rated_at) {
-                $payload['job_rating'] = [
-                    'rating' => (int) $job->jobRating->rating,
-                    'comment' => $job->jobRating->comment,
-                    'rated_at' => $job->jobRating->rated_at->toIso8601String(),
-                ];
-                $latestReply = $job->jobRating->replies->sortByDesc('replied_at')->first();
-                if ($latestReply) {
-                    $payload['job_rating']['provider_reply'] = $latestReply->reply;
-                    $payload['job_rating']['provider_replied_at'] = $latestReply->replied_at->toIso8601String();
+            // Legacy root job_rating: only when exactly one supplier and that supplier has a rating
+            if ($job->supplyJobs->count() === 1) {
+                $sj = $job->supplyJobs->first();
+                if ($sj->jobRating && $sj->jobRating->rated_at) {
+                    $reply = $sj->ratingReply;
+                    $payload['job_rating'] = [
+                        'rating' => (int) $sj->jobRating->rating,
+                        'comment' => $sj->jobRating->comment,
+                        'rated_at' => $sj->jobRating->rated_at->toIso8601String(),
+                        'provider_reply' => $reply?->reply,
+                        'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
+                    ];
                 }
             }
 

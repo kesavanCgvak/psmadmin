@@ -56,7 +56,11 @@ class SupplyJobController extends Controller
         try {
             // Build query
             $query = SupplyJob::with([
-                'rentalJob:id,name,from_date,to_date',
+                'rentalJob:id,name,from_date,to_date,user_id',
+                'rentalJob.user:id,company_id',
+                'rentalJob.user.company:id,name',
+                'jobRating',
+                'ratingReply',
                 'products:id,supply_job_id,product_id',
                 'products.product:id,model,brand_id',
                 'products.product.brand:id,name'
@@ -94,7 +98,7 @@ class SupplyJobController extends Controller
 
             //Transform data (works for both cases)
             $data = $collection->map(function (SupplyJob $job) {
-                return [
+                $row = [
                     'id' => $job->id,
                     'name' => $job->rentalJob?->name ?? '',
                     'rental_job_id' => $job->rentalJob?->id,
@@ -111,6 +115,21 @@ class SupplyJobController extends Controller
                         ];
                     })->values(),
                 ];
+                if ($job->rentalJob?->user?->company) {
+                    $row['renter_company_name'] = $job->rentalJob->user->company->name;
+                }
+                if ($job->status === 'rated' && $job->jobRating?->rated_at) {
+                    $jr = $job->jobRating;
+                    $reply = $job->ratingReply;
+                    $row['job_rating'] = [
+                        'rating' => (int) $jr->rating,
+                        'comment' => $jr->comment,
+                        'rated_at' => $jr->rated_at->toIso8601String(),
+                        'provider_reply' => $reply?->reply,
+                        'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
+                    ];
+                }
+                return $row;
             })->values();
 
             //Response
@@ -170,7 +189,7 @@ class SupplyJobController extends Controller
         try {
             $supplyJob = SupplyJob::with([
                 'rentalJob:id,name,from_date,to_date,delivery_address',
-                'rentalJob.jobRating',
+                'jobRating',
                 'ratingReply',
                 'products.product:id,model,brand_id',
                 'products.product.brand:id,name',
@@ -298,8 +317,8 @@ class SupplyJobController extends Controller
                 ],
             ];
 
-            if ($supplyJob->status === 'rated' && $supplyJob->rentalJob?->jobRating?->rated_at) {
-                $jobRating = $supplyJob->rentalJob->jobRating;
+            if ($supplyJob->status === 'rated' && $supplyJob->jobRating?->rated_at) {
+                $jobRating = $supplyJob->jobRating;
                 $reply = $supplyJob->ratingReply;
                 $data['job_rating'] = [
                     'rating' => (int) $jobRating->rating,
@@ -356,7 +375,7 @@ class SupplyJobController extends Controller
 
                 // Cancel the supply job
                 // Cancel the supply job
-                $supplyJob->status = 'Cancelled';
+                $supplyJob->status = 'cancelled';
                 $supplyJob->notes = $request->reason;
                 $supplyJob->cancelled_by = $user->id;
                 $supplyJob->save();
@@ -398,7 +417,7 @@ class SupplyJobController extends Controller
             $mailData = [
                 'provider' => $supplyJob->provider->name ?? '-',
                 'supply_job_name' => $rentalJob->name ?? '-',
-                'status' => 'Cancelled',
+                'status' => 'cancelled',
                 'reason' => $request->reason ?? null,
                 'date' => now()->format('d M Y, h:i A'),
                 'products' => $offerProducts,
@@ -456,7 +475,10 @@ class SupplyJobController extends Controller
             }
 
             DB::transaction(function () use ($supplyJob) {
-                $supplyJob->update(['status' => 'completed_pending_rating']);
+                $supplyJob->update([
+                    'status' => 'completed_pending_rating',
+                    'completed_at' => now(),
+                ]);
 
                 if ($supplyJob->rentalJob) {
                     $supplyJob->rentalJob->update(['status' => 'completed_pending_rating']);
@@ -514,6 +536,132 @@ class SupplyJobController extends Controller
     }
 
     /**
+     * Renter rates this provider (supply job). Delegates to job-level rating with same logic.
+     * Auth: current user's company must be the renter of the rental job that owns this supply job.
+     */
+    public function rate(Request $request, int $id)
+    {
+        $user = Auth::user();
+
+        $validated = $request->validate([
+            'rating' => 'required|integer|min:1|max:5',
+            'comment' => 'nullable|string|max:2000',
+        ]);
+
+        try {
+            $supplyJob = SupplyJob::with('rentalJob.user')->findOrFail($id);
+            $rentalJob = $supplyJob->rentalJob;
+            if (!$rentalJob) {
+                return response()->json(['success' => false, 'message' => 'Rental job not found.'], 404);
+            }
+
+            if ((int) $rentalJob->user->company_id !== (int) $user->company_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Only the renter can rate this job.',
+                ], 403);
+            }
+
+            if ($rentalJob->status !== 'completed_pending_rating') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Job must be in completed (pending rating) status to submit a rating.',
+                ], 400);
+            }
+
+            DB::transaction(function () use ($supplyJob, $rentalJob, $validated) {
+                JobRating::updateOrCreate(
+                    ['supply_job_id' => $supplyJob->id],
+                    [
+                        'rental_job_id' => $rentalJob->id,
+                        'rating' => $validated['rating'],
+                        'comment' => $validated['comment'] ?? null,
+                        'rated_at' => now(),
+                        'skipped_at' => null,
+                    ]
+                );
+                $supplyJob->update(['status' => 'rated']);
+                $pendingCount = SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->where('status', 'completed_pending_rating')
+                    ->count();
+                if ($pendingCount === 0) {
+                    $rentalJob->update(['status' => 'rated']);
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rating submitted successfully',
+                'data' => [],
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Supply job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to submit rating.'], 500);
+        }
+    }
+
+    /**
+     * Renter skips rating for this provider (supply job). Delegates to job-level skip; marks job as rated.
+     * Auth: current user's company must be the renter of the rental job that owns this supply job.
+     */
+    public function rateSkip(Request $request, int $id)
+    {
+        $user = Auth::user();
+
+        try {
+            $supplyJob = SupplyJob::with('rentalJob.user')->findOrFail($id);
+            $rentalJob = $supplyJob->rentalJob;
+            if (!$rentalJob) {
+                return response()->json(['success' => false, 'message' => 'Rental job not found.'], 404);
+            }
+
+            if ((int) $rentalJob->user->company_id !== (int) $user->company_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Only the renter can skip rating for this job.',
+                ], 403);
+            }
+
+            if ($rentalJob->status !== 'completed_pending_rating') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Job must be in completed (pending rating) status to skip rating.',
+                ], 400);
+            }
+
+            DB::transaction(function () use ($supplyJob, $rentalJob) {
+                JobRating::updateOrCreate(
+                    ['supply_job_id' => $supplyJob->id],
+                    [
+                        'rental_job_id' => $rentalJob->id,
+                        'skipped_at' => now(),
+                    ]
+                );
+                $supplyJob->update(['status' => 'rated']);
+                $pendingCount = SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->where('status', 'completed_pending_rating')
+                    ->count();
+                if ($pendingCount === 0) {
+                    $rentalJob->update(['status' => 'rated']);
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rating skipped.',
+                'data' => [],
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Supply job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to skip rating.'], 500);
+        }
+    }
+
+    /**
      * Provider replies to the renter's rating comment.
      */
     public function ratingReply(Request $request, int $id)
@@ -533,7 +681,7 @@ class SupplyJobController extends Controller
         }
 
         try {
-            $supplyJob = SupplyJob::with(['rentalJob.jobRating'])->findOrFail($id);
+            $supplyJob = SupplyJob::with(['jobRating'])->findOrFail($id);
 
             if ((int) $user->company_id !== (int) $supplyJob->provider_id && !$user->is_admin) {
                 return response()->json([
@@ -549,7 +697,7 @@ class SupplyJobController extends Controller
                 ], 400);
             }
 
-            $jobRating = $supplyJob->rentalJob?->jobRating;
+            $jobRating = $supplyJob->jobRating;
             if (!$jobRating || !$jobRating->rated_at) {
                 return response()->json([
                     'success' => false,

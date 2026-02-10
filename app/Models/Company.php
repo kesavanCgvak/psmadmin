@@ -33,6 +33,11 @@ class Company extends Model
         'longitude',
         'hide_from_gear_finder',
         'subscription_mode',
+        'blocked_by_admin_at',
+    ];
+
+    protected $casts = [
+        'blocked_by_admin_at' => 'datetime',
     ];
 
     public function users()
@@ -157,6 +162,14 @@ class Company extends Model
     public function getAverageRatingAttribute()
     {
         return $this->ratings()->avg('rating') ?? 0;
+    }
+
+    /**
+     * Whether this company is blocked by admin (e.g. due to low ratings).
+     */
+    public function isBlockedByAdmin(): bool
+    {
+        return $this->blocked_by_admin_at !== null;
     }
 
     /**

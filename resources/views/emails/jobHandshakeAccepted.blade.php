@@ -50,6 +50,10 @@
                         <td><strong>Date:</strong></td>
                         <td>{{ $date ?? '-' }}</td>
                     </tr>
+                    <tr>
+                        <td><strong>Unpack date:</strong></td>
+                        <td>{{ $unpacking_date ?? 'To be confirmed' }}</td>
+                    </tr>
                 </table>
                 <br>
                 <!-- Products Section -->

@@ -440,6 +440,12 @@ return [
             'icon' => 'fas fa-fw fa-truck',
             'icon_color' => 'success',
         ],
+        [
+            'text' => 'Job Ratings',
+            'route' => 'admin.job-ratings.index',
+            'icon' => 'fas fa-fw fa-star',
+            'icon_color' => 'warning',
+        ],
         ['header' => 'SUPPORT MANAGEMENT'],
         [
             'text' => 'Issue Types',

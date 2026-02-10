@@ -4,12 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class JobRating extends Model
 {
     protected $fillable = [
         'rental_job_id',
+        'supply_job_id',
         'rating',
         'comment',
         'rated_at',
@@ -26,13 +26,18 @@ class JobRating extends Model
         return $this->belongsTo(RentalJob::class);
     }
 
+    public function supplyJob(): BelongsTo
+    {
+        return $this->belongsTo(SupplyJob::class, 'supply_job_id');
+    }
+
     public function replies(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(JobRatingReply::class);
     }
 
     /**
-     * Get the reply for a specific supply job.
+     * Get the reply for this rating's supply job (one reply per supply job).
      */
     public function replyForSupplyJob(int $supplyJobId): ?JobRatingReply
     {

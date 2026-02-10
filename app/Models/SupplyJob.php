@@ -22,10 +22,15 @@ class SupplyJob extends Model
         'delivery_date',
         'return_date',
         'unpacking_date',
+        'completed_at',
         'accepted_price',
         'handshake_status',
         'cancelled_by',
         'fulfilled_quantity',
+    ];
+
+    protected $casts = [
+        'completed_at' => 'datetime',
     ];
 
     public function rentalJob()
@@ -64,9 +69,25 @@ class SupplyJob extends Model
         return $this->hasMany(RentalJobComment::class);
     }
 
+    /** Rating for this supply job only (one per provider). */
+    public function jobRating()
+    {
+        return $this->hasOne(JobRating::class, 'supply_job_id');
+    }
+
     public function ratingReply()
     {
         return $this->hasOne(JobRatingReply::class, 'supply_job_id');
+    }
+
+    public function completionReminders()
+    {
+        return $this->hasMany(SupplyJobCompletionReminder::class, 'supply_job_id');
+    }
+
+    public function ratingReminders()
+    {
+        return $this->hasMany(SupplyJobRatingReminder::class, 'supply_job_id');
     }
 
 }

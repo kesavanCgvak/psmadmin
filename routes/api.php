@@ -250,6 +250,8 @@ Route::middleware(['jwt.verify'])->group(function () {
     Route::get('/supply-jobs/{id}', [SupplyJobController::class, 'show']); // ?company_id=123
     Route::post('/supply-jobs/{supply_job_id}/cancel', [SupplyJobController::class, 'cancelSupplyJob']);
     Route::post('/supply-jobs/{id}/complete', [SupplyJobController::class, 'complete']);
+    Route::post('/supply-jobs/{id}/rate', [SupplyJobController::class, 'rate']);
+    Route::post('/supply-jobs/{id}/rate/skip', [SupplyJobController::class, 'rateSkip']);
     Route::post('/supply-jobs/{id}/rating-reply', [SupplyJobController::class, 'ratingReply']);
 });
 

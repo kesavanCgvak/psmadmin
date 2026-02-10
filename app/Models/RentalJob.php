@@ -53,6 +53,13 @@ class RentalJob extends Model
         return $this->hasMany(JobOffer::class, 'rental_job_id');
     }
 
+    /** One rating per supply job (per provider). */
+    public function jobRatings()
+    {
+        return $this->hasMany(JobRating::class, 'rental_job_id');
+    }
+
+    /** Legacy: first rating when only one supplier (for backward compatibility). */
     public function jobRating()
     {
         return $this->hasOne(JobRating::class, 'rental_job_id');
