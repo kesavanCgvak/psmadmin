@@ -154,14 +154,43 @@ class ProductMatcherService
             $productModelWordsLower = array_map('strtolower', $productModelWords);
             
             // Count how many description words appear in product model
-            $matchingWords = array_intersect($descriptionWordsLower, $productModelWordsLower);
+            // ✅ Enhanced: treat model codes with trailing letters as matches (e.g. "vl3500" vs "vl3500q")
+            $matchingWords = [];
+            foreach ($descriptionWordsLower as $dWord) {
+                foreach ($productModelWordsLower as $pWord) {
+                    if ($dWord === $pWord) {
+                        $matchingWords[$dWord] = true;
+                        break;
+                    }
+                    // If either side looks like a model code (contains digits), allow prefix matches
+                    if (preg_match('/\d/', $dWord) || preg_match('/\d/', $pWord)) {
+                        if (strpos($pWord, $dWord) === 0 || strpos($dWord, $pWord) === 0) {
+                            $matchingWords[$dWord] = true;
+                            break;
+                        }
+                    }
+                }
+            }
             $matchCount = count($matchingWords);
             $totalDescriptionWords = count($descriptionWords);
             
             // ✅ NEW: Count key term matches vs generic word matches
             $keyTermsLower = array_map('strtolower', $keyTerms);
             $genericWordsLower = array_map('strtolower', $genericWords);
-            $matchingKeyTerms = array_intersect($keyTermsLower, $productModelWordsLower);
+
+            // Enhanced key-term matching: allow prefix matches for model codes
+            $matchingKeyTerms = [];
+            foreach ($keyTermsLower as $keyTerm) {
+                foreach ($productModelWordsLower as $pWord) {
+                    if ($keyTerm === $pWord ||
+                        (preg_match('/\d/', $keyTerm) && strpos($pWord, $keyTerm) === 0) ||
+                        (preg_match('/\d/', $pWord) && strpos($keyTerm, $pWord) === 0)
+                    ) {
+                        $matchingKeyTerms[$keyTerm] = true;
+                        break;
+                    }
+                }
+            }
             $matchingGenericWords = array_intersect($genericWordsLower, $productModelWordsLower);
             $keyTermMatchCount = count($matchingKeyTerms);
             $genericWordMatchCount = count($matchingGenericWords);
