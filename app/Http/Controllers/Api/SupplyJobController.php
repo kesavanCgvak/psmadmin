@@ -481,7 +481,14 @@ class SupplyJobController extends Controller
                 ]);
 
                 if ($supplyJob->rentalJob) {
-                    $supplyJob->rentalJob->update(['status' => 'completed_pending_rating']);
+                    $rentalJob = $supplyJob->rentalJob;
+                    // Rental job = completed_pending_rating only when ALL accepted providers have marked completed
+                    $anyStillPending = SupplyJob::where('rental_job_id', $rentalJob->id)
+                        ->whereIn('status', ['accepted', 'partially_accepted'])
+                        ->exists();
+                    $rentalJob->update([
+                        'status' => $anyStillPending ? 'partially_accepted' : 'completed_pending_rating',
+                    ]);
                 }
             });
 

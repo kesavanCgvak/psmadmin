@@ -85,6 +85,7 @@ class RentalJobController extends Controller
                 $suppliers = $job->supplyJobs->map(function ($sj) {
                     $supplier = [
                         'supply_job_id' => $sj->id,
+                        'company_id' => $sj->provider_id ?? $sj->providerCompany->id ?? null,
                         'company_name' => $sj->providerCompany->name ?? 'Unknown',
                         'status' => $sj->status,
                     ];
