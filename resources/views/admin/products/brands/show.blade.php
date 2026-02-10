@@ -58,7 +58,9 @@
                         <ul class="list-group">
                             @foreach($brand->products as $product)
                                 <li class="list-group-item">
-                                    <strong>{{ $product->model }}</strong>
+                                    <a href="{{ route('admin.products.show', ['product' => $product, 'from_brand' => $brand->id]) }}" class="text-body">
+                                        <strong>{{ $product->model }}</strong>
+                                    </a>
                                     <br>
                                     <small class="text-muted">
                                         Category: {{ $product->category?->name ?? 'N/A' }}

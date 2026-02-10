@@ -75,13 +75,20 @@
                         <dd class="col-sm-8">{{ $product->updated_at?->format('M d, Y H:i:s') }}</dd>
                     </dl>
                 </div>
-                <div class="card-footer">
-                    <a href="{{ route('admin.products.edit', $product) }}" class="btn btn-warning">
-                        <i class="fas fa-edit"></i> Edit
-                    </a>
-                    <a href="{{ route('admin.products.index') }}" class="btn btn-default">
-                        <i class="fas fa-arrow-left"></i> Back to List
-                    </a>
+                <div class="card-footer d-flex justify-content-between align-items-center">
+                    <div>
+                        <a href="{{ route('admin.products.edit', $product) }}" class="btn btn-warning">
+                            <i class="fas fa-edit"></i> Edit
+                        </a>
+                        <a href="{{ route('admin.products.index') }}" class="btn btn-default">
+                            <i class="fas fa-arrow-left"></i> Back to List
+                        </a>
+                    </div>
+                    @if(request()->has('from_brand'))
+                        <a href="{{ route('admin.brands.show', request()->query('from_brand')) }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Brand
+                        </a>
+                    @endif
                 </div>
             </div>
         </div>
