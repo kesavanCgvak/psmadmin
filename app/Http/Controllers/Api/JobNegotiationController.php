@@ -338,10 +338,13 @@ class JobNegotiationController extends Controller
                     $rentalJob->fulfilled_quantity = $totalRequestedQty;
                     $remainingQty = 0;
 
-                    // Cancel all other open supply jobs
+                    // Cancel all other open supply jobs (exclude any already handshaken via accepted offer)
                     SupplyJob::where('rental_job_id', $rentalJob->id)
                         ->where('id', '!=', $supplyJob->id)
                         ->whereNotIn('status', ['accepted', 'completed'])
+                        ->whereDoesntHave('supplyJobOffers', function ($q) {
+                            $q->where('status', 'accepted');
+                        })
                         ->update(['status' => 'cancelled']);
                 } else {
                     // Partially fulfilled
@@ -395,7 +398,10 @@ class JobNegotiationController extends Controller
 
             $emails = array_unique(array_filter($emails));
 
-            // Handshake success mail
+            // Handshake success mail (includes unpack date for provider)
+            $unpackDateFormatted = $supplyJob->unpacking_date
+                ? \Carbon\Carbon::parse($supplyJob->unpacking_date)->format('d M Y')
+                : null;
             $mailContent = [
                 'offer_id' => $offer->id,
                 'sender' => $senderCompany->name ?? 'A Company',
@@ -408,6 +414,7 @@ class JobNegotiationController extends Controller
                 'remaining_quantity' => $remainingQty,
                 'date' => now()->format('d M Y, h:i A'),
                 'products' => $handshakeProducts,
+                'unpacking_date' => $unpackDateFormatted,
             ];
 
             foreach ($emails as $email) {

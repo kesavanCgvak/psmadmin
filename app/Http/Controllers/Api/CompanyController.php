@@ -744,8 +744,9 @@ class CompanyController extends Controller
                 ->pluck('company_id')
                 ->toArray();
 
-            // ✅ Main query with joins + geolocation
+            // ✅ Main query with joins + geolocation (exclude admin-blocked companies)
             $query = Company::with(['defaultContactProfile'])
+                ->whereNull('blocked_by_admin_at')
                 ->join('equipments', function ($join) use ($productIds) {
                     $join->on('companies.id', '=', 'equipments.company_id')
                         ->whereIn('equipments.product_id', $productIds);
@@ -918,8 +919,9 @@ class CompanyController extends Controller
             // Support multiple product IDs
             $productIds = explode(',', $request->product_id);
 
-            // Main query with SQL-based distance calculation
+            // Main query with SQL-based distance calculation (exclude admin-blocked companies)
             $query = Company::where('hide_from_gear_finder', 0)
+                ->whereNull('blocked_by_admin_at')
                 ->with(['defaultContactProfile'])
                 ->join('equipments', function ($join) use ($productIds) {
                     $join->on('companies.id', '=', 'equipments.company_id')
@@ -1031,10 +1033,11 @@ class CompanyController extends Controller
                 ], 401);
             }
 
-            // 2️⃣ Get all companies except user's company
+            // 2️⃣ Get all companies except user's company (exclude admin-blocked)
             $companies = Company::with(['country', 'state', 'city'])
                 ->withAvg('ratings', 'rating')
                 ->where('id', '!=', $user->company_id)
+                ->whereNull('blocked_by_admin_at')
                 ->get();
 
             // 3️⃣ Fetch all ratings for these companies (single query)
