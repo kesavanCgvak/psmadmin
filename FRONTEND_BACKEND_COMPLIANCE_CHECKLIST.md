@@ -100,10 +100,11 @@ Supported in lists/detail and filters:
 
 | Spec | Backend implementation |
 |------|-------------------------|
+| **Email when provider marks completed:** notify **renter** to rate | ✅ Sent immediately when provider calls `POST /api/supply-jobs/:id/complete` – email `jobRatingRequest` |
 | **2 days after Unpack Date:** remind **provider** to mark job completed | ✅ 2, 7, 14, 21, 30 days after unpack – command `supply-jobs:send-completion-reminders` (daily) |
-| **Every 7 days after rating request:** remind **renter** to rate | ✅ 2, 7, 14, 21, 30 days after **completed** date – command `supply-jobs:send-renter-rating-reminders` (daily) |
+| **Every 7 days after rating request:** remind **renter** to rate | ✅ Every 7 days: 7, 14, 21, 30 days after **completed** date – command `supply-jobs:send-renter-rating-reminders` (daily) |
 
-**Note:** Backend uses a fixed schedule (2, 7, 14, 21, 30 days) for both provider and renter reminders, not “every 7 days” literally. Frontend can treat these as “follow-up reminders up to 30 days.”
+**Note:** Renter reminders start at 7 days (not 2 days) and continue every 7 days up to 30 days.
 
 ---
 
@@ -114,6 +115,5 @@ Supported in lists/detail and filters:
 - Rental job status with multiple providers is correct (completed_pending_rating only when all completed; rated when all rated).
 - Supply and rental list/detail include `job_rating` / `supplier_rating` with the agreed shape and ISO 8601 dates.
 - Rental list suppliers include `company_id`.
-- Reminder schedules run as 2, 7, 14, 21, 30 days (provider after unpack; renter after completed date).
-
-No breaking gaps for the frontend; only reminder wording/schedule differs slightly from “every 7 days” (backend uses the 5-step schedule above).
+- Reminder schedules: Provider = 2, 7, 14, 21, 30 days after unpack; Renter = 7, 14, 21, 30 days after completed (every 7 days).
+- Initial email sent to renter immediately when provider marks job as completed.

@@ -11,13 +11,13 @@ use Illuminate\Support\Facades\Mail;
 class SendRenterRatingReminders extends Command
 {
     /**
-     * Reminder schedule: days after completed_at (follow-up up to 30 days).
+     * Reminder schedule: every 7 days after completed_at (up to 30 days).
      */
-    protected const REMINDER_DAYS = [2, 7, 14, 21, 30];
+    protected const REMINDER_DAYS = [7, 14, 21, 30];
 
     protected $signature = 'supply-jobs:send-renter-rating-reminders';
 
-    protected $description = 'Send reminder emails to renters to rate the job (2, 7, 14, 21, 30 days after completed date)';
+    protected $description = 'Send reminder emails to renters to rate the job (every 7 days: 7, 14, 21, 30 days after completed date)';
 
     public function handle(): int
     {
@@ -100,10 +100,9 @@ class SendRenterRatingReminders extends Command
         $rentalJob = $supplyJob->rentalJob;
         $daysSinceCompleted = $completedAt->diffInDays(Carbon::today());
         $labels = [
-            2 => 'first',
-            7 => 'second',
-            14 => 'third',
-            21 => 'fourth',
+            7 => 'first',
+            14 => 'second',
+            21 => 'third',
             30 => 'final',
         ];
 

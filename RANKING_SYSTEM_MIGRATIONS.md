@@ -134,8 +134,8 @@ After running these migrations, the following features are available:
    - Reminders stop once job is marked as completed
 
 5. ✅ **Renter Rating Request & Reminders**
-   - When provider marks job as completed: email sent to renter requesting a rating (existing flow)
-   - If renter does not rate: follow-up reminders at 2, 7, 14, 21, 30 days after completed date
+   - When provider marks job as completed: email sent to renter requesting a rating (immediate)
+   - If renter does not rate: follow-up reminders every 7 days (7, 14, 21, 30 days after completed date)
    - Reminders stop once renter submits a rating
 
 ---
