@@ -12,10 +12,6 @@ class SupplyJob extends Model
 {
     use HasFactory;
 
-    protected $casts = [
-        'is_similar_request' => 'boolean',
-    ];
-
     protected $fillable = [
         'rental_job_id',
         'provider_id',
@@ -35,7 +31,12 @@ class SupplyJob extends Model
     ];
 
     protected $casts = [
+        'is_similar_request' => 'boolean',
         'completed_at' => 'datetime',
+        'packing_date' => 'date',
+        'delivery_date' => 'date',
+        'return_date' => 'date',
+        'unpacking_date' => 'date',
     ];
 
     public function rentalJob()
