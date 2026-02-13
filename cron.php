@@ -15,13 +15,14 @@
 // ============================================
 // CONFIGURATION - ADJUST THIS PATH
 // ============================================
-// Option 1: Use __DIR__ (recommended if cron.php is in project root)
-$projectPath = __DIR__;
+// If cron.php is in a SUBFOLDER (e.g. schedulerFiles), point to Laravel project root (parent folder)
+$projectPath = dirname(__DIR__);
 
-// Option 2: Use absolute path (if __DIR__ doesn't work)
-// Uncomment and adjust the path below:
-// $projectPath = '/home/username/public_html/psmadmin';
-// $projectPath = '/var/www/vhosts/domain.com/public_html/psmadmin';
+// If cron.php is in Laravel project ROOT (same folder as artisan, vendor), use:
+// $projectPath = __DIR__;
+
+// Or use absolute path (recommended for shared hosting when in subfolder):
+// $projectPath = '/home/prosubmarket/prosubmarket.cgstagingsite.com';
 
 // ============================================
 // BOOTSTRAP LARAVEL
