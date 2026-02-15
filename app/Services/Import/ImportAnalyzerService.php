@@ -196,6 +196,11 @@ class ImportAnalyzerService
         $matched = 0;
 
         foreach ($session->items as $item) {
+            // Ignore confirmed/imported and explicitly skipped/removed rows
+            if ($item->status === ImportSessionItem::STATUS_CONFIRMED || $item->is_skipped) {
+                continue;
+            }
+
             // Count rejected items
             if ($item->status === 'rejected') {
                 $rejected++;
@@ -240,27 +245,158 @@ class ImportAnalyzerService
             }
         }
 
-        // Count total analyzed items (both newly analyzed and previously analyzed)
-        $totalAnalyzed = $session->items()->where('status', 'analyzed')->count();
-        $totalRejected = $session->items()->where('status', 'rejected')->count();
-        $totalMatched = $session->items()->whereHas('matches')->count();
+        // Reload items with fresh matches
+        $session->load(['items.matches.product.brand', 'items.matches.product.category', 'items.matches.product.subCategory']);
+
+        // Work only with active items (not skipped/removed, not confirmed/imported)
+        $activeItems = $session->items->filter(function ($item) {
+            return !$item->is_skipped && $item->status !== ImportSessionItem::STATUS_CONFIRMED;
+        });
+
+        // Count totals using only active items
+        $totalRows = $activeItems->count();
+        $totalAnalyzed = $activeItems->where('status', ImportSessionItem::STATUS_ANALYZED)->count();
+        $totalRejected = $activeItems->where('status', ImportSessionItem::STATUS_REJECTED)->count();
+        $totalMatched = $activeItems->filter(function ($item) {
+            return $item->matches && $item->matches->isNotEmpty();
+        })->count();
 
         $session->update([
-            'total_rows' => $session->items()->count(),
+            'total_rows' => $totalRows,
             'valid_rows' => $totalAnalyzed,
             'rejected_rows' => $totalRejected,
         ]);
 
-        // ✅ Reload to get fresh matches with product relationships
-        $session->load(['items.matches.product.brand', 'items.matches.product.category', 'items.matches.product.subCategory']);
-
         return [
-            'total_rows' => $session->items()->count(),
-            'analyzed' => $totalAnalyzed, // Total analyzed (new + existing)
+            'total_rows' => $totalRows,
+            'analyzed' => $totalAnalyzed, // Total analyzed among active rows
             'rejected' => $totalRejected,
-            'matched' => $totalMatched, // Items that have at least one match
-            'items' => $session->items,
+            'matched' => $totalMatched, // Active items that have at least one match
+            'items' => $activeItems,
         ];
+    }
+
+    /**
+     * Force re-analysis of an existing import session without re-uploading the file.
+     *
+     * - Clears existing matches for non-confirmed rows
+     * - Re-runs validation and normalization for non-confirmed rows based on stored raw data
+     * - Optionally resets is_skipped flags (default: true)
+     * - Rebuilds match suggestions using the latest matching rules
+     */
+    public function reanalyze(ImportSession $session, bool $resetSkipped = true): array
+    {
+        // Load items with matches for this session
+        $session->load(['items.matches']);
+
+        // Collect IDs of items that can be safely re-analyzed
+        // Exclude confirmed rows and any rows explicitly marked as skipped/removed.
+        $retriableItemIds = $session->items
+            ->filter(function ($item) {
+                return $item->status !== ImportSessionItem::STATUS_CONFIRMED
+                    && !$item->is_skipped;
+            })
+            ->pluck('id');
+
+        if ($retriableItemIds->isNotEmpty()) {
+            // Clear existing matches for non-confirmed items
+            ImportSessionMatch::whereIn('import_session_item_id', $retriableItemIds)->delete();
+        }
+
+        // Optionally reset skip flags so previously skipped rows are reconsidered
+        if ($resetSkipped && $retriableItemIds->isNotEmpty()) {
+            ImportSessionItem::whereIn('id', $retriableItemIds)->update(['is_skipped' => false]);
+        }
+
+        // Re-run validation and normalization for non-confirmed rows based on stored raw data
+        $validator = new DescriptionValidator();
+
+        foreach ($session->items as $item) {
+            // Never touch confirmed items – they represent already imported inventory
+            // Also never touch explicitly skipped/removed items.
+            if ($item->status === ImportSessionItem::STATUS_CONFIRMED || $item->is_skipped) {
+                continue;
+            }
+
+            $description = trim($item->original_description ?? '');
+
+            // If description is somehow empty, mark as rejected and skip
+            if ($description === '') {
+                $item->update([
+                    'status' => ImportSessionItem::STATUS_REJECTED,
+                    'rejection_reason' => 'Invalid or meaningless description.',
+                    'detected_model' => null,
+                    'normalized_model' => null,
+                    'action' => null,
+                    'selected_product_id' => null,
+                ]);
+                continue;
+            }
+
+            $rejectionMessages = [];
+
+            // Re-validate price if present (price is already normalized to numeric when stored)
+            $price = $item->price;
+            if ($price !== null) {
+                if (!is_numeric($price)) {
+                    $rejectionMessages[] = 'Invalid price: must be a numeric value.';
+                } elseif ($price < 0) {
+                    $rejectionMessages[] = 'Invalid price: negative values are not allowed.';
+                }
+            }
+
+            $hasPotentialMatches = false;
+
+            try {
+                // Re-run enhanced description validation
+                $validator->validateDescription($description);
+            } catch (ValidationException $e) {
+                // If validation fails, check for potential matches before rejecting
+                $hasPotentialMatches = $this->hasPotentialMatches($description);
+
+                // If no potential matches, collect description errors and reject
+                if (!$hasPotentialMatches) {
+                    $descriptionErrors = $e->errors()['description'] ?? [];
+                    if (!empty($descriptionErrors)) {
+                        $rejectionMessages = array_merge($rejectionMessages, $descriptionErrors);
+                    }
+
+                    if (empty($rejectionMessages)) {
+                        $rejectionMessages[] = 'Invalid or meaningless description.';
+                    }
+                }
+            }
+
+            // If we have validation errors and no potential matches, mark as rejected
+            if (!empty($rejectionMessages) && !$hasPotentialMatches) {
+                $item->update([
+                    'status' => ImportSessionItem::STATUS_REJECTED,
+                    'rejection_reason' => implode('; ', $rejectionMessages),
+                    'detected_model' => null,
+                    'normalized_model' => null,
+                    'action' => null,
+                    'selected_product_id' => null,
+                ]);
+                continue;
+            }
+
+            // Valid row (or invalid description but with potential matches) – refresh normalization
+            $detectedModel = ProductNormalizer::extractModelCode($description);
+            $normalizedCode = $detectedModel ? ProductNormalizer::normalizeCode($detectedModel) : null;
+            $normalizedFull = ProductNormalizer::normalizeFullName(null, $description);
+
+            $item->update([
+                'status' => ImportSessionItem::STATUS_PENDING,
+                'rejection_reason' => null,
+                'detected_model' => $detectedModel,
+                'normalized_model' => $normalizedCode ?? $normalizedFull,
+                'action' => null,
+                'selected_product_id' => null,
+            ]);
+        }
+
+        // After resetting items, reuse the existing analyze() pipeline to rebuild matches
+        return $this->analyze($session->fresh());
     }
 
     /**
