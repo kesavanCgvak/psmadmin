@@ -1035,13 +1035,45 @@ class CompanyController extends Controller
 
             // 2️⃣ Get all companies except user's company (exclude admin-blocked)
             $companies = Company::with(['country', 'state', 'city'])
-                ->withAvg('ratings', 'rating')
                 ->where('id', '!=', $user->company_id)
                 ->whereNull('blocked_by_admin_at')
                 ->get();
 
             // 3️⃣ Fetch all ratings for these companies (single query)
             $companyIds = $companies->pluck('id');
+
+            // Calculate average ratings and counts from job_ratings (new rating system)
+            // Join job_ratings -> supply_jobs -> companies where provider_id = company.id
+            $jobRatingsData = DB::table('job_ratings')
+                ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
+                ->whereIn('supply_jobs.provider_id', $companyIds)
+                ->whereNotNull('job_ratings.rated_at')
+                ->groupBy('supply_jobs.provider_id')
+                ->select(
+                    'supply_jobs.provider_id',
+                    DB::raw('AVG(job_ratings.rating) as avg_rating'),
+                    DB::raw('COUNT(job_ratings.id) as rating_count')
+                )
+                ->get()
+                ->keyBy('provider_id');
+
+            $jobRatingsAvg = $jobRatingsData->pluck('avg_rating', 'provider_id')->toArray();
+            $jobRatingsCount = $jobRatingsData->pluck('rating_count', 'provider_id')->toArray();
+
+            // Calculate average ratings and counts from company_ratings (old manual rating system) as fallback
+            $companyRatingsData = DB::table('company_ratings')
+                ->whereIn('company_id', $companyIds)
+                ->groupBy('company_id')
+                ->select(
+                    'company_id',
+                    DB::raw('AVG(rating) as avg_rating'),
+                    DB::raw('COUNT(id) as rating_count')
+                )
+                ->get()
+                ->keyBy('company_id');
+
+            $companyRatingsAvg = $companyRatingsData->pluck('avg_rating', 'company_id')->toArray();
+            $companyRatingsCount = $companyRatingsData->pluck('rating_count', 'company_id')->toArray();
 
             $userRatings = CompanyRating::whereIn('company_id', $companyIds)
                 ->where('user_id', $user->id)
@@ -1054,16 +1086,22 @@ class CompanyController extends Controller
                 ->toArray();
 
             // 5️⃣ Final response map (no queries inside)
-            $formatted = $companies->map(function ($company) use ($userRatings, $blockedCompanies) {
-                // Calculate average rating: use company_ratings average if available, otherwise fall back to companies.rating
-                $avgRating = null;
-                if ($company->ratings_avg_rating !== null) {
-                    // Company has ratings in company_ratings table, use the average
-                    $avgRating = $company->ratings_avg_rating;
-                } else {
-                    // No ratings in company_ratings table, fall back to default rating from companies.rating
-                    $avgRating = $company->rating ?? 0;
+            $formatted = $companies->map(function ($company) use ($jobRatingsAvg, $jobRatingsCount, $companyRatingsAvg, $companyRatingsCount, $userRatings, $blockedCompanies) {
+                // Calculate average rating and count: prioritize job_ratings (new system) if available
+                // Otherwise fall back to company_ratings (old system) or show 0
+                $avgRating = 0;
+                $ratingCount = 0;
+                
+                if (isset($jobRatingsAvg[$company->id])) {
+                    // Company has ratings from job_ratings (new rating system)
+                    $avgRating = $jobRatingsAvg[$company->id];
+                    $ratingCount = $jobRatingsCount[$company->id] ?? 0;
+                } elseif (isset($companyRatingsAvg[$company->id])) {
+                    // Fall back to company_ratings average (old manual rating system)
+                    $avgRating = $companyRatingsAvg[$company->id];
+                    $ratingCount = $companyRatingsCount[$company->id] ?? 0;
                 }
+                // If no ratings found, both avgRating and ratingCount remain 0
 
                 return [
                     'id' => $company->id,
@@ -1075,8 +1113,9 @@ class CompanyController extends Controller
                     'state' => $company->state?->name ?? null,
                     'country' => $company->country?->name ?? null,
 
-                    // Ratings: use company_ratings average if available, otherwise fall back to companies.rating
+                    // Ratings: prioritize job_ratings average (new system), fall back to company_ratings (old system) or show 0
                     'average_rating' => round($avgRating, 1),
+                    'rating_count' => (int) $ratingCount,
                     'user_rating' => $userRatings[$company->id] ?? null,
 
                     // Block status
