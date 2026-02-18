@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ImportSession;
+use App\Models\ImportSessionItem;
 use App\Models\ImportSessionMatch;
 use App\Services\Import\ImportAnalyzerService;
 use App\Services\Import\ImportConfirmationService;
@@ -438,6 +439,51 @@ class ImportController extends Controller
     }
 
     /**
+     * Remove a row from the import.
+     * Use with delete icon - permanently excludes the row from matching, validation, and import.
+     */
+    public function removeItem(ImportSession $session, ImportSessionItem $item): JsonResponse
+    {
+        $this->authorize('update', $session);
+
+        if ($item->import_session_id !== $session->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Item does not belong to this import session',
+            ], 422);
+        }
+
+        if ($item->status === 'confirmed') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot remove an already imported row',
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            ImportSessionMatch::where('import_session_item_id', $item->id)->delete();
+            $item->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Row removed from import',
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to remove row',
+            ], 500);
+        }
+    }
+
+    /**
      * Update item selections (save draft state)
      * Allows users to save their matching decisions without confirming
      */
@@ -450,8 +496,8 @@ class ImportController extends Controller
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.id' => 'required|exists:import_session_items,id',
-            // Allow saving either action, skip flag, or both.
-            'items.*.action' => 'nullable|in:attach,create,skip',
+            // attach/create = include in import; remove = permanently delete row (exclude from import)
+            'items.*.action' => 'nullable|in:attach,create,skip,remove',
             'items.*.is_skipped' => 'sometimes|boolean',
             'items.*.product_id' => [
                 'nullable',
@@ -469,9 +515,9 @@ class ImportController extends Controller
 
                 // Only update if item is not already confirmed
                 if ($item->status !== 'confirmed') {
-                    // If the user chose to skip/remove this row, hard-delete it from the import.
+                    // If the user chose to remove this row, hard-delete it from the import.
                     $shouldRemove = false;
-                    if (array_key_exists('action', $itemData) && $itemData['action'] === 'skip') {
+                    if (array_key_exists('action', $itemData) && in_array($itemData['action'], ['skip', 'remove'], true)) {
                         $shouldRemove = true;
                     }
                     if (array_key_exists('is_skipped', $itemData) && $itemData['is_skipped']) {
@@ -487,7 +533,7 @@ class ImportController extends Controller
 
                     $updates = [];
 
-                    if (array_key_exists('action', $itemData) && $itemData['action'] !== 'skip') {
+                    if (array_key_exists('action', $itemData) && !in_array($itemData['action'], ['skip', 'remove'], true)) {
                         $updates['action'] = $itemData['action'];
                         $updates['selected_product_id'] = $itemData['action'] === 'attach'
                             ? ($itemData['product_id'] ?? null)
