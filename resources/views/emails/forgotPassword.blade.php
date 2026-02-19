@@ -60,13 +60,13 @@
                             <p>We received a request to reset your password.</p>
                             <p>If you did not make this request, you can safely ignore this email.</p>
                             <p>Otherwise, please click the button below to reset your password:</p>
-                            <p style="text-align:center;">
-                                <a href="{{ env('APP_FRONTEND_URL') }}#/reset-password/{{ $token }}"
-                                    class="btn">Reset Password</a>
+                            <p style="text-align: center; margin: 24px 0;">
+                                <a href="{{ $reset_url }}"
+                                    style="display: inline-block; padding: 14px 28px; background-color: #e8d50b; color: #000000; font-size: 16px; font-weight: bold; text-decoration: none; border-radius: 6px; border: none;">Reset Password</a>
                             </p>
                             <p>If the button above doesn’t work, copy and paste this link into your browser:</p>
                             <p style="word-break: break-all; font-size: 14px; color: #0066cc;">
-                                {{ env('APP_FRONTEND_URL') }}#/reset-password/{{ $token }}
+                                {{ $reset_url }}
                             </p>
                             <p>Best regards,<br>Pro Subrental Marketplace</p>
                         </td>

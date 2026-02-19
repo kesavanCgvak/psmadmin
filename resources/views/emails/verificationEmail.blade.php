@@ -68,13 +68,12 @@
                             <p>At PSM, our goal is to create new revenue streams by introducing you to new people in the
                                 industry looking for the equipment sitting idle in your warehouse.</p>
                             <p><b>Please confirm your email address to activate your account:</b></p>
-                            <p style="text-align:center;">
-                                <a href="{{ env('APP_FRONTEND_URL') }}#/verify-account?token={{ $token }}"
-                                    class="btn">Verify Email</a>
+                            <p style="text-align: center; margin: 24px 0;">
+                                <a href="{{ $verify_url ?? env('APP_FRONTEND_URL') . '#/verify-account?token=' . $token }}" style="display: inline-block; padding: 14px 28px; background-color: #e8d50b; color: #000000; font-size: 16px; font-weight: bold; text-decoration: none; border-radius: 6px;">Verify Email</a>
                             </p>
                             <p>If the button above doesn’t work, copy and paste this link into your browser:</p>
                             <p style="word-break: break-all; font-size: 14px; color: #0066cc;">
-                                {{ env('APP_FRONTEND_URL') }}#/verify-account?token={{ $token }}
+                                {{ $verify_url ?? env('APP_FRONTEND_URL') . '#/verify-account?token=' . $token }}
                             </p>
                             <p>Best regards,<br>Pro Subrental Marketplace</p>
                         </td>

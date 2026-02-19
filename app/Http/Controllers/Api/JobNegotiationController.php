@@ -418,9 +418,8 @@ class JobNegotiationController extends Controller
             ];
 
             foreach ($emails as $email) {
-                Mail::send('emails.jobHandshakeAccepted', $mailContent, function ($message) use ($email) {
+                \App\Helpers\EmailHelper::send('jobHandshakeAccepted', $mailContent, function ($message) use ($email) {
                     $message->to($email)
-                        ->subject('Offer Accepted - Pro Subrental Marketplace')
                         ->from(config('mail.from.address'), config('mail.from.name'));
                 });
             }
@@ -442,9 +441,8 @@ class JobNegotiationController extends Controller
                             'date' => now()->format('d M Y, h:i A'),
                         ];
 
-                        Mail::send('emails.jobAutoCancelled', $cancelMail, function ($message) use ($email) {
+                        \App\Helpers\EmailHelper::send('jobAutoCancelled', $cancelMail, function ($message) use ($email) {
                             $message->to($email)
-                                ->subject('Rental Request Closed - Pro Subrental Marketplace')
                                 ->from(config('mail.from.address'), config('mail.from.name'));
                         });
                     }
@@ -491,9 +489,8 @@ class JobNegotiationController extends Controller
                             'date' => now()->format('d M Y, h:i A'),
                         ];
 
-                        Mail::send('emails.jobPartialFulfilled', $partialMail, function ($message) use ($email) {
+                        \App\Helpers\EmailHelper::send('jobPartialFulfilled', $partialMail, function ($message) use ($email) {
                             $message->to($email)
-                                ->subject('Updated Availability - Pro Subrental Marketplace')
                                 ->from(config('mail.from.address'), config('mail.from.name'));
                         });
                     }
@@ -645,9 +642,8 @@ class JobNegotiationController extends Controller
             ];
 
             foreach ($emails as $email) {
-                Mail::send('emails.jobNegotiationCancelled', $mailContent, function ($message) use ($email) {
+                \App\Helpers\EmailHelper::send('jobNegotiationCancelled', $mailContent, function ($message) use ($email) {
                     $message->to($email)
-                        ->subject('Negotiation Cancelled - Pro Subrental Marketplace')
                         ->from(config('mail.from.address'), config('mail.from.name'));
                 });
             }

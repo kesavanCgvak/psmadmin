@@ -104,7 +104,7 @@ class SupportRequestController extends Controller
                     'name' => $profile->full_name,
                 ]);
 
-                Mail::send('emails.support-request', $emailData, function ($message) use ($supportEmail, $subject, $request, $profile) {
+                \App\Helpers\EmailHelper::send('support-request', $emailData, function ($message) use ($supportEmail, $subject, $request, $profile) {
                     $message->to($supportEmail)
                         ->subject('New Support Request: ' . $subject)
                         ->from($request->email, $profile->full_name);
@@ -210,7 +210,7 @@ class SupportRequestController extends Controller
                 // Get sales inbox email from config or env
             $salesEmail = config('mail.sales_inbox', env('SALES_INBOX_EMAIL', config('mail.from.address')));
 
-                Mail::send('emails.contact-sales', $emailData, function ($message) use ($salesEmail, $request) {
+                \App\Helpers\EmailHelper::send('contact-sales', $emailData, function ($message) use ($salesEmail, $request) {
                     $message->to($salesEmail)
                         ->subject('New Contact Sales Inquiry from ' . $request->name)
                         ->from($request->email, $request->name);

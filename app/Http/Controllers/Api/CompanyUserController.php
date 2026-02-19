@@ -90,15 +90,13 @@ class CompanyUserController extends Controller
                 $data_user->save();
                 $data = array('email' => $request->email);
 
-                Mail::send('emails.verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
+                \App\Helpers\EmailHelper::send('verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
                     $message->to($data['email']);
-                    $message->subject('Email Verification Mail');
-                    $message->from(config('mail.from.address'), config('mail.from.name')); // <-- set from here
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
                 });
 
                 // Send user credentials email to USER - ALL THE TIME (regardless of verification status)
-                // Email is sent TO the user's email address ($request->email)
-                Mail::send('emails.registrationSuccess', [
+                \App\Helpers\EmailHelper::send('registrationSuccess', [
                     'name' => $request->name,
                     'email' => $request->email,
                     'username' => $request->username,
@@ -106,15 +104,13 @@ class CompanyUserController extends Controller
                     'account_type' => $authUser->accountType,
                     'login_url' => env('APP_URL'),
                 ], function ($message) use ($request) {
-                    $message->to($request->email); // TO: User's email address
-                    $message->subject('Welcome to ProSub Marketplace - Account Created Successfully');
-                    $message->from(config('mail.from.address'), config('mail.from.name')); // FROM: System email
+                    $message->to($request->email);
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
                 });
 
                 $company = Company::find($request->company_id);
                 $companyName = $company ? $company->name : null;
-                // Mail to app admin that a new user has been created
-                Mail::send('emails.newRegistration', [
+                \App\Helpers\EmailHelper::send('newRegistration', [
                     'company_name' => $companyName,
                     'account_type' => $authUser->accountType,
                     'username' => $request->username,
@@ -122,7 +118,6 @@ class CompanyUserController extends Controller
                     'email' => $request->email
                 ], function ($message) use ($data) {
                     $message->to(config('mail.to.addresses'));
-                    $message->subject('New registration');
                     $message->from(config('mail.from.address'), config('mail.from.name'));
                 });
 

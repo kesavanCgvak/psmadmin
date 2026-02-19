@@ -83,8 +83,8 @@
                             <p>At PSM, our goal is to create new revenue streams by introducing you to new people in the
                                 industry looking for the equipment sitting idle in your warehouse.</p>
                             <p><b>You can now log in to your account:</b></p>
-                            <p style="text-align:center;">
-                                <a href="{{ $login_url }}" class="btn">Login to Your Account</a>
+                            <p style="text-align: center; margin: 24px 0;">
+                                <a href="{{ $login_url }}" style="display: inline-block; padding: 14px 28px; background-color: #e8d50b; color: #000000; font-size: 16px; font-weight: bold; text-decoration: none; border-radius: 6px;">Login to Your Account</a>
                             </p>
                             <p>If the button above doesn't work, copy and paste this link into your browser:</p>
                             <p style="word-break: break-all; font-size: 14px; color: #0066cc;">

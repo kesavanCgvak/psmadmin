@@ -44,7 +44,7 @@
 
                 <p style="margin-top: 20px;">You can manage your account anytime.</p>
                 <p style="text-align: center; margin: 24px 0;">
-                    <a href="{{ $app_url ?? env('APP_FRONTEND_URL') }}" style="display: inline-block; padding: 12px 24px; background-color: #1a73e8; color: #ffffff; text-decoration: none; border-radius: 4px;">Go to Dashboard</a>
+                    <a href="{{ $app_url ?? env('APP_FRONTEND_URL') }}" style="display: inline-block; padding: 14px 28px; background-color: #e8d50b; color: #000000; font-size: 16px; font-weight: bold; text-decoration: none; border-radius: 6px;">Go to Dashboard</a>
                 </p>
 
                 <p style="margin-top: 10px;">If you did not expect this email, please contact our support team.</p>

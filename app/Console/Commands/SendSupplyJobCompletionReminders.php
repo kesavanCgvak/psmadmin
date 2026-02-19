@@ -87,9 +87,9 @@ class SendSupplyJobCompletionReminders extends Command
             'reminder_label' => $labels[$daysAfterUnpack] ?? 'follow-up',
         ];
 
-        Mail::send('emails.jobCompletionReminder', $mailContent, function ($message) use ($email) {
+        \App\Helpers\EmailHelper::send('jobCompletionReminder', $mailContent, function ($message) use ($email) {
             $message->to($email)
-                ->subject('Reminder: Please complete your job - Pro Subrental Marketplace')
+                // Subject is set from template
                 ->from(config('mail.from.address'), config('mail.from.name'));
         });
     }

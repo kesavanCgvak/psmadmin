@@ -262,9 +262,8 @@ class SupplyJobActionsController extends Controller
 
             // Send emails
             foreach ($emails as $email) {
-                Mail::send('emails.supplyNewOffer', $mailContent, function ($message) use ($email) {
+                \App\Helpers\EmailHelper::send('supplyNewOffer', $mailContent, function ($message) use ($email) {
                     $message->to($email)
-                        ->subject('New Offer from Pro Subrental Marketplace')
                         ->from(config('mail.from.address'), config('mail.from.name'));
                 });
             }
