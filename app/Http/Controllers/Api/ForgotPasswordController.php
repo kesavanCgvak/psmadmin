@@ -41,16 +41,17 @@ class ForgotPasswordController extends Controller
                 'token' => $token,
                 'full_name' => $user->profile->full_name,
                 'email' => $user->profile->email,
-                'reset_url' => env('APP_FRONTEND_URL') . '/reset-password/' . $token,
+                'reset_url' => rtrim(env('APP_FRONTEND_URL', ''), '/') . '#/reset-password/' . $token,
             ];
 
             $to_name = $user->profile->full_name;
             $to_email = $user->profile->email;
 
-            Mail::send('emails.forgotPassword', $mail_content, function ($message) use ($to_name, $to_email) {
+            // Use database template via EmailHelper (falls back to blade file if not found)
+            \App\Helpers\EmailHelper::send('forgotPassword', $mail_content, function ($message) use ($to_name, $to_email) {
                 $message->to($to_email, $to_name)
-                    ->subject('Password Reset - Pro Subrental Marketplace');
-                $message->from(config('mail.from.address'), config('mail.from.name'));
+                    // Subject is set from template
+                    ->from(config('mail.from.address'), config('mail.from.name'));
             });
 
             return response()->json([

@@ -135,8 +135,8 @@
             </ul>
         </div>
 
-        <div style="text-align: center;">
-            <a href="{{ $adminPanelUrl }}" class="button">Access Admin Panel</a>
+        <div style="text-align: center; margin: 24px 0;">
+            <a href="{{ $adminPanelUrl }}" style="display: inline-block; padding: 14px 28px; background-color: #e8d50b; color: #000000; font-size: 16px; font-weight: bold; text-decoration: none; border-radius: 6px;">Access Admin Panel</a>
         </div>
 
         <div class="note">

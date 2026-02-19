@@ -639,9 +639,8 @@ class RentalJobActionsController extends Controller
                             'currency' => $requesterCompany->currency->symbol ?? '₹',
                         ];
 
-                        Mail::send('emails.rentalJobCancelled', $mailData, function ($message) use ($email) {
+                        \App\Helpers\EmailHelper::send('rentalJobCancelled', $mailData, function ($message) use ($email) {
                             $message->to($email)
-                                ->subject('Rental Job Cancelled - Pro Subrental Marketplace')
                                 ->from(config('mail.from.address'), config('mail.from.name'));
                         });
                     }

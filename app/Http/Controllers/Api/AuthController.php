@@ -231,9 +231,8 @@ class AuthController extends Controller
                             'app_url' => env('APP_FRONTEND_URL'),
                         ];
 
-                        Mail::send('emails.subscriptionCreated', $subscriptionEmailData, function ($message) use ($request) {
+                        \App\Helpers\EmailHelper::send('subscriptionCreated', $subscriptionEmailData, function ($message) use ($request) {
                             $message->to($request->email);
-                            $message->subject('Your subscription is set up');
                             $message->from(config('mail.from.address'), config('mail.from.name'));
                         });
                     }
@@ -268,14 +267,9 @@ class AuthController extends Controller
                 $data_user->save();
                 $data = array('email' => $request->email);
 
-                // Mail::send('emails.verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
-                //     $message->to($data['email']);
-                //     $message->subject('Email Verification Mail');
-                // });
-                Mail::send('emails.verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
+                \App\Helpers\EmailHelper::send('verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
                     $message->to($data['email']);
-                    $message->subject('Email Verification Mail');
-                    $message->from(config('mail.from.address'), config('mail.from.name')); // <-- set from here
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
                 });
 
                 Log::info('state', ['state_name' => $company_details->getState->name,]);
@@ -284,7 +278,7 @@ class AuthController extends Controller
                     'user_email' => $request->email,
                 ]);
 
-                Mail::send('emails.newRegistration', [
+                \App\Helpers\EmailHelper::send('newRegistration', [
                     'company_name' => $request->company_name,
                     'account_type' => $request->account_type,
                     'username' => $request->username,
@@ -296,7 +290,6 @@ class AuthController extends Controller
                     'email' => $request->email
                 ], function ($message) use ($data) {
                     $message->to(config('mail.to.addresses'));
-                    $message->subject('New registration');
                     $message->from(config('mail.from.address'), config('mail.from.name'));
                 });
 
