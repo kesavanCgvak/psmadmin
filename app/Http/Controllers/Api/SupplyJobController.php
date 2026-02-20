@@ -430,9 +430,9 @@ class SupplyJobController extends Controller
 
             //Send email if requester contact exists
             if ($requesterEmail) {
-                Mail::send('emails.supplyJobCancelled', $mailData, function ($message) use ($requesterEmail) {
+                \App\Helpers\EmailHelper::send('supplyJobCancelled', $mailData, function ($message) use ($requesterEmail) {
                     $message->to($requesterEmail)
-                        ->subject('Supply Job Cancelled - Pro Subrental Marketplace');
+                        ->from(config('mail.from.address'), config('mail.from.name'));
                 });
             }
 
@@ -511,12 +511,13 @@ class SupplyJobController extends Controller
                 }
                 $emails = array_unique(array_filter($emails));
                 foreach ($emails as $email) {
-                    Mail::send('emails.jobRatingRequest', [
+                    \App\Helpers\EmailHelper::send('jobRatingRequest', [
                         'rental_job_name' => $rentalJob->name,
                         'provider_name' => $supplyJob->providerCompany->name ?? 'Provider',
+                        'supply_job_name' => $supplyJob->name ?? '',
+                        'provider_company_name' => $supplyJob->providerCompany->name ?? 'Provider',
                     ], function ($message) use ($email) {
                         $message->to($email)
-                            ->subject('Rate Your Completed Job - Pro Subrental Marketplace')
                             ->from(config('mail.from.address'), config('mail.from.name'));
                     });
                 }

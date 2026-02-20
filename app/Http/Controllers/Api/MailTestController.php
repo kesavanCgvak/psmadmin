@@ -59,7 +59,7 @@ class MailTestController extends Controller
 
             // Send test email
             try {
-                Mail::send('emails.test-email', $emailData, function ($message) use ($testEmail, $subject) {
+                \App\Helpers\EmailHelper::send('test-email', $emailData, function ($message) use ($testEmail, $subject) {
                     $message->to($testEmail)
                         ->subject($subject)
                         ->from(config('mail.from.address'), config('mail.from.name'));

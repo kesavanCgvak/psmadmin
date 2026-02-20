@@ -23,9 +23,14 @@ class ImportSessionItem extends Model
         'price',
         'software_code',
         'status',
+        'is_skipped',
         'rejection_reason',
         'action', // 'attach' or 'create'
         'selected_product_id', // User's selection for attach action
+    ];
+
+    protected $casts = [
+        'is_skipped' => 'boolean',
     ];
 
     public function session(): BelongsTo
@@ -61,6 +66,11 @@ class ImportSessionItem extends Model
     public function isConfirmed(): bool
     {
         return $this->status === self::STATUS_CONFIRMED;
+    }
+
+    public function isSkipped(): bool
+    {
+        return (bool) $this->is_skipped;
     }
 }
 

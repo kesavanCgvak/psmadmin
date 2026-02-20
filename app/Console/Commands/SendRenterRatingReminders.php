@@ -114,9 +114,8 @@ class SendRenterRatingReminders extends Command
             'reminder_label' => $labels[$daysAfterCompleted] ?? 'follow-up',
         ];
 
-        Mail::send('emails.jobRatingReminder', $mailContent, function ($message) use ($email) {
+        \App\Helpers\EmailHelper::send('jobRatingReminder', $mailContent, function ($message) use ($email) {
             $message->to($email)
-                ->subject('Reminder: Please rate your completed job - Pro Subrental Marketplace')
                 ->from(config('mail.from.address'), config('mail.from.name'));
         });
     }

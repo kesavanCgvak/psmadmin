@@ -200,6 +200,13 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
         ->name('terms-and-conditions.edit');
     Route::put('/terms-and-conditions', [\App\Http\Controllers\Admin\TermsAndConditionsController::class, 'update'])
         ->name('terms-and-conditions.update');
+
+    // Email Templates Management
+    Route::resource('email-templates', \App\Http\Controllers\Admin\EmailTemplateController::class)->only(['index', 'edit', 'update']);
+    Route::post('/email-templates/{emailTemplate}/toggle-status', [\App\Http\Controllers\Admin\EmailTemplateController::class, 'toggleStatus'])
+        ->name('email-templates.toggle-status');
+    Route::get('/email-templates/{emailTemplate}/preview', [\App\Http\Controllers\Admin\EmailTemplateController::class, 'preview'])
+        ->name('email-templates.preview');
 });
 
 // Clear application cache

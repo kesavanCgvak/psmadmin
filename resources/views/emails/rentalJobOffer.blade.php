@@ -36,7 +36,9 @@
 
                 <p style="margin: 0 0 18px 0;">Login to your account to review and respond to this offer.</p>
 
-                <a href="{{ url('/') }}" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 16px; border-radius: 4px; font-weight: 600;">Login to Respond</a>
+                <p style="text-align: center; margin: 24px 0;">
+                    <a href="{{ $login_url ?? url('/') }}" style="display: inline-block; padding: 14px 28px; background-color: #e8d50b; color: #000000; font-size: 16px; font-weight: bold; text-decoration: none; border-radius: 6px;">Login to Respond</a>
+                </p>
             </td>
         </tr>
 

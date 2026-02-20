@@ -57,7 +57,7 @@
                 <p style="margin-top: 20px;">You can reactivate your subscription anytime before it expires, or resubscribe after it ends.</p>
                 
                 <p style="text-align: center; margin: 24px 0;">
-                    <a href="{{ $app_url }}" style="display: inline-block; padding: 12px 24px; background-color: #1a73e8; color: #ffffff; text-decoration: none; border-radius: 4px; margin-right: 10px;">Manage Subscription</a>
+                    <a href="{{ $app_url }}" style="display: inline-block; padding: 14px 28px; background-color: #e8d50b; color: #000000; font-size: 16px; font-weight: bold; text-decoration: none; border-radius: 6px;">Manage Subscription</a>
                 </p>
 
                 <p style="margin-top: 20px;">If you have any questions or need assistance, please don't hesitate to contact our support team.</p>

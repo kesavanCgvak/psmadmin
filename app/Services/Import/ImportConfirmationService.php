@@ -36,7 +36,8 @@ class ImportConfirmationService
                 ->where('excel_row_number', $rowData['row'])
                 ->first();
 
-            if (!$item || $item->status === 'confirmed') {
+            // Skip rows that are already confirmed or explicitly marked as skipped
+            if (!$item || $item->status === 'confirmed' || $item->is_skipped) {
                 continue;
             }
 

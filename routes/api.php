@@ -170,7 +170,9 @@ Route::middleware('jwt.verify')->prefix('import')->group(function () {
     Route::get('/sessions/{session}', [ImportController::class, 'show']); // Get session with items
     Route::post('/sessions/{session}/upload', [ImportController::class, 'upload']); // Upload Excel
     Route::post('/sessions/{session}/analyze', [ImportController::class, 'analyze']); // Run matching
+    Route::post('/sessions/{session}/reanalyze', [ImportController::class, 'reanalyze']); // Force re-analysis using stored data
     Route::put('/sessions/{session}/selections', [ImportController::class, 'updateSelections']); // Save draft selections
+    Route::delete('/sessions/{session}/items/{item}', [ImportController::class, 'removeItem']); // Remove row from import
     Route::post('/sessions/{session}/confirm', [ImportController::class, 'confirm']); // Confirm and import
     Route::post('/sessions/{session}/cancel', [ImportController::class, 'cancel']); // Cancel session
 });

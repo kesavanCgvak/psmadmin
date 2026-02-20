@@ -473,6 +473,12 @@ return [
             'icon_color' => 'info',
         ],
         [
+            'text' => 'Email Templates',
+            'route' => 'admin.email-templates.index',
+            'icon' => 'fas fa-fw fa-envelope',
+            'icon_color' => 'primary',
+        ],
+        [
             'text' => 'User Restrictions',
             'route' => 'admin.user-restrictions.index',
             'icon' => 'fas fa-fw fa-users-cog',

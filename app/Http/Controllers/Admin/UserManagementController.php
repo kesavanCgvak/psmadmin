@@ -167,7 +167,8 @@ class UserManagementController extends Controller
         try {
             // Send user credentials email to USER - ALL THE TIME (regardless of verification status)
             // Email is sent TO the user's email address ($request->email)
-            Mail::send('emails.registrationSuccess', [
+            // Using EmailHelper to get template from database or fallback to blade file
+            \App\Helpers\EmailHelper::send('registrationSuccess', [
                 'name' => $request->full_name,
                 'email' => $request->email,
                 'username' => $request->username,
@@ -176,7 +177,7 @@ class UserManagementController extends Controller
                 'login_url' => env('APP_URL'),
             ], function ($message) use ($request) {
                 $message->to($request->email); // TO: User's email address
-                $message->subject('Welcome to ProSub Marketplace - Account Created Successfully');
+                // Subject is set from template, but can be overridden here if needed
                 $message->from(config('mail.from.address'), config('mail.from.name')); // FROM: System email
             });
 
@@ -185,12 +186,12 @@ class UserManagementController extends Controller
                 $token = Str::random(30);
                 $user->update(['token' => $token]);
 
-                Mail::send('emails.verificationEmail', [
+                \App\Helpers\EmailHelper::send('verificationEmail', [
                     'token' => $token,
                     'username' => $request->username
                 ], function ($message) use ($request) {
                     $message->to($request->email); // TO: User's email address
-                    $message->subject('Email Verification - ProSub Marketplace');
+                    // Subject is set from template
                     $message->from(config('mail.from.address'), config('mail.from.name')); // FROM: System email
                 });
             }

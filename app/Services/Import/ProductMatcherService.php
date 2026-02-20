@@ -10,16 +10,15 @@ use Illuminate\Support\Collection;
 class ProductMatcherService
 {
     /**
-     * Product matching based on Brand OR Product Name/Model
-     * 
-     * Matching Rules:
-     * 1. A product matches if brand name matches OR product name/model words match
-     * 2. Brand and product name are independent - both are equal matching options
-     * 3. Category/Sub-Category are completely ignored
-     * 4. Word order, hyphens, extra spaces are ignored
-     * 5. Normalize input values before comparison
-     * 6. Confidence based on similarity score
-     * 
+     * Product matching with strict priority rules.
+     *
+     * Priority 1 – Brand Match: Detect brand (e.g. VARI*LITE → VARILITE), fetch ALL products under that brand.
+     * Priority 2 – Within-Brand: Rank by model keywords (e.g. VL3500). Partial LIKE match, case-insensitive.
+     * Priority 3 – Cross-Brand: Include keyword matches from other brands at lower priority.
+     *
+     * - Limit applied AFTER brand filtering and relevance scoring.
+     * - Category/Sub-Category ignored. Word order, hyphens, extra spaces normalized.
+     *
      * @param ImportSessionItem $item
      * @param float $minConfidence Minimum confidence threshold (0.0 to 1.0)
      * @return Collection Collection of matches with product_id, psm_code, confidence, match_type
@@ -54,78 +53,96 @@ class ProductMatcherService
                 }
                 return true;
             });
-            // Re-index array after filtering
-            $searchWords = array_values($searchWords);
+            // When brand is one word (VARILITE), remove "vari" and "lite" - they form the brand
+            $brandAlphanumeric = preg_replace('/[^a-z0-9]/', '', strtolower($extractedBrandName ?? ''));
+            if (in_array($brandAlphanumeric, ['varilite', 'variolite'])) {
+                $searchWords = array_values(array_filter($searchWords, fn($w) => !in_array(strtolower($w), ['vari', 'lite'])));
+            } else {
+                $searchWords = array_values($searchWords);
+            }
         }
-        // ✅ If no brand found, use ALL words from description for matching (no brand removal)
+        // If no brand found, use ALL words from description for matching
         
         // ✅ NEW: Identify key terms (model numbers, brand identifiers) vs generic words
         // Do this after brand removal so we have the final search words
         $keyTerms = $this->identifyKeyTerms($searchWords);
         
-        // STEP 2: Build query - match by brand OR product name/model words
-        // Category and sub-category are completely ignored
-        $query = Product::query()->with('brand');
-        
+        // STEP 2: Fetch products - strict priority: brand first, then cross-brand by keywords
         $hasBrandMatch = false;
         $hasWordMatch = false;
         
-        // Build the WHERE clause: brand_id = X OR (model contains word1 OR word2 OR ...)
-        // If brand is found, prioritize brand matches, but also allow word matches
-        // If no brand found, search by product name/model words only
-        $query->where(function ($q) use ($extractedBrandId, $searchWords, &$hasBrandMatch, &$hasWordMatch) {
-            // Option 1: Match by brand (if brand was extracted) - PRIORITY
-            if ($extractedBrandId) {
-                // Primary: exact brand match
-                $q->where('brand_id', $extractedBrandId);
-                $hasBrandMatch = true;
-            }
-            
-            // Option 2: Match by product name/model words (if we have search words)
+        // STEP 2a: When brand is found - fetch ALL products under that brand (no token restriction)
+        // STEP 2b: Optionally add cross-brand matches (lower priority)
+        // STEP 2c: When no brand - search by keywords only
+        $products = collect();
+
+        if ($extractedBrandId) {
+            $hasBrandMatch = true;
+            // PRIORITY 1: Fetch ALL products from the detected brand (do not filter by words)
+            $brandProducts = Product::query()->with('brand')
+                ->where('brand_id', $extractedBrandId)
+                ->get();
+            $products = $products->merge($brandProducts);
+
+            // PRIORITY 3: Add cross-brand products that match keywords (lower priority, limit to avoid dilution)
             if (!empty($searchWords)) {
-                if ($extractedBrandId) {
-                    // Brand found - also search by words (from other brands)
-                    $q->orWhere(function ($subQ) use ($searchWords) {
-                        foreach ($searchWords as $word) {
-                            $wordLower = strtolower($word);
-                            // Match word anywhere in product model (normalized, case-insensitive)
-                            $subQ->orWhereRaw('LOWER(model) LIKE ?', ['%' . $wordLower . '%']);
-                        }
-                    });
-                } else {
-                    // ✅ No brand found - search by product name/model words only
-                    // Prioritize products that match multiple words (especially key terms)
-                    $q->where(function ($subQ) use ($searchWords) {
-                        foreach ($searchWords as $word) {
-                            $wordLower = strtolower($word);
-                            // Match word anywhere in product model (normalized, case-insensitive)
-                            $subQ->orWhereRaw('LOWER(model) LIKE ?', ['%' . $wordLower . '%']);
-                            // Also try normalized_model for better matching
-                            $subQ->orWhereRaw('LOWER(normalized_model) LIKE ?', ['%' . $wordLower . '%']);
-                        }
-                    });
-                }
                 $hasWordMatch = true;
+                $addWordConditions = function ($subQ) use ($searchWords) {
+                    foreach ($searchWords as $word) {
+                        $wordLower = strtolower($word);
+                        $wordLike = '%' . $wordLower . '%';
+                        $subQ->orWhereRaw('LOWER(model) LIKE ?', [$wordLike])
+                             ->orWhereRaw('LOWER(COALESCE(normalized_model, \'\')) LIKE ?', [$wordLike])
+                             ->orWhereRaw('LOWER(COALESCE(normalized_full_name, \'\')) LIKE ?', [$wordLike]);
+                    }
+                };
+                $crossBrandProducts = Product::query()->with('brand')
+                    ->where('brand_id', '!=', $extractedBrandId)
+                    ->where(function ($subQ) use ($addWordConditions) {
+                        $addWordConditions($subQ);
+                    })
+                    ->limit(50) // Cap cross-brand to avoid diluting brand results
+                    ->get();
+                // Merge, avoiding duplicates (brand products already included)
+                $existingIds = $products->pluck('id')->flip();
+                foreach ($crossBrandProducts as $p) {
+                    if (!$existingIds->has($p->id)) {
+                        $products->push($p);
+                    }
+                }
             }
-        });
-        
-        // If neither brand nor words were found, cannot match
-        if (!$hasBrandMatch && !$hasWordMatch) {
+        } else {
+            // No brand - aggressively remove "vari" and "lite" when description starts with VARI*LITE (common false positive source)
+            $descAlphanumeric = preg_replace('/[^a-z0-9]/', '', strtolower($description));
+            if (strpos($descAlphanumeric, 'varilite') === 0 || strpos($descAlphanumeric, 'variolite') === 0) {
+                $searchWords = array_values(array_filter($searchWords, fn($w) => !in_array(strtolower($w), ['vari', 'lite'])));
+                $keyTerms = $this->identifyKeyTerms($searchWords); // Recompute after removal
+            }
+            // No brand found - search by keywords only
+            if (empty($searchWords)) {
+                return collect();
+            }
+            $hasWordMatch = true;
+            $addWordConditions = function ($subQ) use ($searchWords) {
+                foreach ($searchWords as $word) {
+                    $wordLower = strtolower($word);
+                    $wordLike = '%' . $wordLower . '%';
+                    $subQ->orWhereRaw('LOWER(model) LIKE ?', [$wordLike])
+                         ->orWhereRaw('LOWER(COALESCE(normalized_model, \'\')) LIKE ?', [$wordLike])
+                         ->orWhereRaw('LOWER(COALESCE(normalized_full_name, \'\')) LIKE ?', [$wordLike]);
+                }
+            };
+            $products = Product::query()->with('brand')
+                ->where(function ($subQ) use ($addWordConditions) {
+                    $addWordConditions($subQ);
+                })
+                ->limit(500)
+                ->get();
+        }
+
+        if ($products->isEmpty()) {
             return collect();
         }
-        
-        // Order by brand match first (if brand was found), then by relevance
-        // ✅ When no brand found, prioritize products that match the start of description (likely brand/model)
-        if ($extractedBrandId) {
-            $query->orderByRaw('CASE WHEN brand_id = ? THEN 0 ELSE 1 END', [$extractedBrandId]);
-        } elseif (!empty($keyTerms)) {
-            // Prioritize products where model starts with key terms (likely same brand/model)
-            $firstKeyTerm = strtolower($keyTerms[0]);
-            $query->orderByRaw('CASE WHEN LOWER(model) LIKE ? THEN 0 ELSE 1 END', [$firstKeyTerm . '%']);
-        }
-        
-        // Get products that match either brand OR product name/model words
-        $products = $query->limit(500)->get();
         
         // STEP 3: Calculate confidence for each product
         $description = $item->original_description;
@@ -225,9 +242,10 @@ class ProductMatcherService
             // Calculate product name/model word match score (independent)
             $wordScore = 0.0;
             if ($totalDescriptionWords > 0) {
-                // ✅ CRITICAL: Require minimum matches, especially key terms
-                // If only 1 generic word matches, heavily penalize (likely false match)
-                if ($matchCount === 1 && $keyTermMatchCount === 0 && $genericWordMatchCount === 1) {
+                // Single key term match (e.g., model code "VL3500") - strong signal, allow through
+                if ($matchCount === 1 && $keyTermMatchCount === 1) {
+                    $wordScore = 0.70; // Model codes like VL3500 are highly specific
+                } elseif ($matchCount === 1 && $keyTermMatchCount === 0 && $genericWordMatchCount === 1) {
                     // Single generic word match - very low confidence (likely false positive)
                     $wordScore = 0.20; // Heavily penalized
                 } elseif ($matchCount < 2) {
@@ -339,24 +357,46 @@ class ProductMatcherService
         });
         
         // Filter by minimum confidence threshold
-        // ✅ Increased threshold to reduce false positives (single generic word matches)
-        // Require at least 0.40 confidence (2+ word matches or key term matches)
         $effectiveThreshold = 0.40;
         $matches = $matches->where('confidence', '>=', $effectiveThreshold);
         
-        // Sort by confidence (descending)
-        // Prioritize exact matches, then brand+word matches, then by confidence
-        $matches = $matches->sortByDesc(function ($match) {
-            // Highest priority: exact or near-exact matches
-            $exactMatchBonus = (in_array($match['match_type'], ['exact_match', 'near_exact_match'])) ? 2.0 : 0.0;
-            // High priority: both brand and word match
-            $bothMatchBonus = ($match['brand_match'] && $match['word_match']) ? 1.0 : 0.0;
-            // Medium priority: brand match only
-            $brandMatchBonus = $match['brand_match'] ? 0.5 : 0.0;
-            return [$exactMatchBonus, $bothMatchBonus, $brandMatchBonus, $match['confidence']];
+        // Sort STRICTLY by priority (enforced order):
+        // 1. Brand products first (never rank cross-brand above brand)
+        // 2. Within brand: model keyword matches (e.g. VL3500) ranked higher
+        // 3. Cross-brand matches last
+        $keyTermsLower = array_map('strtolower', $keyTerms);
+        $matches = $matches->sortByDesc(function ($match) use ($extractedBrandId, $products, $keyTermsLower) {
+            $product = $products->firstWhere('id', $match['product_id']);
+            $isBrandProduct = $product && $extractedBrandId && $product->brand_id === $extractedBrandId;
+            // Tier 1: Brand products always rank above cross-brand
+            $brandTier = $isBrandProduct ? 1000 : 0;
+            // Tier 2: Model keyword match (brand+word) > brand-only > word-only
+            $matchTier = 0;
+            if (in_array($match['match_type'], ['exact_match', 'near_exact_match'])) {
+                $matchTier = 3;
+            } elseif ($match['brand_match'] && $match['word_match']) {
+                $matchTier = 2; // VL3500 variants: brand + model keyword
+            } elseif ($match['brand_match']) {
+                $matchTier = 1; // Other brand products
+            }
+            // Tier 3: For brand+word matches, boost products whose model contains key terms (e.g. VL3500)
+            $modelHasKeyTerm = 0;
+            if ($product && !empty($keyTermsLower)) {
+                $modelLower = strtolower($product->model ?? '');
+                $normModelLower = strtolower($product->normalized_model ?? '');
+                foreach ($keyTermsLower as $kt) {
+                    if (strpos($modelLower, $kt) !== false || strpos($normModelLower, $kt) !== false) {
+                        $modelHasKeyTerm = 1;
+                        break;
+                    }
+                }
+            }
+            return [$brandTier, $matchTier, $modelHasKeyTerm, $match['confidence']];
         });
         
-        return $matches->take(10)->values();
+        // Limit AFTER ranking: allow more results when brand match (show all relevant brand products)
+        $resultLimit = $extractedBrandId ? 25 : 10;
+        return $matches->take($resultLimit)->values();
     }
     
     /**
@@ -429,7 +469,12 @@ class ProductMatcherService
     protected function extractBrandFromDescription(string $description): ?int
     {
         $normalized = strtolower(trim($description));
-        
+        // Alphanumeric-only version: VARI*LITE → varilite, Vari-Lite → varilite (for exact brand match)
+        $descriptionAlphanumeric = preg_replace('/[^a-z0-9]/', '', $normalized);
+        // Space-separated version: VARI*LITE → vari lite (for "Vari-Lite" two-word brands)
+        $normalizedForMatch = preg_replace('/[\*\-_]+/', ' ', $normalized);
+        $normalizedForMatch = preg_replace('/\s+/', ' ', trim($normalizedForMatch));
+
         // Get all brands
         $brands = \App\Models\Brand::all();
         
@@ -438,51 +483,47 @@ class ProductMatcherService
         // Find all matching brands and their positions
         foreach ($brands as $brand) {
             $brandName = strtolower(trim($brand->name));
-            
-            // Normalize brand name (remove special characters, extra spaces)
+            // Alphanumeric-only: VARILITE → varilite
+            $brandNameAlphanumeric = preg_replace('/[^a-z0-9]/', '', $brandName);
+            // With spaces: Vari-Lite → vari lite
             $brandNameNormalized = preg_replace('/[^a-z0-9\s]/', ' ', $brandName);
-            $brandNameNormalized = preg_replace('/\s+/', ' ', $brandNameNormalized);
-            $brandNameNormalized = trim($brandNameNormalized);
+            $brandNameNormalized = preg_replace('/\s+/', ' ', trim($brandNameNormalized));
             
-            // Check if brand name appears in description using word boundary
-            // IMPORTANT: Brands typically appear at the start, so check if it's at the beginning
             $position = null;
             $matches = false;
             $isAtStart = false;
             
-            // Try normalized brand name first
-            $pattern = '/\b' . preg_quote($brandNameNormalized, '/') . '\b/i';
-            if (preg_match($pattern, $normalized, $matchesArray, PREG_OFFSET_CAPTURE)) {
+            // PRIORITY 1: Alphanumeric match - VARI*LITE and VARILITE both become "varilite"
+            if (strlen($brandNameAlphanumeric) >= 2 && strpos($descriptionAlphanumeric, $brandNameAlphanumeric) === 0) {
                 $matches = true;
-                $position = $matchesArray[0][1]; // Get position in string
-                // Check if brand appears at the start of the description (typical position)
-                $isAtStart = ($position === 0 || 
-                             ($position < 10 && preg_match('/^' . preg_quote($brandNameNormalized, '/') . '\b/i', $normalized)));
+                $position = 0;
+                $isAtStart = true;
             }
             
-            // Also try original brand name (without normalization) - handles special chars like asterisks
-            if (!$matches) {
-                // Escape special regex characters but preserve asterisks and other special chars for literal matching
-                $escapedBrandName = preg_quote($brandName, '/');
-                // Replace escaped asterisks back to literal asterisks (preg_quote escapes them)
-                $escapedBrandName = str_replace('\\*', '*', $escapedBrandName);
-                
-                if (preg_match('/\b' . $escapedBrandName . '\b/i', $normalized, $matchesArray, PREG_OFFSET_CAPTURE)) {
+            // PRIORITY 2: Normalized with spaces - "vari lite" in "vari lite vl3500..."
+            if (!$matches && strlen($brandNameNormalized) >= 2) {
+                $pattern = '/\b' . preg_quote($brandNameNormalized, '/') . '\b/i';
+                if (preg_match($pattern, $normalizedForMatch, $matchesArray, PREG_OFFSET_CAPTURE)) {
                     $matches = true;
-                    $position = $matchesArray[0][1]; // Get position in string
-                    $isAtStart = ($position === 0 || 
-                                 ($position < 10 && preg_match('/^' . $escapedBrandName . '\b/i', $normalized)));
+                    $position = $matchesArray[0][1];
+                    $isAtStart = ($position === 0 || $position < 10);
                 }
             }
             
-            // ✅ ADDITIONAL: Try matching brand name at the start of description (common pattern)
-            // This handles cases like "VARI*LITE" where word boundary might not work perfectly
+            // PRIORITY 3: Original brand name (exact special chars)
             if (!$matches) {
                 $escapedBrandName = preg_quote($brandName, '/');
                 $escapedBrandName = str_replace('\\*', '*', $escapedBrandName);
-                
-                // Check if description starts with brand name (with optional space/separator)
-                if (preg_match('/^' . $escapedBrandName . '[\s\-]/i', $normalized, $matchesArray, PREG_OFFSET_CAPTURE)) {
+                if (preg_match('/\b' . $escapedBrandName . '\b/i', $normalized, $matchesArray, PREG_OFFSET_CAPTURE)) {
+                    $matches = true;
+                    $position = $matchesArray[0][1];
+                    $isAtStart = ($position === 0 || $position < 10);
+                }
+            }
+            
+            // PRIORITY 4: Brand at start with optional separator
+            if (!$matches && strlen($brandNameNormalized) >= 2) {
+                if (preg_match('/^' . preg_quote($brandNameNormalized, '/') . '[\s\-]/i', $normalizedForMatch, $matchesArray, PREG_OFFSET_CAPTURE)) {
                     $matches = true;
                     $position = 0;
                     $isAtStart = true;
@@ -552,7 +593,8 @@ class ProductMatcherService
     protected function identifyKeyTerms(array $words): array
     {
         $keyTerms = [];
-        $genericWords = ['led', 'wash', 'fixture', 'light', 'profile', 'shuttering', 'moving', 'head', 'speaker', 'cable', 'system', 'unit', 'device'];
+        // "lite" is a very common product suffix (élite, D-Lite, k-lite, 8-Lite) - treat as generic to avoid false positives
+        $genericWords = ['led', 'wash', 'fixture', 'light', 'profile', 'shuttering', 'moving', 'head', 'speaker', 'cable', 'system', 'unit', 'device', 'lite'];
         
         foreach ($words as $index => $word) {
             $wordLower = strtolower($word);
@@ -562,7 +604,13 @@ class ProductMatcherService
                 continue;
             }
             
-            // Model numbers: alphanumeric with optional hyphens/special chars (e.g., "VL3500", "DN-360", "MAC350")
+            // Model numbers: contain digits - e.g. "VL3500", "vl3500", "DN-360", "MAC350"
+            if (preg_match('/\d/', $word) && strlen($word) >= 2) {
+                $keyTerms[] = $word;
+                continue;
+            }
+            
+            // Alphanumeric model-like codes (letters + digits)
             if (preg_match('/^[A-Z0-9][A-Z0-9\-*]+[0-9]+/i', $word)) {
                 $keyTerms[] = $word;
                 continue;
