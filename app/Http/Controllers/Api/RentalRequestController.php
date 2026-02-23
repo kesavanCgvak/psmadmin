@@ -12,6 +12,7 @@ use App\Models\RentalJobProduct;
 use App\Models\RentalJobComment;
 use App\Models\JobOffer;
 use App\Models\Equipment;
+use App\Services\SupplierSmsNotifier;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -55,6 +56,8 @@ class RentalRequestController extends Controller
         ]);
 
         try {
+            $user->load('company');
+
             return DB::transaction(function () use ($validated, $user) {
 
                 // Create rental job
@@ -222,6 +225,8 @@ class RentalRequestController extends Controller
                                 ->from(config('mail.from.address'), config('mail.from.name'));
                         });
                     }
+
+                    SupplierSmsNotifier::notifyIfNeeded($supplyJob, $rentalJob, $user);
                 }
 
                 return response()->json([
