@@ -216,20 +216,21 @@ class AuthController extends Controller
 
                     // Send subscription details email to the user
                     if ($request->email) {
-                        $subscriptionEmailData = [
-                            'username' => $request->username,
-                            'plan_name' => $subscription->plan_name ?? ucfirst($request->account_type) . ' Plan',
-                            'status' => $subscription->stripe_status,
-                            'trial_end_date' => $subscription->trial_ends_at
-                                ? $subscription->trial_ends_at
-                                    ->timezone(config('app.timezone'))
-                                    ->format(config('app.display_date_format', 'M d, Y'))
-                                : null,
-                            'amount' => $subscription->amount,
-                            'currency' => strtoupper($subscription->currency ?? 'USD'),
-                            'interval' => $subscription->interval,
-                            'app_url' => env('APP_FRONTEND_URL'),
-                        ];
+                        $amount = $subscription->amount;
+                            $currency = strtoupper($subscription->currency ?? 'USD');
+                            $interval = $subscription->interval;
+                            $subscriptionEmailData = [
+                                'username' => $request->username,
+                                'plan_name' => $subscription->plan_name ?? ucfirst($request->account_type) . ' Plan',
+                                'status' => ucfirst($subscription->stripe_status),
+                                'trial_end_date' => $subscription->trial_ends_at
+                                    ? $subscription->trial_ends_at
+                                        ->timezone(config('app.timezone'))
+                                        ->format(config('app.display_date_format', 'M d, Y'))
+                                    : null,
+                                'billing_line' => $amount ? ($currency . ' ' . number_format((float) $amount, 2) . ($interval ? ' / ' . $interval : '')) : '',
+                                'app_url' => rtrim(env('APP_FRONTEND_URL', config('app.url', '')), '/'),
+                            ];
 
                         \App\Helpers\EmailHelper::send('subscriptionCreated', $subscriptionEmailData, function ($message) use ($request) {
                             $message->to($request->email);
@@ -267,7 +268,24 @@ class AuthController extends Controller
                 $data_user->save();
                 $data = array('email' => $request->email);
 
-                \App\Helpers\EmailHelper::send('verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
+                $verifyUrl = rtrim(env('APP_FRONTEND_URL', config('app.url', '')), '/') . '#/verify-account?token=' . $token;
+                \App\Helpers\EmailHelper::send('verificationEmail', [
+                    'token' => $token,
+                    'username' => $request->username,
+                    'verify_url' => $verifyUrl,
+                ], function ($message) use ($data) {
+                    $message->to($data['email']);
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
+                });
+
+                \App\Helpers\EmailHelper::send('registrationSuccess', [
+                    'name' => $request->name,
+                    'email' => $request->email,
+                    'username' => $request->username,
+                    'password' => $request->password,
+                    'account_type' => ucfirst($request->account_type),
+                    'login_url' => rtrim(env('APP_FRONTEND_URL', config('app.url', '')), '/'),
+                ], function ($message) use ($data) {
                     $message->to($data['email']);
                     $message->from(config('mail.from.address'), config('mail.from.name'));
                 });

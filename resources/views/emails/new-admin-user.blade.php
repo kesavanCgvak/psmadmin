@@ -100,7 +100,7 @@
 
             <p>Welcome to the PSM Equipment Rental Admin Panel! Your administrator account has been created successfully.</p>
 
-            <p>You have been granted <strong>{{ ucfirst(str_replace('_', ' ', $user->role)) }}</strong> access to the system.</p>
+            <p>You have been granted <strong>{{ $role_display }}</strong> access to the system.</p>
         @endif
 
         <div class="credentials">

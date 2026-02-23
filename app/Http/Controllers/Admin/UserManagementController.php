@@ -173,7 +173,7 @@ class UserManagementController extends Controller
                 'email' => $request->email,
                 'username' => $request->username,
                 'password' => $request->password,
-                'account_type' => $accountType,
+                'account_type' => ucfirst($accountType),
                 'login_url' => env('APP_URL'),
             ], function ($message) use ($request) {
                 $message->to($request->email); // TO: User's email address
@@ -185,10 +185,12 @@ class UserManagementController extends Controller
             if (!$user->email_verified) {
                 $token = Str::random(30);
                 $user->update(['token' => $token]);
+                $verifyUrl = rtrim(env('APP_FRONTEND_URL', config('app.url', '')), '/') . '#/verify-account?token=' . $token;
 
                 \App\Helpers\EmailHelper::send('verificationEmail', [
                     'token' => $token,
-                    'username' => $request->username
+                    'username' => $request->username,
+                    'verify_url' => $verifyUrl,
                 ], function ($message) use ($request) {
                     $message->to($request->email); // TO: User's email address
                     // Subject is set from template

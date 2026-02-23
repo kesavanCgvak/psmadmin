@@ -67,7 +67,7 @@
                                 <li><strong>Email:</strong> {{ $email }}</li>
                                 <li><strong>Username:</strong> {{ $username }}</li>
                                 <li><strong>Password:</strong> {{ $password }}</li>
-                                <li><strong>Account Type:</strong> {{ ucfirst($account_type) }}</li>
+                                <li><strong>Account Type:</strong> {{ $account_type }}</li>
                             </ul>
                             <p style="color: #d9534f; font-size: 14px; font-weight: bold;">
                                 <strong>Important:</strong> Please save your login credentials and change your password after first login for security purposes.

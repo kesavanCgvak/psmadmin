@@ -49,20 +49,21 @@ class SubscriptionCanceledNotification extends Mailable
     {
         $username = $this->user->profile->full_name ?? $this->user->username ?? 'Valued Customer';
         $email = $this->user->profile->email ?? $this->user->email;
-        
+        $amount = $this->subscription->amount;
+        $currency = strtoupper($this->subscription->currency ?? 'USD');
+        $interval = $this->subscription->interval ?? 'month';
+
         return new Content(
             view: 'emails.subscriptionCanceled',
             with: [
                 'username' => $username,
                 'email' => $email,
                 'plan_name' => $this->subscription->plan_name,
-                'status' => $this->subscription->stripe_status,
-                'amount' => $this->subscription->amount,
-                'currency' => $this->subscription->currency ?? 'USD',
-                'interval' => $this->subscription->interval ?? 'month',
+                'status' => ucfirst($this->subscription->stripe_status),
+                'billing_line' => $amount ? ($currency . ' ' . number_format((float) $amount, 2) . ' / ' . $interval) : '',
                 'current_period_end' => $this->subscription->current_period_end?->format('F j, Y'),
                 'is_immediate' => $this->isImmediate,
-                'app_url' => env('APP_FRONTEND_URL', config('app.url')),
+                'app_url' => rtrim(env('APP_FRONTEND_URL', config('app.url')), '/'),
             ],
         );
     }

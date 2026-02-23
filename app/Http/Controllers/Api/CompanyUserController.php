@@ -90,7 +90,12 @@ class CompanyUserController extends Controller
                 $data_user->save();
                 $data = array('email' => $request->email);
 
-                \App\Helpers\EmailHelper::send('verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
+                $verifyUrl = rtrim(env('APP_FRONTEND_URL', config('app.url', '')), '/') . '#/verify-account?token=' . $token;
+                \App\Helpers\EmailHelper::send('verificationEmail', [
+                    'token' => $token,
+                    'username' => $request->username,
+                    'verify_url' => $verifyUrl,
+                ], function ($message) use ($data) {
                     $message->to($data['email']);
                     $message->from(config('mail.from.address'), config('mail.from.name'));
                 });
@@ -101,7 +106,7 @@ class CompanyUserController extends Controller
                     'email' => $request->email,
                     'username' => $request->username,
                     'password' => $request->password,
-                    'account_type' => $authUser->accountType,
+                    'account_type' => ucfirst($authUser->accountType),
                     'login_url' => env('APP_URL'),
                 ], function ($message) use ($request) {
                     $message->to($request->email);
