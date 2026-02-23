@@ -152,6 +152,9 @@ Route::middleware('jwt.verify')->group(function () {
     // Add/Update rating
     Route::post('/companies/{company}/rate', [CompanyController::class, 'rateCompany']);
 
+    // Get company reviews (customer reviews)
+    Route::get('/companies/{company}/reviews', [CompanyController::class, 'getCompanyReviews']);
+
     // Block/Unblock company
     Route::post('/companies/{company}/block', [CompanyController::class, 'blockCompany']);
     Route::post('/companies/{company}/unblock', [CompanyController::class, 'unblockCompany']);

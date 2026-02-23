@@ -52,7 +52,8 @@ class NewAdminUserCreated extends Mailable
                 'user' => $this->user,
                 'password' => $this->password,
                 'isPasswordReset' => $this->isPasswordReset,
-                'adminPanelUrl' => env('ADMIN_PANEL_URL', config('app.url') . '/login'),
+                'adminPanelUrl' => rtrim(env('ADMIN_PANEL_URL', config('app.url') . '/login'), '/'),
+                'role_display' => ucfirst(str_replace('_', ' ', $this->user->role ?? '')),
             ],
         );
     }

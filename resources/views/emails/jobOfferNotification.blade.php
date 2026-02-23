@@ -40,7 +40,7 @@
                     </tr>
                     <tr>
                         <td><strong>Status:</strong></td>
-                        <td>{{ ucfirst($status) }}</td>
+                        <td>{{ $status }}</td>
                     </tr>
                 </table>
 

@@ -32,12 +32,12 @@
                     </tr>
                     <tr>
                         <td><strong>Status</strong></td>
-                        <td>{{ ucfirst($status) }}</td>
+                        <td>{{ $status }}</td>
                     </tr>
-                    @if($amount)
+                    @if(!empty($billing_line))
                         <tr>
                             <td><strong>Billing</strong></td>
-                            <td>{{ $currency }} {{ number_format((float) $amount, 2) }} {{ $interval ? '/ ' . $interval : '' }}</td>
+                            <td>{{ $billing_line }}</td>
                         </tr>
                     @endif
                     @if($current_period_end && !$is_immediate)

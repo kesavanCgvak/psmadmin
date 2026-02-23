@@ -32,7 +32,7 @@ class EmailTemplateSeeder extends Seeder
                 'name' => 'verificationEmail',
                 'subject' => 'Email Verification - ProSub Marketplace',
                 'description' => 'Email sent to verify user email address',
-                'variables' => ['token', 'username'],
+                'variables' => ['token', 'username', 'verify_url'],
                 'file' => 'verificationEmail.blade.php',
             ],
             [

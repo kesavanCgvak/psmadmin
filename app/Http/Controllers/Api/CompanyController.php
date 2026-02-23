@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Models\CompanyRating;
 use App\Models\CompanyBlock;
 use App\Models\CompanyProviderBlock;
+use App\Models\JobRating;
 
 
 
@@ -1060,6 +1061,25 @@ class CompanyController extends Controller
             $jobRatingsAvg = $jobRatingsData->pluck('avg_rating', 'provider_id')->toArray();
             $jobRatingsCount = $jobRatingsData->pluck('rating_count', 'provider_id')->toArray();
 
+            // Star breakdown from job_ratings (new system): count per provider_id and rating 1–5
+            $jobBreakdownRows = DB::table('job_ratings')
+                ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
+                ->whereIn('supply_jobs.provider_id', $companyIds)
+                ->whereNotNull('job_ratings.rated_at')
+                ->whereBetween('job_ratings.rating', [1, 5])
+                ->groupBy('supply_jobs.provider_id', 'job_ratings.rating')
+                ->select('supply_jobs.provider_id', 'job_ratings.rating', DB::raw('COUNT(job_ratings.id) as cnt'))
+                ->get();
+
+            $jobRatingsBreakdown = [];
+            foreach ($jobBreakdownRows as $row) {
+                $id = $row->provider_id;
+                if (!isset($jobRatingsBreakdown[$id])) {
+                    $jobRatingsBreakdown[$id] = ['1' => 0, '2' => 0, '3' => 0, '4' => 0, '5' => 0];
+                }
+                $jobRatingsBreakdown[$id][(string) $row->rating] = (int) $row->cnt;
+            }
+
             // Calculate average ratings and counts from company_ratings (old manual rating system) as fallback
             $companyRatingsData = DB::table('company_ratings')
                 ->whereIn('company_id', $companyIds)
@@ -1075,6 +1095,23 @@ class CompanyController extends Controller
             $companyRatingsAvg = $companyRatingsData->pluck('avg_rating', 'company_id')->toArray();
             $companyRatingsCount = $companyRatingsData->pluck('rating_count', 'company_id')->toArray();
 
+            // Star breakdown from company_ratings (old system)
+            $companyBreakdownRows = DB::table('company_ratings')
+                ->whereIn('company_id', $companyIds)
+                ->whereBetween('rating', [1, 5])
+                ->groupBy('company_id', 'rating')
+                ->select('company_id', 'rating', DB::raw('COUNT(id) as cnt'))
+                ->get();
+
+            $companyRatingsBreakdown = [];
+            foreach ($companyBreakdownRows as $row) {
+                $id = $row->company_id;
+                if (!isset($companyRatingsBreakdown[$id])) {
+                    $companyRatingsBreakdown[$id] = ['1' => 0, '2' => 0, '3' => 0, '4' => 0, '5' => 0];
+                }
+                $companyRatingsBreakdown[$id][(string) $row->rating] = (int) $row->cnt;
+            }
+
             $userRatings = CompanyRating::whereIn('company_id', $companyIds)
                 ->where('user_id', $user->id)
                 ->pluck('rating', 'company_id'); // key = company_id, value = rating
@@ -1086,22 +1123,34 @@ class CompanyController extends Controller
                 ->toArray();
 
             // 5️⃣ Final response map (no queries inside)
-            $formatted = $companies->map(function ($company) use ($jobRatingsAvg, $jobRatingsCount, $companyRatingsAvg, $companyRatingsCount, $userRatings, $blockedCompanies) {
+            $formatted = $companies->map(function ($company) use (
+                $jobRatingsAvg,
+                $jobRatingsCount,
+                $jobRatingsBreakdown,
+                $companyRatingsAvg,
+                $companyRatingsCount,
+                $companyRatingsBreakdown,
+                $userRatings,
+                $blockedCompanies
+            ) {
                 // Calculate average rating and count: prioritize job_ratings (new system) if available
-                // Otherwise fall back to company_ratings (old system) or show 0
                 $avgRating = 0;
                 $ratingCount = 0;
-                
+                $ratingBreakdown = null;
+
                 if (isset($jobRatingsAvg[$company->id])) {
-                    // Company has ratings from job_ratings (new rating system)
                     $avgRating = $jobRatingsAvg[$company->id];
-                    $ratingCount = $jobRatingsCount[$company->id] ?? 0;
+                    $ratingCount = (int) ($jobRatingsCount[$company->id] ?? 0);
+                    $ratingBreakdown = $ratingCount > 0
+                        ? ($jobRatingsBreakdown[$company->id] ?? ['1' => 0, '2' => 0, '3' => 0, '4' => 0, '5' => 0])
+                        : null;
                 } elseif (isset($companyRatingsAvg[$company->id])) {
-                    // Fall back to company_ratings average (old manual rating system)
                     $avgRating = $companyRatingsAvg[$company->id];
-                    $ratingCount = $companyRatingsCount[$company->id] ?? 0;
+                    $ratingCount = (int) ($companyRatingsCount[$company->id] ?? 0);
+                    $ratingBreakdown = $ratingCount > 0
+                        ? ($companyRatingsBreakdown[$company->id] ?? ['1' => 0, '2' => 0, '3' => 0, '4' => 0, '5' => 0])
+                        : null;
                 }
-                // If no ratings found, both avgRating and ratingCount remain 0
 
                 return [
                     'id' => $company->id,
@@ -1113,9 +1162,11 @@ class CompanyController extends Controller
                     'state' => $company->state?->name ?? null,
                     'country' => $company->country?->name ?? null,
 
-                    // Ratings: prioritize job_ratings average (new system), fall back to company_ratings (old system) or show 0
+                    // Ratings: average, count, and star breakdown for popup (progress bars)
                     'average_rating' => round($avgRating, 1),
                     'rating_count' => (int) $ratingCount,
+                    'rating_breakdown' => $ratingBreakdown,
+
                     'user_rating' => $userRatings[$company->id] ?? null,
 
                     // Block status
@@ -1197,6 +1248,141 @@ class CompanyController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Unable to update rating'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get customer reviews for a company.
+     * Returns individual ratings with comments from job_ratings (new system) and company_ratings (old system).
+     */
+    public function getCompanyReviews($companyId)
+    {
+        try {
+            // Authenticate user
+            if (!$user = JWTAuth::parseToken()->authenticate()) {
+                Log::warning('Unauthorized access attempt in getCompanyReviews()');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized user'
+                ], 401);
+            }
+
+            // Verify company exists
+            $company = Company::find($companyId);
+            if (!$company) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Company not found'
+                ], 404);
+            }
+
+            $reviews = [];
+
+            // 1️⃣ Get reviews from job_ratings (new system) - ratings from completed jobs
+            $jobRatings = DB::table('job_ratings')
+                ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
+                ->join('rental_jobs', 'job_ratings.rental_job_id', '=', 'rental_jobs.id')
+                ->join('users', 'rental_jobs.user_id', '=', 'users.id')
+                ->leftJoin('companies', 'users.company_id', '=', 'companies.id')
+                ->where('supply_jobs.provider_id', $companyId)
+                ->whereNotNull('job_ratings.rated_at')
+                ->whereNotNull('job_ratings.rating')
+                ->select(
+                    'job_ratings.id',
+                    'job_ratings.rating',
+                    'job_ratings.comment',
+                    'job_ratings.rated_at',
+                    'rental_jobs.name as job_name',
+                    'users.name as renter_name',
+                    'companies.name as renter_company_name',
+                    DB::raw("'job' as source")
+                )
+                ->orderBy('job_ratings.rated_at', 'desc')
+                ->get();
+
+            foreach ($jobRatings as $rating) {
+                $reviews[] = [
+                    'id' => $rating->id,
+                    'rating' => (int) $rating->rating,
+                    'comment' => $rating->comment,
+                    'rated_at' => $rating->rated_at ? date('c', strtotime($rating->rated_at)) : null,
+                    'renter_name' => $rating->renter_name,
+                    'renter_company_name' => $rating->renter_company_name,
+                    'job_name' => $rating->job_name,
+                    'source' => 'job',
+                ];
+            }
+
+            // 2️⃣ Get reviews from company_ratings (old manual rating system) as fallback
+            $companyRatings = DB::table('company_ratings')
+                ->join('users', 'company_ratings.user_id', '=', 'users.id')
+                ->leftJoin('companies', 'users.company_id', '=', 'companies.id')
+                ->where('company_ratings.company_id', $companyId)
+                ->select(
+                    'company_ratings.id',
+                    'company_ratings.rating',
+                    DB::raw('NULL as comment'),
+                    'company_ratings.created_at as rated_at',
+                    DB::raw('NULL as job_name'),
+                    'users.name as renter_name',
+                    'companies.name as renter_company_name',
+                    DB::raw("'manual' as source")
+                )
+                ->orderBy('company_ratings.created_at', 'desc')
+                ->get();
+
+            foreach ($companyRatings as $rating) {
+                // Only add if not already covered by job_ratings (avoid duplicates)
+                // Since company_ratings is old system, we'll include them but mark as manual
+                $reviews[] = [
+                    'id' => $rating->id,
+                    'rating' => (int) $rating->rating,
+                    'comment' => null,
+                    'rated_at' => $rating->rated_at ? date('c', strtotime($rating->rated_at)) : null,
+                    'renter_name' => $rating->renter_name,
+                    'renter_company_name' => $rating->renter_company_name,
+                    'job_name' => null,
+                    'source' => 'manual',
+                ];
+            }
+
+            // Sort all reviews by rated_at descending (most recent first)
+            usort($reviews, function ($a, $b) {
+                $timeA = $a['rated_at'] ? strtotime($a['rated_at']) : 0;
+                $timeB = $b['rated_at'] ? strtotime($b['rated_at']) : 0;
+                return $timeB - $timeA;
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'company_id' => (int) $companyId,
+                    'company_name' => $company->name,
+                    'reviews' => $reviews,
+                    'total_reviews' => count($reviews),
+                ]
+            ], 200);
+
+        } catch (\Tymon\JWTAuth\Exceptions\TokenInvalidException $e) {
+            Log::error('Invalid token in getCompanyReviews()', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid authentication token'
+            ], 401);
+
+        } catch (\Tymon\JWTAuth\Exceptions\TokenExpiredException $e) {
+            Log::error('Expired token in getCompanyReviews()', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Token has expired'
+            ], 401);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching company reviews', ['error' => $e->getMessage(), 'company_id' => $companyId]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to fetch reviews. Please try again later.'
             ], 500);
         }
     }

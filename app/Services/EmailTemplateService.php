@@ -123,6 +123,9 @@ class EmailTemplateService
             // config('app.url')
             "{{ config('app.url') }}"         => $appUrl,
             '{{ config(\'app.url\') }}'       => $appUrl,
+            // date('Y') - current year in footers
+            "{{ date('Y') }}"                 => (string) date('Y'),
+            "{{ date(\'Y\') }}"               => (string) date('Y'),
         ];
 
         foreach ($replacements as $placeholder => $value) {
