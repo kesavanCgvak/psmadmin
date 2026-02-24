@@ -25,59 +25,16 @@
                 <p>Dear Requester,</p>
 
                 <p>
-                    The supplier <strong>{{ $provider ?? '-' }}</strong> has cancelled their participation in your
-                    rental request
-                    <strong>{{ $supply_job_name ?? '-' }}</strong>.
+                    The supplier <strong>{{ $provider }}</strong> has cancelled their participation in your
+                    rental request <strong>{{ $supply_job_name }}</strong>.
                 </p>
 
-                @if(!empty($reason))
-                    <p><strong>Reason:</strong> {{ $reason }}</p>
-                @endif
+                {!! $reason_display !!}
 
-                <p><strong>Status:</strong> {{ $status ?? 'Cancelled' }}</p>
-                <p><strong>Date:</strong> {{ $date ?? now()->format('d M Y, h:i A') }}</p>
+                <p><strong>Status:</strong> {{ $status }}</p>
+                <p><strong>Date:</strong> {{ $date }}</p>
 
-                @if(!empty($products))
-                    <h3 style="color: #1a73e8; margin-top: 25px;">Cancelled Equipment Details</h3>
-                    <table width="100%" cellpadding="8" cellspacing="0"
-                        style="border-collapse: collapse; margin-top: 10px; font-size: 14px;">
-                        <thead style="background-color: #f0f0f0; border-bottom: 2px solid #ddd;">
-                            <tr>
-                                <th align="left">PSM Code</th>
-                                <th align="left">Model</th>
-                                <th align="left">Software Code</th>
-                                <th align="left">Qty</th>
-                                <th align="left">Price</th>
-                                <th align="left">Total Price</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @php $grandTotal = 0; @endphp
-
-                            @foreach($products as $product)
-                                @php
-                                    $qty = $product['quantity'] ?? 0;
-                                    $price = $product['price'] ?? 0;
-                                    $total = $qty * $price;
-                                    $grandTotal += $total;
-                                @endphp
-                                <tr style="border-bottom: 1px solid #eee;">
-                                    <td>{{ $product['psm_code'] ?? '—' }}</td>
-                                    <td>{{ $product['model'] ?? '-' }}</td>
-                                    <td>{{ $product['software_code'] ?? '—' }}</td>
-                                    <td>{{ $qty }}</td>
-                                    <td>{{ $currency ?? '' }}{{ number_format($price, 2) }}</td>
-                                    <td>{{ $currency ?? '' }}{{ number_format($total, 2) }}</td>
-                                </tr>
-                            @endforeach
-
-                            <tr style="font-weight: bold; background-color: #fafafa;">
-                                <td colspan="5" align="right">Grand Total</td>
-                                <td>{{ $currency ?? '' }}{{ number_format($grandTotal, 2) }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                @endif
+                {!! $products_section !!}
 
                 <p style="margin-top: 25px;">You can still send offers to fulfill the remaining requirement.</p>
 
@@ -95,7 +52,7 @@
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; {{ date('Y') }} Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
     </table>

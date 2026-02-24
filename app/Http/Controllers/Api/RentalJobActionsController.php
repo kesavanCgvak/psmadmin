@@ -627,17 +627,29 @@ class RentalJobActionsController extends Controller
 
                     if ($email) {
 
-                        $mailData = [
-                            'receiver_contact_name' => $providerContact->name ?? 'there',
-                            'requester_company_name' => $requesterCompany->name ?? '-',
-                            'rental_job_name' => $rentalJob->name,
-                            'supply_job_name' => $supplyJob->name,
-                            'status' => 'Cancelled by User',
-                            'reason' => $request->reason ?? 'No reason provided.',
-                            'date' => now()->format('d M Y, h:i A'),
-                            'products' => $products,
-                            'currency' => $requesterCompany->currency->symbol ?? '₹',
-                        ];
+                            $currencySym = $requesterCompany->currency->symbol ?? '₹';
+                            $productsSection = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3>';
+                            if (!empty($products)) {
+                                $productsSection .= '<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px;">';
+                                $productsSection .= '<thead><tr style="background:#e8f0fe; text-align:left;">';
+                                $productsSection .= '<th style="border-bottom:1px solid #ccc;">PSM Code</th><th style="border-bottom:1px solid #ccc;">Model</th><th style="border-bottom:1px solid #ccc;">Software Code</th><th style="border-bottom:1px solid #ccc;">Qty</th><th style="border-bottom:1px solid #ccc;">Price</th><th style="border-bottom:1px solid #ccc;">Total</th></tr></thead><tbody>';
+                                foreach ($products as $p) {
+                                    $productsSection .= '<tr><td>' . e($p['psm_code'] ?? '—') . '</td><td>' . e($p['model'] ?? '-') . '</td><td>' . e($p['software_code'] ?? '—') . '</td><td>' . (int) ($p['quantity'] ?? 0) . '</td><td>' . $currencySym . number_format((float) ($p['price'] ?? 0), 2) . '</td><td>' . $currencySym . number_format((float) ($p['total_price'] ?? 0), 2) . '</td></tr>';
+                                }
+                                $productsSection .= '</tbody></table>';
+                            } else {
+                                $productsSection .= '<p style="margin-top: 10px;">No products found.</p>';
+                            }
+
+                            $mailData = [
+                                'receiver_contact_name' => $providerContact->name ?? 'there',
+                                'requester_company_name' => $requesterCompany->name ?? '-',
+                                'rental_job_name' => $rentalJob->name ?? '-',
+                                'status' => 'Cancelled by User',
+                                'reason' => $request->reason ?? 'No reason provided.',
+                                'date' => now()->format('d M Y, h:i A'),
+                                'products_section' => $productsSection,
+                            ];
 
                         \App\Helpers\EmailHelper::send('rentalJobCancelled', $mailData, function ($message) use ($email) {
                             $message->to($email)

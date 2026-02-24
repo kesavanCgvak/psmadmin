@@ -16,14 +16,10 @@
         <!-- Body -->
         <tr>
             <td style="padding: 25px;">
-                <h2 style="color: #d32f2f; margin-top: 0;">{{ $is_immediate ? 'Your subscription has been canceled' : 'Subscription cancellation confirmed' }}</h2>
+                <h2 style="color: #d32f2f; margin-top: 0;">{{ $heading }}</h2>
                 <p>Hi {{ $username }},</p>
-                
-                @if($is_immediate)
-                    <p>We're sorry to see you go. Your subscription has been canceled and your access will end immediately.</p>
-                @else
-                    <p>We've received your request to cancel your subscription. Your subscription will remain active until the end of your current billing period.</p>
-                @endif
+
+                <p>{{ $cancellation_message }}</p>
 
                 <table width="100%" cellpadding="8" cellspacing="0" style="background: #fff3e0; border-radius: 8px; margin-top: 20px; border-left: 4px solid #ff9800;">
                     <tr>
@@ -34,25 +30,17 @@
                         <td><strong>Status</strong></td>
                         <td>{{ $status }}</td>
                     </tr>
-                    @if(!empty($billing_line))
-                        <tr>
-                            <td><strong>Billing</strong></td>
-                            <td>{{ $billing_line }}</td>
-                        </tr>
-                    @endif
-                    @if($current_period_end && !$is_immediate)
-                        <tr>
-                            <td><strong>Service continues until</strong></td>
-                            <td style="color: #1976d2; font-weight: bold;">{{ $current_period_end }}</td>
-                        </tr>
-                    @endif
+                    <tr>
+                        <td><strong>Billing</strong></td>
+                        <td>{{ $billing_line }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Service continues until</strong></td>
+                        <td style="color: #1976d2; font-weight: bold;">{{ $service_continues_until }}</td>
+                    </tr>
                 </table>
 
-                @if(!$is_immediate && $current_period_end)
-                    <div style="background-color: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 4px;">
-                        <p style="margin: 0;"><strong>Important:</strong> Your subscription will remain active until <strong>{{ $current_period_end }}</strong>. You'll continue to have full access to all features until then.</p>
-                    </div>
-                @endif
+                {!! $important_notice !!}
 
                 <p style="margin-top: 20px;">You can reactivate your subscription anytime before it expires, or resubscribe after it ends.</p>
                 
@@ -68,7 +56,7 @@
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; {{ date('Y') }} Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
     </table>

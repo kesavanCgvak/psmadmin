@@ -49,39 +49,14 @@
 
                 </table>
 
-                <!-- Product List -->
-                <h3 style="margin-top: 25px; color: #1a73e8;">Imported Products ({{ count($products) }})</h3>
-
-                <table width="100%" cellpadding="8" cellspacing="0"
-                    style="border: 1px solid #ccc; border-radius: 6px; margin-top: 10px;">
-
-                    <tr style="background-color: #e8eef8;">
-                        <th align="left">Model</th>
-                        <th align="left">Brand</th>
-                        <th align="left">Category</th>
-                        <th align="left">PSM Code</th>
-                        <th align="left">Rental Software Code</th>
-                    </tr>
-
-                    @foreach ($products as $product)
-                        <tr>
-                            <td>{{ $product->model }}</td>
-                            <td>{{ $product->brand->name ?? 'N/A' }}</td>
-                            <td>{{ $product->category->name ?? 'N/A' }}</td>
-                            <td>{{ $product->psm_code }}</td>
-                            <td>{{ $product->software_code ?? 'N/A' }}</td>
-                        </tr>
-                    @endforeach
-
-                </table>
-
+                {!! $products_table_html !!}
             </td>
         </tr>
 
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; {{ date('Y') }} Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
 

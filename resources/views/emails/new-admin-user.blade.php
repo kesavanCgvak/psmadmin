@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ $isPasswordReset ? 'Password Reset' : 'Welcome to PSM Admin Panel' }}</title>
+    <title>{{ $heading }}</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -83,28 +83,49 @@
             margin: 20px 0;
             border-radius: 4px;
         }
+        .credentials-title {
+            margin-top: 0;
+        }
+        .cta-wrap {
+            text-align: center;
+            margin: 24px 0;
+        }
+        .button-cta {
+            display: inline-block;
+            padding: 14px 28px;
+            background-color: #e8d50b;
+            color: #000000;
+            font-size: 16px;
+            font-weight: bold;
+            text-decoration: none;
+            border-radius: 6px;
+        }
+        .button-cta:hover {
+            background-color: #d4c009;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+        .footer .footer-small {
+            font-size: 0.85em;
+        }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>{{ $isPasswordReset ? 'Password Reset' : 'Welcome to PSM Admin Panel' }}</h1>
+        <h1>{{ $heading }}</h1>
     </div>
 
     <div class="content">
-        @if($isPasswordReset)
-            <p>Hello <strong>{{ $user->profile->full_name ?? $user->username }}</strong>,</p>
+        <p>Hello <strong>{{ $greeting_name }}</strong>,</p>
 
-            <p>Your admin panel password has been reset by the Super Administrator.</p>
-        @else
-            <p>Hello <strong>{{ $user->profile->full_name ?? $user->username }}</strong>,</p>
-
-            <p>Welcome to the PSM Equipment Rental Admin Panel! Your administrator account has been created successfully.</p>
-
-            <p>You have been granted <strong>{{ $role_display }}</strong> access to the system.</p>
+        <p>{{ $body_message }}</p>
+        @if(!empty($role_line))
+            <p>{!! $role_line !!}</p>
         @endif
 
         <div class="credentials">
-            <h3 style="margin-top: 0;">Your Login Credentials</h3>
+            <h3 class="credentials-title">Your Login Credentials</h3>
 
             <div class="credential-row">
                 <span class="credential-label">Admin Panel URL:</span>
@@ -113,7 +134,7 @@
 
             <div class="credential-row">
                 <span class="credential-label">Email (for login):</span>
-                <span class="credential-value">{{ $user->profile->email ?? $user->email }}</span>
+                <span class="credential-value">{{ $user_email }}</span>
             </div>
 
             <div class="credential-row">
@@ -135,32 +156,23 @@
             </ul>
         </div>
 
-        <div style="text-align: center; margin: 24px 0;">
-            <a href="{{ $adminPanelUrl }}" style="display: inline-block; padding: 14px 28px; background-color: #e8d50b; color: #000000; font-size: 16px; font-weight: bold; text-decoration: none; border-radius: 6px;">Access Admin Panel</a>
+        <div class="cta-wrap">
+            <a href="{{ $adminPanelUrl }}" class="button-cta">Access Admin Panel</a>
         </div>
 
         <div class="note">
             <strong>📌 Note:</strong> If you have any questions or need assistance, please contact the Super Administrator.
         </div>
 
-        @if(!$isPasswordReset)
-            <h3>What You Can Do:</h3>
-            <ul>
-                <li>Manage user accounts and companies</li>
-                <li>View and monitor rental jobs and supply offers</li>
-                <li>Manage products, equipment, and inventory</li>
-                <li>Access comprehensive reporting and analytics</li>
-                @if($user->role === 'super_admin')
-                    <li><strong>Full administrative control including managing other admin users</strong></li>
-                @endif
-            </ul>
+        @if(!empty($capabilities_section))
+            {!! $capabilities_section !!}
         @endif
     </div>
 
     <div class="footer">
         <p>PSM Equipment Rental Platform - Admin Panel</p>
-        <p style="margin: 5px 0;">This is an automated email. Please do not reply to this message.</p>
-        <p style="margin: 5px 0; font-size: 0.85em;">© {{ date('Y') }} PSM. All rights reserved.</p>
+        <p>This is an automated email. Please do not reply to this message.</p>
+        <p class="footer-small">© {{ $current_year }} PSM. All rights reserved.</p>
     </div>
 </body>
 </html>

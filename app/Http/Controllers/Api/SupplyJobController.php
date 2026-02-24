@@ -413,15 +413,48 @@ class SupplyJobController extends Controller
                 })
                 ->toArray();
 
-            //Prepare email data
+            // Build reason line (HTML or empty)
+            $reasonDisplay = '';
+            if (!empty($request->reason)) {
+                $reasonDisplay = '<p><strong>Reason:</strong> ' . e($request->reason) . '</p>';
+            }
+
+            // Build products table HTML for DB template compatibility
+            $productsSection = '';
+            if (!empty($offerProducts)) {
+                $grandTotal = 0;
+                $currencySymbol = $currencySymbol ?: '';
+                $rows = '';
+                foreach ($offerProducts as $p) {
+                    $qty = (int) ($p['quantity'] ?? 0);
+                    $price = (float) ($p['price'] ?? 0);
+                    $total = $qty * $price;
+                    $grandTotal += $total;
+                    $rows .= '<tr style="border-bottom: 1px solid #eee;">';
+                    $rows .= '<td>' . e($p['psm_code'] ?? '—') . '</td>';
+                    $rows .= '<td>' . e($p['model'] ?? '-') . '</td>';
+                    $rows .= '<td>' . e($p['software_code'] ?? '—') . '</td>';
+                    $rows .= '<td>' . $qty . '</td>';
+                    $rows .= '<td>' . $currencySymbol . number_format($price, 2) . '</td>';
+                    $rows .= '<td>' . $currencySymbol . number_format($total, 2) . '</td>';
+                    $rows .= '</tr>';
+                }
+                $productsSection = '<h3 style="color: #1a73e8; margin-top: 25px;">Cancelled Equipment Details</h3>'
+                    . '<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px; font-size: 14px;">'
+                    . '<thead style="background-color: #f0f0f0; border-bottom: 2px solid #ddd;">'
+                    . '<tr><th align="left">PSM Code</th><th align="left">Model</th><th align="left">Software Code</th><th align="left">Qty</th><th align="left">Price</th><th align="left">Total Price</th></tr>'
+                    . '</thead><tbody>' . $rows
+                    . '<tr style="font-weight: bold; background-color: #fafafa;"><td colspan="5" align="right">Grand Total</td><td>' . $currencySymbol . number_format($grandTotal, 2) . '</td></tr>'
+                    . '</tbody></table>';
+            }
+
             $mailData = [
                 'provider' => $supplyJob->provider->name ?? '-',
                 'supply_job_name' => $rentalJob->name ?? '-',
-                'status' => 'cancelled',
-                'reason' => $request->reason ?? null,
+                'status' => 'Cancelled',
+                'reason_display' => $reasonDisplay,
                 'date' => now()->format('d M Y, h:i A'),
-                'products' => $offerProducts,
-                'currency' => $currencySymbol,
+                'products_section' => $productsSection,
             ];
 
             //Log to verify

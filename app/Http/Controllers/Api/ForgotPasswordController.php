@@ -42,6 +42,7 @@ class ForgotPasswordController extends Controller
                 'full_name' => $user->profile->full_name,
                 'email' => $user->profile->email,
                 'reset_url' => rtrim(env('APP_FRONTEND_URL', ''), '/') . '#/reset-password/' . $token,
+                'current_year' => (string) date('Y'),
             ];
 
             $to_name = $user->profile->full_name;
