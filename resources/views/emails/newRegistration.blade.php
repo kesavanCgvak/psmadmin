@@ -76,7 +76,7 @@
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; {{ date('Y') }} Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
     </table>

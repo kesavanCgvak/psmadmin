@@ -17,6 +17,9 @@ class EmailTemplateService
      */
     public function getTemplate(string $templateName, array $data = []): ?array
     {
+        // Ensure every template has current_year for footer (so no need to pass from every sender)
+        $data = array_merge(['current_year' => (string) date('Y')], $data);
+
         // Check if template exists in database (regardless of active status)
         $templateInDb = EmailTemplate::where('name', $templateName)->first();
         
@@ -31,9 +34,11 @@ class EmailTemplateService
             }
             
             // Template is active - use it
+            $body = $this->replaceVariables($templateInDb->body, $data);
+            $body = $this->ensureFooterYear($body);
             return [
                 'subject' => $this->replaceVariables($templateInDb->subject, $data),
-                'body' => $this->replaceVariables($templateInDb->body, $data),
+                'body' => $body,
             ];
         }
 
@@ -43,7 +48,7 @@ class EmailTemplateService
         if (View::exists($bladePath)) {
             try {
                 $body = view($bladePath, $data)->render();
-                
+                $body = $this->ensureFooterYear($body);
                 // Try to get subject from config or use default
                 $subject = $this->getDefaultSubject($templateName);
                 
@@ -92,6 +97,9 @@ class EmailTemplateService
             $content = str_replace('{{ $' . $key . '}}', $stringValue, $content);
             // Replace {{$variable }} format (mixed)
             $content = str_replace('{{$' . $key . ' }}', $stringValue, $content);
+            // Replace {!! $variable !!} format (unescaped HTML - so DB templates can output HTML)
+            $content = str_replace('{!! $' . $key . ' !!}', $stringValue, $content);
+            $content = str_replace('{!!$' . $key . '!!}', $stringValue, $content);
         }
 
         return $content;
@@ -132,7 +140,37 @@ class EmailTemplateService
             $content = str_replace($placeholder, $value ?? '', $content);
         }
 
+        // {{ date('Y') }} - match any spacing/quote variant so it never shows literally in DB templates
+        $currentYear = (string) date('Y');
+        $content = preg_replace('/\{\{\s*date\s*\(\s*[\'"]Y[\'"]\s*\)\s*\}\}/', $currentYear, $content);
+
+        // {{ $current_year }} - ensure footer always shows actual year (fallback if not in $data)
+        $content = str_replace('{{ $current_year }}', $currentYear, $content);
+        $content = str_replace('{{$current_year}}', $currentYear, $content);
+
+        // Literal "Sample Current year" (any casing) sometimes used in admin - replace with actual year
+        $content = preg_replace('/Sample\s+Current\s+year/i', $currentYear, $content);
+
         return $content;
+    }
+
+    /**
+     * Final pass on email body: ensure footer always shows actual year.
+     * Replaces "Sample Current year" (any variant) and any leftover year placeholders.
+     */
+    private function ensureFooterYear(string $body): string
+    {
+        $year = (string) date('Y');
+
+        // "Sample Current year" - any casing, spaces, or &nbsp; between words
+        $body = preg_replace('/Sample[\s\xc2\xa0]+Current[\s\xc2\xa0]+year/i', $year, $body);
+        $body = preg_replace('/Sample\s+Current\s+year/i', $year, $body);
+
+        // Leftover placeholders that might still be in body
+        $body = str_replace(['{{ $current_year }}', '{{$current_year}}'], $year, $body);
+        $body = preg_replace('/\{\{\s*date\s*\(\s*[\'"]Y[\'"]\s*\)\s*\}\}/', $year, $body);
+
+        return $body;
     }
 
     /**

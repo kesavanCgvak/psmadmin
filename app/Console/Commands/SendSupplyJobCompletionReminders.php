@@ -85,6 +85,7 @@ class SendSupplyJobCompletionReminders extends Command
             'unpack_date' => $unpackDate->format('d M Y'),
             'days_since_unpack' => $daysSinceUnpack,
             'reminder_label' => $labels[$daysAfterUnpack] ?? 'follow-up',
+            'current_year' => (string) date('Y'),
         ];
 
         \App\Helpers\EmailHelper::send('jobCompletionReminder', $mailContent, function ($message) use ($email) {

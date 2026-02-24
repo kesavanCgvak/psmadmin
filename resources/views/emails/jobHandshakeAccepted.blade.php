@@ -32,11 +32,11 @@
                     <h4 style="color: #1a73e8; margin-top: 0;">Offer Details</h4>
                     <tr>
                         <td><strong>Sender:</strong></td>
-                        <td>{{ $sender ?? '-' }}</td>
+                        <td>{{ $sender }}</td>
                     </tr>
                     <tr>
                         <td><strong>Receiver:</strong></td>
-                        <td>{{ $receiver ?? '-' }}</td>
+                        <td>{{ $receiver }}</td>
                     </tr>
                     <tr>
                         <td><strong>Amount:</strong></td>
@@ -44,15 +44,15 @@
                     </tr>
                     <tr>
                         <td><strong>Status:</strong></td>
-                        <td style="color: #0fb427ff; font-weight:bold;">Accepted </td>
+                        <td style="color: #0fb427ff; font-weight:bold;">Accepted</td>
                     </tr>
                     <tr>
                         <td><strong>Date:</strong></td>
-                        <td>{{ $date ?? '-' }}</td>
+                        <td>{{ $date }}</td>
                     </tr>
                     <tr>
                         <td><strong>Unpack date:</strong></td>
-                        <td>{{ $unpacking_date ?? 'To be confirmed' }}</td>
+                        <td>{{ $unpacking_date }}</td>
                     </tr>
                 </table>
                 <br>
@@ -72,19 +72,7 @@
                     </thead>
 
                     <tbody>
-                        @forelse($products as $product)
-                            <tr>
-                                <td>{{ $product['psm_code'] }}</td>
-                                <td>{{ $product['model'] }}</td>
-                                <td>{{ $product['software_code'] }}</td>
-                                <td>{{ $product['accepted_quantity'] }}</td>
-                                <td>{{ $currency_symbol ?? '' }}{{ $product['price_per_unit'] }}</td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="6" style="text-align:center;">No products found.</td>
-                            </tr>
-                        @endforelse
+                        {!! $products_html !!}
                     </tbody>
                 </table>
 
@@ -97,7 +85,7 @@
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; {{ date('Y') }} Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
     </table>

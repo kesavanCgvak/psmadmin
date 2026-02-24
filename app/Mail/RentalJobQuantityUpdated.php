@@ -31,7 +31,8 @@ class RentalJobQuantityUpdated extends Mailable
     public function build()
     {
         return $this->subject('Rental Job Updated - Product Quantities Changed')
-            ->view('emails.rental_job.updated_quantities');
+            ->view('emails.rental_job.updated_quantities')
+            ->with('current_year', (string) date('Y'));
     }
 }
 

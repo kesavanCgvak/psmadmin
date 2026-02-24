@@ -48,6 +48,7 @@ class JobOfferNotificationMail extends Mailable
                 'currency'              => $this->currency,
                 'status'                => $this->status,
                 'products'              => $this->products,
+                'current_year'          => (string) date('Y'),
             ]);
     }
 }

@@ -27,7 +27,8 @@ class RentalJobBasicsUpdated extends Mailable
     public function build()
     {
         return $this->subject('Rental Job Updated - Basic Details Changed')
-            ->view('emails.rental_job.updated_basics');
+            ->view('emails.rental_job.updated_basics')
+            ->with('current_year', (string) date('Y'));
     }
 }
 

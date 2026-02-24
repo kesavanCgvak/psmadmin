@@ -401,11 +401,18 @@ class JobNegotiationController extends Controller
             // Handshake success mail (includes unpack date for provider)
             $unpackDateFormatted = $supplyJob->unpacking_date
                 ? \Carbon\Carbon::parse($supplyJob->unpacking_date)->format('d M Y')
-                : null;
+                : 'To be confirmed';
+            $productsHtml = '';
+            foreach ($handshakeProducts as $p) {
+                $productsHtml .= '<tr><td>' . e($p['psm_code'] ?? '—') . '</td><td>' . e($p['model'] ?? '—') . '</td><td>' . e($p['software_code'] ?? '—') . '</td><td>' . (int) ($p['accepted_quantity'] ?? 0) . '</td><td>' . $currencySymbol . number_format((float) ($p['price_per_unit'] ?? 0), 2) . '</td></tr>';
+            }
+            if ($productsHtml === '') {
+                $productsHtml = '<tr><td colspan="5" style="text-align:center;">No products found.</td></tr>';
+            }
             $mailContent = [
                 'offer_id' => $offer->id,
-                'sender' => $senderCompany->name ?? 'A Company',
-                'receiver' => $receiverCompany->name ?? 'A Company',
+                'sender' => $senderCompany->name ?? '-',
+                'receiver' => $receiverCompany->name ?? '-',
                 'rental_job_name' => $rentalJob->name ?? '',
                 'amount' => number_format($offer->total_price, 2),
                 'currency_symbol' => $currencySymbol,
@@ -413,8 +420,9 @@ class JobNegotiationController extends Controller
                 'fulfilled_quantity' => $rentalJob->fulfilled_quantity,
                 'remaining_quantity' => $remainingQty,
                 'date' => now()->format('d M Y, h:i A'),
-                'products' => $handshakeProducts,
+                'products_html' => $productsHtml,
                 'unpacking_date' => $unpackDateFormatted,
+                'current_year' => (string) date('Y'),
             ];
 
             foreach ($emails as $email) {
@@ -481,13 +489,24 @@ class JobNegotiationController extends Controller
                     $email = data_get($open, 'provider.defaultContact.profile.email');
 
                     if ($email) {
-                        $partialMail = [
-                            'rental_job_name' => $rentalJob->name,
-                            'remaining_quantity' => $remainingQty,
-                            'products' => $remainingProducts,
-                            'currency' => $currencySymbol,
-                            'date' => now()->format('d M Y, h:i A'),
-                        ];
+                            // Build products table HTML for DB template compatibility
+                            $productsSection = '';
+                            if (!empty($remainingProducts)) {
+                                $rows = '';
+                                foreach ($remainingProducts as $p) {
+                                    $rows .= '<tr><td>' . e($p['psm_code'] ?? '—') . '</td><td>' . e($p['model'] ?? '—') . '</td><td>' . e($p['software_code'] ?? '—') . '</td><td>' . (int) ($p['requested_quantity'] ?? 0) . '</td><td>' . (int) ($p['fulfilled_quantity'] ?? 0) . '</td><td>' . (int) ($p['remaining_quantity'] ?? 0) . '</td></tr>';
+                                }
+                                $productsSection = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px;"><thead><tr style="background:#e8f0fe; text-align:left;"><th style="border-bottom:1px solid #ccc;">PSM Code</th><th style="border-bottom:1px solid #ccc;">Model</th><th style="border-bottom:1px solid #ccc;">Software Code</th><th style="border-bottom:1px solid #ccc;">Requested Quantity</th><th style="border-bottom:1px solid #ccc;">Fulfilled Quantity</th><th style="border-bottom:1px solid #ccc;">Remaining Quantity</th></tr></thead><tbody>' . $rows . '</tbody></table>';
+                            } else {
+                                $productsSection = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse;"><tbody><tr><td colspan="6" style="text-align:center;">No products found.</td></tr></tbody></table>';
+                            }
+
+                            $partialMail = [
+                                'rental_job_name' => $rentalJob->name,
+                                'remaining_quantity' => $remainingQty,
+                                'date' => now()->format('d M Y, h:i A'),
+                                'products_section' => $productsSection,
+                            ];
 
                         \App\Helpers\EmailHelper::send('jobPartialFulfilled', $partialMail, function ($message) use ($email) {
                             $message->to($email)
@@ -628,17 +647,25 @@ class JobNegotiationController extends Controller
                     ->toArray();
             }
 
+            // Build products table HTML for DB template compatibility
+            $productsSection = '';
+            if (!empty($productDetails)) {
+                $rows = '';
+                foreach ($productDetails as $p) {
+                    $rows .= '<tr><td>' . e($p['psm_code'] ?? '—') . '</td><td>' . e($p['model'] ?? '—') . '</td><td>' . e($p['software_code'] ?? '—') . '</td><td>' . (int) ($p['quantity'] ?? 0) . '</td><td>' . $currencySymbol . number_format((float) ($p['price'] ?? 0), 2) . '</td><td>' . $currencySymbol . number_format((float) ($p['total_price'] ?? 0), 2) . '</td></tr>';
+                }
+                $productsSection = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px;"><thead><tr style="background:#e8f0fe; text-align:left;"><th style="border-bottom:1px solid #ccc;">PSM Code</th><th style="border-bottom:1px solid #ccc;">Model</th><th style="border-bottom:1px solid #ccc;">Software Code</th><th style="border-bottom:1px solid #ccc;">Qty</th><th style="border-bottom:1px solid #ccc;">Price</th><th style="border-bottom:1px solid #ccc;">Total</th></tr></thead><tbody>' . $rows . '</tbody></table>';
+            }
+
             $mailContent = [
-                'offer_id' => $offer->id,
                 'sender' => $senderCompany->name ?? 'A Company',
                 'receiver' => $receiverCompany->name ?? 'A Company',
                 'rental_job_name' => $offer->rentalJob->name ?? '',
-                'version' => $offer->version,
                 'date' => now()->format('d M Y, h:i A'),
-                'products' => $productDetails,
                 'reason' => $request->reason ?? 'No reason provided.',
-                'total_price' => $offer->total_price,
+                'total_price' => $currencySymbol . number_format((float) $offer->total_price, 2),
                 'currency_symbol' => $currencySymbol,
+                'products_section' => $productsSection,
             ];
 
             foreach ($emails as $email) {
