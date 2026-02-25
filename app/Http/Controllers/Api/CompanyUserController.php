@@ -119,8 +119,12 @@ class CompanyUserController extends Controller
                     'company_name' => $companyName,
                     'account_type' => $authUser->accountType,
                     'username' => $request->username,
-                    'mobile' => $request->mobile,
-                    'email' => $request->email
+                    'mobile' => $request->mobile ?? '',
+                    'email' => $request->email,
+                    'region_name' => $company ? (optional($company->getregion)->name ?? 'N/A') : 'N/A',
+                    'country_name' => $company ? (optional($company->getcountry)->name ?? 'N/A') : 'N/A',
+                    'state_name' => $company ? (optional($company->getState)->name ?? 'N/A') : 'N/A',
+                    'city_name' => $company ? (optional($company->getcity)->name ?? 'N/A') : 'N/A',
                 ], function ($message) use ($data) {
                     $message->to(config('mail.to.addresses'));
                     $message->from(config('mail.from.address'), config('mail.from.name'));
