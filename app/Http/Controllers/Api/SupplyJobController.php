@@ -517,12 +517,12 @@ class SupplyJobController extends Controller
 
                 if ($supplyJob->rentalJob) {
                     $rentalJob = $supplyJob->rentalJob;
-                    // Rental job = completed_pending_rating only when ALL accepted providers have marked completed
-                    $anyStillPending = SupplyJob::where('rental_job_id', $rentalJob->id)
-                        ->whereIn('status', ['accepted', 'partially_accepted'])
+                    // Rental = completed_pending_rating only when ALL suppliers have completed. Any in pending/negotiating/accepted/partially_accepted → stay partially_accepted.
+                    $anyNotCompleted = SupplyJob::where('rental_job_id', $rentalJob->id)
+                        ->whereIn('status', ['pending', 'negotiating', 'accepted', 'partially_accepted'])
                         ->exists();
                     $rentalJob->update([
-                        'status' => $anyStillPending ? 'partially_accepted' : 'completed_pending_rating',
+                        'status' => $anyNotCompleted ? 'partially_accepted' : 'completed_pending_rating',
                     ]);
                 }
             });
@@ -626,11 +626,14 @@ class SupplyJobController extends Controller
                     ]
                 );
                 $supplyJob->update(['status' => 'rated']);
-                $pendingCount = SupplyJob::where('rental_job_id', $rentalJob->id)
+                $pendingRatingCount = SupplyJob::where('rental_job_id', $rentalJob->id)
                     ->where('status', 'completed_pending_rating')
                     ->count();
-                // Only set rental job to "rated" when it was in completed_pending_rating (all suppliers had completed) and no ratings left pending
-                if ($pendingCount === 0 && $rentalJob->status === 'completed_pending_rating') {
+                // Only set rental to "rated" when ALL suppliers have completed AND all have been rated/skipped (no supplier still pending/negotiating/accepted/partially_accepted or completed_pending_rating)
+                $allSuppliersDone = ! SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->whereIn('status', ['pending', 'negotiating', 'accepted', 'partially_accepted', 'completed_pending_rating'])
+                    ->exists();
+                if ($pendingRatingCount === 0 && $rentalJob->status === 'completed_pending_rating' && $allSuppliersDone) {
                     $rentalJob->update(['status' => 'rated']);
                 }
             });
@@ -678,15 +681,8 @@ class SupplyJobController extends Controller
                 ], 400);
             }
 
-            $supplyJob->load('jobRating');
-            if ($supplyJob->jobRating && $supplyJob->jobRating->skipped_at) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Rating was already skipped for this provider.',
-                ], 400);
-            }
-
-            // Record skip only; do not change supply job or rental job status (stay completed_pending_rating / partially_accepted)
+            // Record skip only; do not change supply job or rental job status (stay completed_pending_rating / partially_accepted).
+            // Skip can be done multiple times; reminders will still be sent per schedule so the renter can rate later.
             JobRating::updateOrCreate(
                 ['supply_job_id' => $supplyJob->id],
                 [

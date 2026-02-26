@@ -762,15 +762,11 @@ class RentalJobActionsController extends Controller
                 ], 400);
             }
 
-            // Record skip only; do not change supply job or rental job status (stay completed_pending_rating / same)
+            // Record skip only; do not change supply job or rental job status. Skip can be done multiple times; reminders still send per schedule.
                 $pendingSupplyJobs = SupplyJob::where('rental_job_id', $rentalJob->id)
                     ->where('status', 'completed_pending_rating')
                     ->get();
                 foreach ($pendingSupplyJobs as $sj) {
-                    $sj->load('jobRating');
-                    if ($sj->jobRating && $sj->jobRating->skipped_at) {
-                        continue; // already skipped
-                    }
                     JobRating::updateOrCreate(
                         ['supply_job_id' => $sj->id],
                         [

@@ -118,7 +118,7 @@ The following commands are scheduled to run **daily**:
 **Conditions:**
 - Only for supply jobs with `status = 'completed_pending_rating'`
 - Only if `completed_at` is set and in the past
-- Reminders stop only once renter submits a rating (not when they skip). If the renter skipped, reminders are still sent so they can rate later.
+- Reminders stop only once renter submits a rating (not when they skip). The renter can skip unlimited times; each time only records the skip and does not change job status. Reminders are still sent on the schedule above (7, 14, 21, 30 days) so the renter can rate later.
 - Each reminder is sent only once (tracked in `supply_job_rating_reminders` table)
 
 **Command Class:** `App\Console\Commands\SendRenterRatingReminders`
