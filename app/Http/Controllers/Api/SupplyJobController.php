@@ -629,8 +629,11 @@ class SupplyJobController extends Controller
                 $pendingCount = SupplyJob::where('rental_job_id', $rentalJob->id)
                     ->where('status', 'completed_pending_rating')
                     ->count();
-                // Only set rental job to "rated" when it was in completed_pending_rating (all suppliers had completed) and no ratings left pending
-                if ($pendingCount === 0 && $rentalJob->status === 'completed_pending_rating') {
+                // Only set rental job to "rated" when ALL suppliers have completed and all have been rated/skipped (no others still in accepted/partially_accepted)
+                $noOthersStillPending = ! SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->whereIn('status', ['accepted', 'partially_accepted'])
+                    ->exists();
+                if ($pendingCount === 0 && $rentalJob->status === 'completed_pending_rating' && $noOthersStillPending) {
                     $rentalJob->update(['status' => 'rated']);
                 }
             });
@@ -678,15 +681,8 @@ class SupplyJobController extends Controller
                 ], 400);
             }
 
-            $supplyJob->load('jobRating');
-            if ($supplyJob->jobRating && $supplyJob->jobRating->skipped_at) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Rating was already skipped for this provider.',
-                ], 400);
-            }
-
-            // Record skip only; do not change supply job or rental job status (stay completed_pending_rating / partially_accepted)
+            // Record skip only; do not change supply job or rental job status (stay completed_pending_rating / partially_accepted).
+            // Skip can be done multiple times; reminders will still be sent per schedule so the renter can rate later.
             JobRating::updateOrCreate(
                 ['supply_job_id' => $supplyJob->id],
                 [
