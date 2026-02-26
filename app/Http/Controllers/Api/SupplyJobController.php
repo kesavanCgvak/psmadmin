@@ -98,13 +98,14 @@ class SupplyJobController extends Controller
 
             //Transform data (works for both cases)
             $data = $collection->map(function (SupplyJob $job) {
+                $effectiveStatus = $this->effectiveSupplyJobStatus($job->status, $job->jobRating);
                 $row = [
                     'id' => $job->id,
                     'name' => $job->rentalJob?->name ?? '',
                     'rental_job_id' => $job->rentalJob?->id,
                     'start_date' => $job->rentalJob?->from_date,
                     'end_date' => $job->rentalJob?->to_date,
-                    'status' => $job->status,
+                    'status' => $effectiveStatus,
                     'products' => $job->products->map(function ($sp) {
                         $brand = $sp->product?->brand?->name ?? '';
                         $model = $sp->product?->model ?? '';
@@ -118,7 +119,7 @@ class SupplyJobController extends Controller
                 if ($job->rentalJob?->user?->company) {
                     $row['renter_company_name'] = $job->rentalJob->user->company->name;
                 }
-                if ($job->status === 'rated' && $job->jobRating?->rated_at) {
+                if ($effectiveStatus === 'rated' && $job->jobRating?->rated_at) {
                     $jr = $job->jobRating;
                     $reply = $job->ratingReply;
                     $row['job_rating'] = [
@@ -276,6 +277,7 @@ class SupplyJobController extends Controller
             }
 
 
+            $effectiveStatus = $this->effectiveSupplyJobStatus($supplyJob->status, $supplyJob->jobRating);
             $data = [
                 'id' => $supplyJob->id,
                 'name' => $supplyJob->rentalJob->name,
@@ -288,7 +290,7 @@ class SupplyJobController extends Controller
                 'return_date' => $supplyJob->return_date,
                 'unpacking_date' => $supplyJob->unpacking_date,
                 'delivery_address' => $supplyJob->rentalJob->delivery_address,
-                'status' => $supplyJob->status,
+                'status' => $effectiveStatus,
                 'company' => [
                     'id' => $company->id,
                     'name' => $company->name,
@@ -317,7 +319,7 @@ class SupplyJobController extends Controller
                 ],
             ];
 
-            if ($supplyJob->status === 'rated' && $supplyJob->jobRating?->rated_at) {
+            if ($effectiveStatus === 'rated' && $supplyJob->jobRating?->rated_at) {
                 $jobRating = $supplyJob->jobRating;
                 $reply = $supplyJob->ratingReply;
                 $data['job_rating'] = [
@@ -603,10 +605,12 @@ class SupplyJobController extends Controller
                 ], 403);
             }
 
-            if ($rentalJob->status !== 'completed_pending_rating') {
+            // Allow rating as soon as this supplier's job is completed (per-supplier rating).
+            // Also allow rating after skip: renter can change their mind and submit a rating later (reminders encourage this).
+            if ($supplyJob->status !== 'completed_pending_rating') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Job must be in completed (pending rating) status to submit a rating.',
+                    'message' => 'This provider has not been marked as completed yet, or has already been rated.',
                 ], 400);
             }
 
@@ -625,7 +629,8 @@ class SupplyJobController extends Controller
                 $pendingCount = SupplyJob::where('rental_job_id', $rentalJob->id)
                     ->where('status', 'completed_pending_rating')
                     ->count();
-                if ($pendingCount === 0) {
+                // Only set rental job to "rated" when it was in completed_pending_rating (all suppliers had completed) and no ratings left pending
+                if ($pendingCount === 0 && $rentalJob->status === 'completed_pending_rating') {
                     $rentalJob->update(['status' => 'rated']);
                 }
             });
@@ -665,29 +670,31 @@ class SupplyJobController extends Controller
                 ], 403);
             }
 
-            if ($rentalJob->status !== 'completed_pending_rating') {
+            // Allow skip as soon as this supplier's job is completed (per-supplier rating/skip)
+            if ($supplyJob->status !== 'completed_pending_rating') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Job must be in completed (pending rating) status to skip rating.',
+                    'message' => 'This provider has not been marked as completed yet, or has already been rated.',
                 ], 400);
             }
 
-            DB::transaction(function () use ($supplyJob, $rentalJob) {
-                JobRating::updateOrCreate(
-                    ['supply_job_id' => $supplyJob->id],
-                    [
-                        'rental_job_id' => $rentalJob->id,
-                        'skipped_at' => now(),
-                    ]
-                );
-                $supplyJob->update(['status' => 'rated']);
-                $pendingCount = SupplyJob::where('rental_job_id', $rentalJob->id)
-                    ->where('status', 'completed_pending_rating')
-                    ->count();
-                if ($pendingCount === 0) {
-                    $rentalJob->update(['status' => 'rated']);
-                }
-            });
+            $supplyJob->load('jobRating');
+            if ($supplyJob->jobRating && $supplyJob->jobRating->skipped_at) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Rating was already skipped for this provider.',
+                ], 400);
+            }
+
+            // Record skip only; do not change supply job or rental job status (stay completed_pending_rating / partially_accepted)
+            JobRating::updateOrCreate(
+                ['supply_job_id' => $supplyJob->id],
+                [
+                    'rental_job_id' => $rentalJob->id,
+                    'rated_at' => null,
+                    'skipped_at' => now(),
+                ]
+            );
 
             return response()->json([
                 'success' => true,
@@ -776,4 +783,22 @@ class SupplyJobController extends Controller
         }
     }
 
+    /**
+     * Return effective supply job status for display.
+     * "rated" is only shown when the renter has actually submitted a rating or skipped (job_rating has rated_at or skipped_at).
+     * Fixes inconsistency where status could be "rated" in DB but no rating was given.
+     */
+    private function effectiveSupplyJobStatus(string $status, ?JobRating $jobRating): string
+    {
+        if ($status !== 'rated') {
+            return $status;
+        }
+        if (!$jobRating) {
+            return 'completed_pending_rating';
+        }
+        if ($jobRating->rated_at || $jobRating->skipped_at) {
+            return 'rated';
+        }
+        return 'completed_pending_rating';
+    }
 }
