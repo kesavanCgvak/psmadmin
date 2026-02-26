@@ -762,24 +762,24 @@ class RentalJobActionsController extends Controller
                 ], 400);
             }
 
-            DB::transaction(function () use ($rentalJob) {
+            // Record skip only; do not change supply job or rental job status (stay completed_pending_rating / same)
                 $pendingSupplyJobs = SupplyJob::where('rental_job_id', $rentalJob->id)
                     ->where('status', 'completed_pending_rating')
                     ->get();
                 foreach ($pendingSupplyJobs as $sj) {
+                    $sj->load('jobRating');
+                    if ($sj->jobRating && $sj->jobRating->skipped_at) {
+                        continue; // already skipped
+                    }
                     JobRating::updateOrCreate(
                         ['supply_job_id' => $sj->id],
                         [
                             'rental_job_id' => $rentalJob->id,
+                            'rated_at' => null,
                             'skipped_at' => now(),
                         ]
                     );
                 }
-                $rentalJob->update(['status' => 'rated']);
-                SupplyJob::where('rental_job_id', $rentalJob->id)
-                    ->where('status', 'completed_pending_rating')
-                    ->update(['status' => 'rated']);
-            });
 
             return response()->json([
                 'success' => true,

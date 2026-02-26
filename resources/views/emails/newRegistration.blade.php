@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>New Job Offer - Pro Subrental Marketplace</title>
+    <title>New Registration - Pro Subrental Marketplace</title>
 </head>
 
 <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 25px; color: #333;">
@@ -28,47 +28,39 @@
 
                     <tr>
                         <td><strong>Company Name:</strong></td>
-                        <td> {{ $company_name }}</td>
+                        <td>{{ $company_name }}</td>
                     </tr>
                     <tr>
                         <td><strong>Account Type:</strong></td>
-                        <td> {{ $account_type }}</td>
+                        <td>{{ $account_type }}</td>
                     </tr>
                     <tr>
-                        <td><strong>User Name:</strong> </td>
+                        <td><strong>User Name:</strong></td>
                         <td>{{ $username }}</td>
                     </tr>
                     <tr>
                         <td><strong>User Email:</strong></td>
-                        <td> {{ $email }}</td>
+                        <td>{{ $email }}</td>
                     </tr>
-                    @if(isset($region_name) && $region_name)
-                        <tr>
-                            <td><strong>Region:</strong></td>
-                            <td> {{ $region_name }}</td>
-                        </tr>
-                    @endif
-                    @if(isset($country_name) && $country_name)
-                        <tr>
-                            <td><strong>Country:</strong></td>
-                            <td> {{ $country_name }}</td>
-                        </tr>
-                    @endif
-                    @if(isset($state_name) && $state_name)
-                        <tr>
-                            <td><strong>State/Province:</strong></td>
-                            <td> {{ $state_name ?? 'N/A' }}</td>
-                        </tr>
-                    @endif
-                    @if(isset($city_name) && $city_name)
-                        <tr>
-                            <td><strong>City:</strong></td>
-                            <td> {{ $city_name }}</td>
-                        </tr>
-                    @endif
+                    <tr>
+                        <td><strong>Region:</strong></td>
+                        <td>{{ $region_name }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Country:</strong></td>
+                        <td>{{ $country_name }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>State/Province:</strong></td>
+                        <td>{{ $state_name }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>City:</strong></td>
+                        <td>{{ $city_name }}</td>
+                    </tr>
                     <tr>
                         <td><strong>Contact Phone:</strong></td>
-                        <td> {{ $mobile }}</td>
+                        <td>{{ $mobile }}</td>
                     </tr>
                 </table>
             </td>

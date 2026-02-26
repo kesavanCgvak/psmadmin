@@ -150,6 +150,8 @@ class EmailTemplateController extends Controller
                 $sampleData[$varName] = 'DSLR';
             } elseif (stripos($varName, 'product_psm_code') !== false) {
                 $sampleData[$varName] = 'PSM-001234';
+            } elseif (stripos($varName, 'company_name') !== false) {
+                $sampleData[$varName] = 'Acme Rentals';
             } elseif (stripos($varName, 'name') !== false) {
                 $sampleData[$varName] = 'John Doe';
             } elseif (stripos($varName, 'email') !== false) {
@@ -190,6 +192,18 @@ class EmailTemplateController extends Controller
                 $sampleData[$varName] = 'Acme Rentals';
             } elseif (stripos($varName, 'user_mobile') !== false) {
                 $sampleData[$varName] = '+1 234 567 8900';
+            } elseif (stripos($varName, 'region_name') !== false) {
+                $sampleData[$varName] = 'West';
+            } elseif (stripos($varName, 'country_name') !== false) {
+                $sampleData[$varName] = 'United States';
+            } elseif (stripos($varName, 'state_name') !== false) {
+                $sampleData[$varName] = 'California';
+            } elseif (stripos($varName, 'city_name') !== false) {
+                $sampleData[$varName] = 'Los Angeles';
+            } elseif (stripos($varName, 'mobile') !== false) {
+                $sampleData[$varName] = '+1 234 567 8900';
+            } elseif (stripos($varName, 'account_type') !== false) {
+                $sampleData[$varName] = 'Provider';
             } elseif (stripos($varName, 'global_message_section') !== false) {
                 $sampleData[$varName] = '<h3 style="color: #1a73e8;">Global Message</h3><p style="background: #f9f9f9; padding: 12px; border-left: 4px solid #1a73e8;">Sample global message for this request.</p>';
             } elseif (stripos($varName, 'offer_requirements_section') !== false) {
