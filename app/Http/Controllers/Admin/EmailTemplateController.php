@@ -173,7 +173,7 @@ class EmailTemplateController extends Controller
             } elseif (stripos($varName, 'amount') !== false || stripos($varName, 'price') !== false) {
                 $sampleData[$varName] = '$1,000.00';
             } elseif (stripos($varName, 'currency_symbol') !== false) {
-                $sampleData[$varName] = '₹';
+                $sampleData[$varName] = '$';
             } elseif (stripos($varName, 'provider_contact_name') !== false) {
                 $sampleData[$varName] = 'Jane Smith';
             } elseif (stripos($varName, 'rental_job_name') !== false || stripos($varName, 'rental_name') !== false) {
@@ -183,7 +183,8 @@ class EmailTemplateController extends Controller
             } elseif (stripos($varName, 'products_count') !== false) {
                 $sampleData[$varName] = '3';
             } elseif (stripos($varName, 'products_table_html') !== false) {
-                $sampleData[$varName] = '<h3 style="margin-top: 25px; color: #1a73e8;">Imported Products (3)</h3><table width="100%" cellpadding="8" cellspacing="0" style="border: 1px solid #ccc; border-radius: 6px; margin-top: 10px;"><tr style="background-color: #e8eef8;"><th align="left">Model</th><th align="left">Brand</th><th align="left">Category</th><th align="left">PSM Code</th><th align="left">Rental Software Code</th></tr><tr><td>Canon EOS R5</td><td>Canon</td><td>Cameras</td><td>PSM-001</td><td>SW-001</td></tr><tr><td>Sony A7 IV</td><td>Sony</td><td>Cameras</td><td>PSM-002</td><td>SW-002</td></tr><tr><td>Panasonic GH5</td><td>Panasonic</td><td>Cameras</td><td>PSM-003</td><td>SW-003</td></tr></table>';
+                // Match quoteRequest actual structure: Requested Equipment with Equipment, PSM Code, Software Code, Qty, Similar OK?, Price, Total Price
+                $sampleData[$varName] = '<h3 style="color: #1a73e8;">Requested Equipment</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px; font-size: 14px;"><thead style="background-color: #f0f0f0; border-bottom: 2px solid #ddd;"><tr><th align="left">Equipment</th><th align="left">PSM Code</th><th align="left">Software Code</th><th align="left">Qty</th><th align="left">Similar OK?</th><th align="left">Price</th><th align="left">Total Price</th></tr></thead><tbody><tr style="border-bottom: 1px solid #eee;"><td>Sharpy Wash 330</td><td>PSM08137</td><td>TC7827</td><td>1</td><td>Yes</td><td>$119.00</td><td>$119.00</td></tr><tr style="border-top: 2px solid #ddd; background-color: #f9f9f9;"><td colspan="6" align="right" style="font-weight: bold; padding-right: 10px;">Grand Total:</td><td style="font-weight: bold;">$119.00</td></tr></tbody></table>';
             } elseif (stripos($varName, 'from_date') !== false || stripos($varName, 'to_date') !== false) {
                 $sampleData[$varName] = date('M d, Y');
             } elseif (stripos($varName, 'delivery_address') !== false) {
@@ -211,11 +212,9 @@ class EmailTemplateController extends Controller
             } elseif (stripos($varName, 'private_message_section') !== false) {
                 $sampleData[$varName] = '<h3 style="color: #1a73e8;">Private Message</h3><p style="background: #f9f9f9; padding: 12px; border-left: 4px solid #1a73e8;">Sample private message to supplier.</p>';
             } elseif (stripos($varName, 'initial_offer_section') !== false) {
-                $sampleData[$varName] = '<h3 style="color: #1a73e8;">Initial Offer Negotiation</h3><p><b>Offer Price : </b>₹5,000.00</p>';
-            } elseif (stripos($varName, 'products_table_html') !== false) {
-                $sampleData[$varName] = '<h3 style="color: #1a73e8;">Requested Equipment</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px; font-size: 14px;"><thead style="background-color: #f0f0f0;"><tr><th align="left">Equipment</th><th align="left">PSM Code</th><th align="left">Qty</th><th align="left">Price</th><th align="left">Total Price</th></tr></thead><tbody><tr style="border-bottom: 1px solid #eee;"><td>Canon EOS R5</td><td>PSM-001</td><td>2</td><td>₹2,500.00</td><td>₹5,000.00</td></tr><tr style="border-top: 2px solid #ddd; background-color: #f9f9f9;"><td colspan="4" align="right" style="font-weight: bold;">Grand Total:</td><td style="font-weight: bold;">₹5,000.00</td></tr></tbody></table>';
+                $sampleData[$varName] = '<h3 style="color: #1a73e8;">Initial Offer Negotiation</h3><p><b>Offer Price : </b>$90.00</p>';
             } elseif (stripos($varName, 'similar_request_note') !== false) {
-                $sampleData[$varName] = '<p style="margin-top: 15px; padding: 12px; background-color: #e8f4fd; border-left: 4px solid #1a73e8; font-size: 14px;"><strong>Note:</strong> The requester is also open to similar or equivalent products.</p>';
+                $sampleData[$varName] = '<p style="margin-top: 15px; padding: 12px; background-color: #e8f4fd; border-left: 4px solid #1a73e8; font-size: 14px; line-height: 1.5;"><strong>Note:</strong> The requester is also open to similar or equivalent products. Please contact the requester if you can offer suitable alternatives.</p>';
             } elseif (stripos($varName, 'products_section') !== false && stripos($varName, 'products_table') === false) {
                 // Sample for jobNegotiationCancelled / jobPartialFulfilled (Product Details table)
                 $sampleData[$varName] = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse;"><thead><tr style="background:#e8f0fe;"><th style="border-bottom:1px solid #ccc;">PSM Code</th><th style="border-bottom:1px solid #ccc;">Model</th><th style="border-bottom:1px solid #ccc;">Software Code</th><th style="border-bottom:1px solid #ccc;">Requested Qty</th><th style="border-bottom:1px solid #ccc;">Fulfilled</th><th style="border-bottom:1px solid #ccc;">Remaining</th></tr></thead><tbody><tr><td>PSM-001</td><td>Canon EOS R5</td><td>SW-001</td><td>10</td><td>6</td><td>4</td></tr></tbody></table>';
