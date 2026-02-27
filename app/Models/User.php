@@ -23,7 +23,7 @@ use App\Models\RentalJobComment;
 class User extends Authenticatable implements JWTSubject
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use  HasFactory, Notifiable;
+    use HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -42,7 +42,10 @@ class User extends Authenticatable implements JWTSubject
         'email_verified',
         'email_verified_at',
         'is_blocked',
-        'token'
+        'token',
+        'stripe_customer_id',
+        'subscription_status',
+        'subscription_ends_at'
     ];
 
 
@@ -66,6 +69,7 @@ class User extends Authenticatable implements JWTSubject
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'subscription_ends_at' => 'datetime',
         ];
     }
 
@@ -152,13 +156,11 @@ class User extends Authenticatable implements JWTSubject
     }
 
     /**
-     * Get the user's email from profile.
-     *
-     * @return string|null
+     * Preferred email: from profile; fallback to users.email for backward compatibility.
      */
-    public function getEmail(): ?string
+    public function getPreferredEmailAttribute(): ?string
     {
-        return $this->profile?->email;
+        return $this->profile?->email ?: $this->attributes['email'] ?? null;
     }
 
     /**
@@ -178,7 +180,7 @@ class User extends Authenticatable implements JWTSubject
      */
     public function getEmailForVerification()
     {
-        return $this->profile?->email;
+        return $this->preferred_email;
     }
 
     public function rentalJobs()
@@ -196,6 +198,40 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany(RentalJobComment::class, 'sender_id');
     }
 
+    public function subscription()
+    {
+        return $this->hasOne(Subscription::class)->latestOfMany();
+    }
+
+    public function subscriptions()
+    {
+        return $this->hasMany(Subscription::class);
+    }
+
+    /**
+     * Get the effective subscription for this user
+     * For provider company users: returns company subscription
+     * For regular users: returns individual subscription
+     */
+    public function getEffectiveSubscription()
+    {
+        // If user belongs to provider company, use company subscription
+        if ($this->company && 
+            $this->company->account_type === 'provider' && 
+            $this->company->subscription) {
+            return $this->company->subscription;
+        }
+        
+        // Otherwise, use individual subscription (for regular users)
+        return $this->subscription;
+    }
+
+    public function hasActiveSubscription(): bool
+    {
+        $subscription = $this->getEffectiveSubscription();
+        return $subscription && $subscription->isActive();
+    }
+
     /**
      * Get the identifier that will be stored in the subject claim of the JWT.
      */
@@ -211,4 +247,30 @@ class User extends Authenticatable implements JWTSubject
     {
         return [];
     }
+
+    /**
+     * Get the user's display description for AdminLTE.
+     *
+     * @return string|null
+     */
+    public function adminlte_desc()
+    {
+        return $this->role ?? 'User';
+    }
+
+    /**
+     * Get the user's profile URL for AdminLTE.
+     *
+     * @return string
+     */
+    public function adminlte_profile_url()
+    {
+        return route('profile.edit');
+    }
+
+    public function getAccountTypeAttribute()
+    {
+        return $this->company->account_type ?? null;
+    }
+
 }

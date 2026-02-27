@@ -20,9 +20,14 @@ class RentalJobOffer extends Model
         return $this->belongsTo(SupplyJob::class);
     }
 
-    public function supplyOffers()
+    public function offers()
     {
-        return $this->hasMany(SupplyJobOffer::class, 'rental_job_id');
+        return $this->hasMany(JobOffer::class, 'rental_job_id');
     }
+
+    // public function supplyOffers()
+    // {
+    //     return $this->hasMany(SupplyJobOffer::class, 'rental_job_id');
+    // }
 
 }

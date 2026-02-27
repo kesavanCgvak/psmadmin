@@ -15,6 +15,7 @@ use App\Models\Company;
 use App\Models\User;
 use App\Models\CompanyRating;
 use App\Models\CompanyBlock;
+use App\Models\CompanyProviderBlock;
 
 
 
@@ -110,8 +111,9 @@ class CompanyController extends Controller
             }
             $preferences = [
                 'currency_id' => $company->currency_id,
-                'date_format' => $company->date_format,
-                'pricing_scheme' => $company->pricing_scheme,
+                'date_format_id' => $company->date_format_id,
+                'pricing_scheme_id' => $company->pricing_scheme_id,
+                'hide_from_gear_finder' => $company->hide_from_gear_finder,
                 'rental_software_id' => $company->rental_software_id,
             ];
 
@@ -145,7 +147,6 @@ class CompanyController extends Controller
         }
     }
 
-
     /**
      * Update company preferences
      */
@@ -165,20 +166,48 @@ class CompanyController extends Controller
             // Validate payload
             $validated = $request->validate([
                 'currency_id' => 'nullable|integer|exists:currencies,id',
-                'date_format' => 'nullable|string|max:20',
-                'pricing_scheme' => 'nullable|string|max:50',
+                'date_format_id' => 'nullable|integer|exists:date_formats,id',
+                'pricing_scheme_id' => 'nullable|integer|exists:pricing_schemes,id',
                 'rental_software_id' => 'nullable|integer|exists:rental_softwares,id',
             ]);
 
             // Update only provided fields
             $company->update($validated);
 
-            $preferences = [
-                'currency_id' => $company->currency_id,
-                'date_format' => $company->date_format,
-                'pricing_scheme' => $company->pricing_scheme,
-                'rental_software_id' => $company->rental_software_id,
-            ];
+            // Reload relationships
+            $company->load(['currency', 'rentalSoftware', 'dateFormat', 'pricingScheme']);
+
+            // Format response with full objects
+            $preferences = [];
+
+            // Currency object
+            if ($company->currency) {
+                $preferences['currency'] = [
+                    'id' => $company->currency->id,
+                    'name' => $company->currency->name,
+                    'code' => $company->currency->code,
+                    'symbol' => $company->currency->symbol,
+                ];
+            }
+
+            // Rental Software object
+            if ($company->rentalSoftware) {
+                $preferences['rental_software'] = [
+                    'id' => $company->rentalSoftware->id,
+                    'name' => $company->rentalSoftware->name,
+                    'version' => $company->rentalSoftware->version ?? '',
+                ];
+            }
+
+            // Date Format string
+            if ($company->dateFormat) {
+                $preferences['date_format'] = $company->dateFormat->format;
+            }
+
+            // Pricing Scheme string (using name)
+            if ($company->pricingScheme) {
+                $preferences['pricing_scheme'] = $company->pricingScheme->name;
+            }
 
             return response()->json([
                 'success' => true,
@@ -255,6 +284,45 @@ class CompanyController extends Controller
         }
     }
 
+    /**
+     * Update Gear Finder visibility
+     */
+    public function updateGearFinderVisibility(Request $request)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+            $company = $user->company;
+
+            $validated = $request->validate([
+                'hide_from_gear_finder' => 'required|boolean',
+            ]);
+
+            $company->hide_from_gear_finder = $validated['hide_from_gear_finder'];
+            $company->save();
+
+            $message = $validated['hide_from_gear_finder']
+                ? 'Company hidden from Gear Finder.'
+                : 'Company visible in Gear Finder.';
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error updating Gear Finder visibility', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to update Gear Finder visibility',
+            ], 500);
+        }
+    }
 
     /**
      * Get default contact
@@ -480,6 +548,7 @@ class CompanyController extends Controller
                 'region' => $company->region_id,
                 'country' => $company->country_id,
                 'city' => $company->city_id,
+                'state' => $company->state_id,
                 'address_line_1' => $company->address_line_1,
                 'address_line_2' => $company->address_line_2,
                 'postal_code' => $company->postal_code,
@@ -519,6 +588,7 @@ class CompanyController extends Controller
                 // 'region' => 'nullable|integer|exists:regions,id',
                 'country_id' => 'nullable|integer|exists:countries,id',
                 'city_id' => 'nullable|integer|exists:cities,id',
+                'state_id' => 'nullable|integer|exists:states_provinces,id',
                 'address_line_1' => 'nullable|string|max:255',
                 'address_line_2' => 'nullable|string|max:255',
                 'postal_code' => 'nullable|string|max:20',
@@ -535,6 +605,7 @@ class CompanyController extends Controller
                 // 'region_id' => $request->region,
                 'country_id' => $request->country_id,
                 'city_id' => $request->city_id,
+                'state_id' => $request->state_id,
                 'address_line_1' => $request->address_line_1,
                 'address_line_2' => $request->address_line_2,
                 'postal_code' => $request->postal_code,
@@ -673,17 +744,24 @@ class CompanyController extends Controller
                 ->pluck('company_id')
                 ->toArray();
 
-            // ✅ Main query with SQL distance calculation
+            // ✅ Main query with joins + geolocation
             $query = Company::with(['defaultContactProfile'])
                 ->join('equipments', function ($join) use ($productIds) {
                     $join->on('companies.id', '=', 'equipments.company_id')
                         ->whereIn('equipments.product_id', $productIds);
                 })
                 ->join('products', 'products.id', '=', 'equipments.product_id')
+                ->leftJoin('brands', 'brands.id', '=', 'products.brand_id')
                 ->join('currencies', 'currencies.id', '=', 'companies.currency_id')
+                ->leftJoin('rental_softwares', 'rental_softwares.id', '=', 'companies.rental_software_id')
+                // 🆕 Join city, state, and country tables for geolocation details
+                ->leftJoin('cities', 'cities.id', '=', 'companies.city_id')
+                ->leftJoin('states_provinces', 'states_provinces.id', '=', 'companies.state_id')
+                ->leftJoin('countries', 'countries.id', '=', 'companies.country_id')
                 ->select(
                     'companies.id as company_id',
                     'companies.name as company_name',
+                    'companies.logo as company_logo',
                     'companies.latitude as company_lat',
                     'companies.longitude as company_lng',
                     'companies.rating as company_rating',
@@ -691,13 +769,22 @@ class CompanyController extends Controller
                     'companies.city_id',
                     'equipments.product_id',
                     'equipments.quantity',
-                    'products.model as product_name',
+                    // 'products.model as product_name',
+                    DB::raw("CONCAT(COALESCE(brands.name, ''),
+                        CASE WHEN brands.name IS NOT NULL THEN ' - ' ELSE '' END,
+                        products.model) as product_name"),
+                    'products.psm_code',
                     'equipments.price',
                     'equipments.software_code',
                     'currencies.id as currency_id',
                     'currencies.name as currency_name',
                     'currencies.code as currency_code',
                     'currencies.symbol as currency_symbol',
+                    'rental_softwares.name as rental_software_code',
+                    // 🆕 Geolocation fields
+                    'cities.name as city_name',
+                    'states_provinces.name as state_name',
+                    'countries.name as country_name',
                     DB::raw("(
                     COALESCE(
                         6371 * acos(
@@ -713,7 +800,8 @@ class CompanyController extends Controller
                     )
                 ) as distance")
                 )
-                ->where('companies.id', '!=', $user->company_id);
+                ->where('companies.id', '!=', $user->company_id)
+                ->where('companies.hide_from_gear_finder', 0);
 
             // ✅ Exclude blocked companies
             if (!empty($blockedCompanyIds)) {
@@ -742,8 +830,15 @@ class CompanyController extends Controller
                 return [
                     'id' => $first->company_id,
                     'name' => $first->company_name,
+                    'company_logo' => $first->company_logo,
                     'rating' => $first->company_rating,
+                    'rental_software_code' => $first->rental_software_code,
                     'distance' => round($first->distance, 2),
+                    'location' => [ // 🆕 Added location block
+                        'country' => $first->country_name,
+                        'state' => $first->state_name,
+                        'city' => $first->city_name,
+                    ],
                     'currency' => [
                         'id' => $first->currency_id,
                         'name' => $first->currency_name,
@@ -761,6 +856,7 @@ class CompanyController extends Controller
                             'available_quantity' => (int) $availableQty,
                             'price' => number_format($item->price, 2, '.', ''),
                             'software_code' => $item->software_code,
+                            'psm_code' => $item->psm_code,
                         ];
                     })->values(),
                     'default_contact_profile' => $first->defaultContactProfile
@@ -823,7 +919,8 @@ class CompanyController extends Controller
             $productIds = explode(',', $request->product_id);
 
             // Main query with SQL-based distance calculation
-            $query = Company::with(['defaultContactProfile'])
+            $query = Company::where('hide_from_gear_finder', 0)
+                ->with(['defaultContactProfile'])
                 ->join('equipments', function ($join) use ($productIds) {
                     $join->on('companies.id', '=', 'equipments.company_id')
                         ->whereIn('equipments.product_id', $productIds);
@@ -903,7 +1000,6 @@ class CompanyController extends Controller
         }
     }
 
-
     // Haversine Distance Formula
     private function calculateDistance($lat1, $lon1, $lat2, $lon2)
     {
@@ -926,37 +1022,89 @@ class CompanyController extends Controller
     public function listCompanies()
     {
         try {
-            $user = JWTAuth::parseToken()->authenticate();
+            // 1️⃣ Authenticate user
+            if (!$user = JWTAuth::parseToken()->authenticate()) {
+                Log::warning('Unauthorized access attempt in listCompanies()');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized user'
+                ], 401);
+            }
 
-            $companies = Company::with('country')
+            // 2️⃣ Get all companies except user's company
+            $companies = Company::with(['country', 'state', 'city'])
                 ->withAvg('ratings', 'rating')
                 ->where('id', '!=', $user->company_id)
-                ->get()
-                ->map(function ($company) use ($user) {
-                    return [
-                        'id' => $company->id,
-                        'name' => $company->name,
-                        'country' => $company->country?->name ?? null,
-                        'average_rating' => round($company->ratings_avg_rating, 1),
-                        'user_rating' => CompanyRating::where('company_id', $company->id)
-                            ->where('user_id', $user->id)
-                            ->value('rating'),
-                        'is_blocked' => CompanyBlock::where('company_id', $company->id)
-                            ->where('user_id', $user->id)
-                            ->exists(),
-                    ];
-                });
+                ->get();
+
+            // 3️⃣ Fetch all ratings for these companies (single query)
+            $companyIds = $companies->pluck('id');
+
+            $userRatings = CompanyRating::whereIn('company_id', $companyIds)
+                ->where('user_id', $user->id)
+                ->pluck('rating', 'company_id'); // key = company_id, value = rating
+
+            // 4️⃣ Fetch all blocked companies (single query)
+            $blockedCompanies = CompanyBlock::whereIn('company_id', $companyIds)
+                ->where('user_id', $user->id)
+                ->pluck('company_id')
+                ->toArray();
+
+            // 5️⃣ Final response map (no queries inside)
+            $formatted = $companies->map(function ($company) use ($userRatings, $blockedCompanies) {
+                // Calculate average rating: use company_ratings average if available, otherwise fall back to companies.rating
+                $avgRating = null;
+                if ($company->ratings_avg_rating !== null) {
+                    // Company has ratings in company_ratings table, use the average
+                    $avgRating = $company->ratings_avg_rating;
+                } else {
+                    // No ratings in company_ratings table, fall back to default rating from companies.rating
+                    $avgRating = $company->rating ?? 0;
+                }
+
+                return [
+                    'id' => $company->id,
+                    'name' => $company->name,
+                    'company_logo' => $company->logo ?? null,
+
+                    // Location fields
+                    'city' => $company->city?->name ?? null,
+                    'state' => $company->state?->name ?? null,
+                    'country' => $company->country?->name ?? null,
+
+                    // Ratings: use company_ratings average if available, otherwise fall back to companies.rating
+                    'average_rating' => round($avgRating, 1),
+                    'user_rating' => $userRatings[$company->id] ?? null,
+
+                    // Block status
+                    'is_blocked' => in_array($company->id, $blockedCompanies),
+                ];
+            });
 
             return response()->json([
                 'success' => true,
-                'companies' => $companies
-            ]);
+                'companies' => $formatted
+            ], 200);
+
+        } catch (\Tymon\JWTAuth\Exceptions\TokenInvalidException $e) {
+            Log::error('Invalid token in listCompanies()', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid authentication token'
+            ], 401);
+
+        } catch (\Tymon\JWTAuth\Exceptions\TokenExpiredException $e) {
+            Log::error('Expired token in listCompanies()', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Token has expired'
+            ], 401);
 
         } catch (\Exception $e) {
             Log::error('Error fetching companies list', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
-                'message' => 'Unable to fetch companies'
+                'message' => 'Unable to fetch companies. Please try again later.'
             ], 500);
         }
     }
@@ -1069,7 +1217,6 @@ class CompanyController extends Controller
         }
     }
 
-
     /**
      * Unblock a company for the logged-in user.
      */
@@ -1095,5 +1242,76 @@ class CompanyController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Block or unblock a provider company for the logged-in user's company.
+     */
+    public function toggleProviderBlock(Request $request, $providerId)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+            $companyId = $user->company_id;
+
+            // Safety: prevent blocking own company
+            if ($companyId == $providerId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You cannot block your own company'
+                ], 403);
+            }
+
+            $block = $request->boolean('block', true);
+
+            if ($block) {
+                // Block provider for company
+                CompanyProviderBlock::updateOrCreate(
+                    [
+                        'company_id' => $companyId,
+                        'provider_id' => $providerId,
+                    ],
+                    [
+                        'blocked_by_user_id' => $user->id,
+                        'blocked_at' => now(),
+                    ]
+                );
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Provider blocked successfully',
+                    'data' => [
+                        'provider_id' => $providerId,
+                        'is_blocked' => true
+                    ]
+                ], 200);
+            }
+
+            // Unblock provider
+            CompanyProviderBlock::where('company_id', $companyId)
+                ->where('provider_id', $providerId)
+                ->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Provider unblocked successfully',
+                'data' => [
+                    'provider_id' => $providerId,
+                    'is_blocked' => false
+                ]
+            ], 200);
+
+        } catch (\Throwable $e) {
+            Log::error('Provider block toggle failed', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id ?? null,
+                'provider_id' => $providerId
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to update provider block status'
+            ], 500);
+        }
+    }
+
 
 }

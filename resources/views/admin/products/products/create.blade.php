@@ -6,22 +6,25 @@
     <h1>Create New Product</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="card card-warning">
         <div class="card-header">
             <h3 class="card-title">Product Details</h3>
         </div>
-        <form action="{{ route('products.store') }}" method="POST">
+        <form action="{{ route('admin.products.store') }}" method="POST">
             @csrf
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="category_id">Category <span class="text-danger">*</span></label>
+                            <label for="category_id">Category</label>
                             <select class="form-control @error('category_id') is-invalid @enderror"
                                     id="category_id"
-                                    name="category_id"
-                                    required>
+                                    name="category_id">
                                 <option value="">-- Select Category --</option>
                                 @foreach($categories as $category)
                                     <option value="{{ $category->id }}" {{ old('category_id') == $category->id ? 'selected' : '' }}>
@@ -59,11 +62,10 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="brand_id">Brand <span class="text-danger">*</span></label>
+                            <label for="brand_id">Brand</label>
                             <select class="form-control @error('brand_id') is-invalid @enderror"
                                     id="brand_id"
-                                    name="brand_id"
-                                    required>
+                                    name="brand_id">
                                 <option value="">-- Select Brand --</option>
                                 @foreach($brands as $brand)
                                     <option value="{{ $brand->id }}" {{ old('brand_id') == $brand->id ? 'selected' : '' }}>
@@ -79,7 +81,7 @@
 
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="model">Model <span class="text-danger">*</span></label>
+                            <label for="model">Model / Product Name <span class="text-danger">*</span></label>
                             <input type="text"
                                    class="form-control @error('model') is-invalid @enderror"
                                    id="model"
@@ -95,17 +97,32 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="psm_code">PSM Code</label>
+                    <label for="psm_code">PSM Code <span class="text-danger">*</span></label>
                     <input type="text"
                            class="form-control @error('psm_code') is-invalid @enderror"
                            id="psm_code"
                            name="psm_code"
-                           value="{{ old('psm_code') }}"
-                           placeholder="e.g., PSM-EXC-001">
+                           value="{{ old('psm_code', $nextPsmCode) }}"
+                           readonly
+                           style="background-color: #f8f9fa; cursor: not-allowed;">
                     @error('psm_code')
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
-                    <small class="form-text text-muted">Optional: Internal PSM identification code</small>
+                    <small class="form-text text-muted">PSM Code is automatically generated and cannot be edited</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="webpage_url">Product Webpage URL</label>
+                    <input type="url"
+                           class="form-control @error('webpage_url') is-invalid @enderror"
+                           id="webpage_url"
+                           name="webpage_url"
+                           value="{{ old('webpage_url') }}"
+                           placeholder="https://example.com/product-page">
+                    @error('webpage_url')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <small class="form-text text-muted">Optional. Link to the manufacturer or product detail page.</small>
                 </div>
             </div>
 
@@ -113,7 +130,7 @@
                 <button type="submit" class="btn btn-warning">
                     <i class="fas fa-save"></i> Create Product
                 </button>
-                <a href="{{ route('products.index') }}" class="btn btn-default">
+                <a href="{{ route('admin.products.index') }}" class="btn btn-default">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
@@ -124,22 +141,23 @@
 @section('js')
     <script>
         $(document).ready(function() {
-            // Load subcategories when category is selected
-            $('#category_id').on('change', function() {
-                var categoryId = $(this).val();
-                var subCategorySelect = $('#sub_category_id');
-
+            var subCategorySelect = $('#sub_category_id');
+            var oldSubCategoryId = '{{ old('sub_category_id') }}';
+            
+            // Function to load subcategories
+            function loadSubCategories(categoryId, preserveSelection) {
                 subCategorySelect.html('<option value="">-- Loading... --</option>');
 
                 if (categoryId) {
                     $.ajax({
-                        url: '/ajax/categories/' + categoryId + '/subcategories',
+                        url: '/admin/ajax/categories/' + categoryId + '/subcategories',
                         type: 'GET',
                         dataType: 'json',
                         success: function(data) {
                             subCategorySelect.html('<option value="">-- Select Sub-Category --</option>');
                             $.each(data, function(key, subCategory) {
-                                subCategorySelect.append('<option value="' + subCategory.id + '">' + subCategory.name + '</option>');
+                                var selected = (preserveSelection && subCategory.id == oldSubCategoryId) ? 'selected' : '';
+                                subCategorySelect.append('<option value="' + subCategory.id + '" ' + selected + '>' + subCategory.name + '</option>');
                             });
                         },
                         error: function() {
@@ -149,7 +167,19 @@
                 } else {
                     subCategorySelect.html('<option value="">-- Select Sub-Category --</option>');
                 }
+            }
+            
+            // Load subcategories when category is selected
+            $('#category_id').on('change', function() {
+                var categoryId = $(this).val();
+                loadSubCategories(categoryId, false);
             });
+            
+            // On page load, if a category is already selected (from old input), load its sub-categories
+            var selectedCategoryId = $('#category_id').val();
+            if (selectedCategoryId) {
+                loadSubCategories(selectedCategoryId, true);
+            }
         });
     </script>
 @stop

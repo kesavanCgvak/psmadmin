@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Http\Request;
 use App\Models\User;
+use App\Models\Company;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Mail;
@@ -44,6 +45,24 @@ class CompanyUserController extends Controller
                 return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
             }
 
+            // Check if company can add more users (configurable limit)
+            $company = Company::find($request->company_id);
+            if ($company) {
+                if (!$company->canAddMoreUsers()) {
+                    $currentCount = $company->getUserCount();
+                    $maxLimit = $company->getMaxUserLimit();
+                    Log::warning('Maximum users limit reached for company', [
+                        'company_id' => $company->id,
+                        'current_count' => $currentCount,
+                        'max_limit' => $maxLimit
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => "This company has reached the maximum allowed users ({$maxLimit}). Current users: {$currentCount}."
+                    ], 422);
+                }
+            }
+
             DB::beginTransaction();
 
             $user = User::create([
@@ -52,7 +71,8 @@ class CompanyUserController extends Controller
                 'password' => Hash::make($request->password),
                 'company_id' => $request->company_id,
                 'role' => $request->role,
-                'is_admin' => $request->input('is_admin', false),
+                'email' => $request->email,
+                'is_admin' => $request->role === 'admin',
             ]);
 
             $user->profile()->create([
@@ -76,10 +96,41 @@ class CompanyUserController extends Controller
                     $message->from(config('mail.from.address'), config('mail.from.name')); // <-- set from here
                 });
 
+                // Send user credentials email to USER - ALL THE TIME (regardless of verification status)
+                // Email is sent TO the user's email address ($request->email)
+                Mail::send('emails.registrationSuccess', [
+                    'name' => $request->name,
+                    'email' => $request->email,
+                    'username' => $request->username,
+                    'password' => $request->password,
+                    'account_type' => $authUser->accountType,
+                    'login_url' => env('APP_URL'),
+                ], function ($message) use ($request) {
+                    $message->to($request->email); // TO: User's email address
+                    $message->subject('Welcome to ProSub Marketplace - Account Created Successfully');
+                    $message->from(config('mail.from.address'), config('mail.from.name')); // FROM: System email
+                });
+
+                $company = Company::find($request->company_id);
+                $companyName = $company ? $company->name : null;
+                // Mail to app admin that a new user has been created
+                Mail::send('emails.newRegistration', [
+                    'company_name' => $companyName,
+                    'account_type' => $authUser->accountType,
+                    'username' => $request->username,
+                    'mobile' => $request->mobile,
+                    'email' => $request->email
+                ], function ($message) use ($data) {
+                    $message->to(config('mail.to.addresses'));
+                    $message->subject('New registration');
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
+                });
+
                 Log::info('Email verification notification sent successfully', [
                     'user_id' => $user->id,
                     'user_email' => $request->email,
                 ]);
+
             } catch (\Exception $e) {
                 Log::error('Failed to send email verification notification', [
                     'user_id' => $user->id,
@@ -108,11 +159,21 @@ class CompanyUserController extends Controller
     {
         try {
             $authUser = JWTAuth::parseToken()->authenticate();
+
+            if (!$authUser || !$authUser->company) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Company not found'
+                ], 404);
+            }
+
             $company = $authUser->company;
 
             $users = $company->users()
-                ->with(['profile:id,user_id,full_name,email,mobile'])
                 ->select(['id', 'is_company_default_contact', 'is_admin'])
+                ->with([
+                    'profile:id,user_id,full_name,email,mobile'
+                ])
                 ->get()
                 ->map(function ($user) {
                     return [
@@ -125,14 +186,31 @@ class CompanyUserController extends Controller
                     ];
                 });
 
+            // Company user limits
+            $current = $company->getUserCount();
+            $max = $company->getMaxUserLimit();
+
+            $userLimitInfo = [
+                'current_user_count' => $current,
+                'max_user_limit' => $max,
+                'can_create_user' => $current < $max,
+            ];
+
             return response()->json([
                 'success' => true,
-                'users' => $users
+                'users' => $users,
+                'user_limit' => $userLimitInfo
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Failed to fetch company users', ['error' => $e->getMessage()]);
-            return response()->json(['success' => false, 'message' => 'Unable to fetch company users'], 500);
+            Log::error('Failed to fetch company users', [
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to fetch company users'
+            ], 500);
         }
     }
 
@@ -180,30 +258,81 @@ class CompanyUserController extends Controller
         try {
             $authUser = JWTAuth::parseToken()->authenticate();
 
-            if ($authUser->role !== 'admin') {
-                return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+            if (!$authUser || !$authUser->company) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Company not found'
+                ], 404);
             }
 
-            if ($id == $authUser->id) {
-                return response()->json(['success' => false, 'message' => 'Cannot delete your own account'], 403);
+            // Authorization (consistent)
+            if (!$authUser->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
             }
 
-            $user = User::where('company_id', $authUser->company_id)->where('id', $id)->first();
+            // Validation: prevent self delete
+            if ((int) $id === (int) $authUser->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot delete your own account'
+                ], 403);
+            }
+
+            $company = $authUser->company;
+
+            $user = User::where('company_id', $company->id)
+                ->where('id', $id)
+                ->first();
 
             if (!$user) {
-                return response()->json(['success' => false, 'message' => 'User not found'], 404);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not found'
+                ], 404);
             }
+
+            // safety check  to avoid breaking behavior
+            if ($user->is_company_default_contact) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot delete company default contact'
+                ], 403);
+            }
+
 
             $user->delete();
 
-            return response()->json(['success' => true, 'message' => 'User deleted successfully'], 200);
+            // Company user limits (after deletion)
+            $current = $company->getUserCount();
+            $max = $company->getMaxUserLimit();
+
+            $userLimitInfo = [
+                'current_user_count' => $current,
+                'max_user_limit' => $max,
+                'can_create_user' => $current < $max,
+            ];
+
+            return response()->json([
+                'success' => true,
+                'message' => 'User deleted successfully',
+                'user_limit' => $userLimitInfo
+            ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Delete user failed', ['user_id' => $id, 'error' => $e->getMessage()]);
-            return response()->json(['success' => false, 'message' => 'Failed to delete user'], 500);
+            Log::error('Delete user failed', [
+                'target_user_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete user'
+            ], 500);
         }
     }
-
 
     /**
      * Make or remove admin privileges for a company user

@@ -12,7 +12,10 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\RentalJob;
 use App\Models\User;
 use App\Models\Company;
+use App\Models\Currency;
 use Illuminate\Support\Facades\Mail;
+use Tymon\JWTAuth\Facades\JWTAuth;
+use Log;
 
 
 class SupplyJobActionsController extends Controller
@@ -182,6 +185,12 @@ class SupplyJobActionsController extends Controller
         try {
             $supplyJob = SupplyJob::with('rentalJob')->findOrFail($id);
 
+            Log::info("Attempting to send new offer", [
+                'supply_job_id' => $id,
+                'company_id' => $user->company_id,
+                'user_id' => $user->id,
+            ]);
+
             if ($resp = $this->authorizeCompany($supplyJob, $user)) {
                 return $resp;
             }
@@ -189,6 +198,14 @@ class SupplyJobActionsController extends Controller
             $rentalJob = $supplyJob->rentalJob;
             if (!$rentalJob) {
                 return response()->json(['success' => false, 'message' => 'Associated rental job not found.'], 404);
+            }
+
+            // Check for already accepted / finalized status
+            if (in_array($supplyJob->status, ['accepted', 'completed', 'closed'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This supply job has already been accepted and cannot receive new offers.'
+                ], 400);
             }
 
             // Determine next version
@@ -202,6 +219,12 @@ class SupplyJobActionsController extends Controller
                 'total_price' => $data['amount'],
                 'status' => 'pending',
             ]);
+
+            $currencySymbol = '';
+            if ($user->company && $user->company->currency_id) {
+                $currency = Currency::find($user->company->currency_id);
+                $currencySymbol = $currency ? $currency->symbol : '';
+            }
 
             // Collect emails
             $emails = [];
@@ -230,8 +253,9 @@ class SupplyJobActionsController extends Controller
             // Prepare mail content
             $mailContent = [
                 'provider_name' => $user->company ? $user->company->name : 'A Supplier',
-                'rental_job_id' => $rentalJob->id,
+                'rental_job_name' => $rentalJob->name,
                 'amount' => number_format($data['amount'], 2),
+                'currency_symbol' => $currencySymbol,
                 'version' => $nextVersion,
                 'sent_at' => now()->format('d M Y, h:i A'),
             ];
@@ -241,7 +265,7 @@ class SupplyJobActionsController extends Controller
                 Mail::send('emails.supplyNewOffer', $mailContent, function ($message) use ($email) {
                     $message->to($email)
                         ->subject('New Offer from Pro Subrental Marketplace')
-                        ->from('acctracking001@gmail.com', 'Pro Subrental Marketplace');
+                        ->from(config('mail.from.address'), config('mail.from.name'));
                 });
             }
 
@@ -264,7 +288,6 @@ class SupplyJobActionsController extends Controller
             return response()->json(['success' => false, 'message' => 'Failed to send offer.'], 500);
         }
     }
-
 
     /**
      * Handshake = accept offer.
@@ -339,4 +362,37 @@ class SupplyJobActionsController extends Controller
             return response()->json(['success' => false, 'message' => 'Failed to cancel negotiation.'], 500);
         }
     }
+
+    /**
+     * Update the name of a supply job.
+     * Only authorized users (job owner or admin) can update the name.
+     *
+     * PATCH api/supply-jobs/{id}/name
+     */
+    public function updateName(Request $request, int $id)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
+        }
+
+        $data = $request->validate([
+            'name' => 'required|string|min:3|max:255',
+        ]);
+
+        try {
+            $job = RentalJob::query()->findOrFail($id);
+
+            $job->fill($data)->save();
+
+            return response()->json(['success' => true, 'message' => 'Job Name updated.']);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to update job name.'], 500);
+        }
+    }
+
 }

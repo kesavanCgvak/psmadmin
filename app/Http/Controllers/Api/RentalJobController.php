@@ -9,6 +9,7 @@ use App\Models\SupplyJob;
 use App\Models\SupplyJobProduct;
 use App\Models\RentalJobComment;
 use App\Models\RentalJobOffer;
+use App\Models\JobOffer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -34,9 +35,10 @@ class RentalJobController extends Controller
 
         // Validate query params
         $validated = $request->validate([
-            'status' => ['nullable', Rule::in(['open', 'in_negotiation', 'accepted', 'cancelled', 'completed'])],
+            'status' => ['nullable', Rule::in(['open', 'in_negotiation', 'accepted', 'cancelled', 'completed','partially_accepted'])],
             'from_date' => ['nullable', 'date'],
             'to_date' => ['nullable', 'date', 'after_or_equal:from_date'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
         try {
@@ -58,10 +60,19 @@ class RentalJobController extends Controller
                 $query->whereDate('to_date', '<=', $validated['to_date']);
             }
 
-            $jobs = $query->orderByDesc('created_at')->get();
+            //Pagination decision
+            $perPage = $validated['per_page'] ?? null;
 
-            // Transform payload
-            $jobsTransformed = $jobs->map(function (RentalJob $job) {
+            if ($perPage) {
+                $paginator = $query->paginate($perPage);
+                $collection = $paginator->getCollection();
+            } else {
+                $collection = $query->get();
+                $paginator = null;
+            }
+
+            //Transform data (shared for both cases)
+            $data = $collection->map(function (RentalJob $job) {
                 return [
                     'id' => $job->id,
                     'name' => $job->name,
@@ -72,20 +83,34 @@ class RentalJobController extends Controller
                     'products' => $job->products->map(function ($rp) {
                         $brand = $rp->product->brand->name ?? '';
                         $prod = $rp->product->name ?? $rp->product->model ?? '';
+
                         return [
                             'id' => $rp->product_id,
-                            'name' => trim($brand . ' - ' . $prod, ' -'),
+                            'name' => trim("{$brand} - {$prod}", ' -'),
                             'requested_quantity' => (int) $rp->requested_quantity,
                         ];
                     })->values(),
                     'provider_responses_count' => $job->supplyJobs->count(),
                 ];
-            });
+            })->values();
 
-            return response()->json([
+            //Build response
+            $response = [
                 'success' => true,
-                'data' => $jobsTransformed,
-            ]);
+                'data' => $data,
+            ];
+
+            //Pagination meta only when paginated
+            if ($paginator) {
+                $response['meta'] = [
+                    'current_page' => $paginator->currentPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'last_page' => $paginator->lastPage(),
+                ];
+            }
+
+            return response()->json($response);
 
         } catch (\Throwable $e) {
             report($e);
@@ -216,7 +241,38 @@ class RentalJobController extends Controller
             })->values();
 
             // 5. Get latest offer (if exists)
-            $latestOffer = $supplyJob->offers->first();
+            $latestOffer = JobOffer::where('rental_job_id', $rentalJobId)
+                ->where('supply_job_id', $supplyJob->id)
+                ->orderByDesc('version')
+                ->first();
+            $loggedInCompany = $user->company_id;
+
+            // Default
+            $canSendOffer = false;
+            $canCancel = false;
+            $canHandshake = false;
+
+            if ($latestOffer) {
+
+                if (in_array($latestOffer->status, ['accepted', 'cancelled'])) {
+                    $canSendOffer = false;
+                    $canCancel = false;
+                    $canHandshake = false;
+                } else {
+                    if ($latestOffer->sender_company_id == $loggedInCompany) {
+                        // User sent the last offer → cannot send new one
+                        $canSendOffer = false;
+                        $canCancel = false;
+                        $canHandshake = false;
+                    } else {
+                        // Other company sent last offer → user can reply
+                        $canSendOffer = true;
+                        $canCancel = true;
+                        $canHandshake = true;
+                    }
+                }
+            }
+
 
             // 6. Build response payload
             $provider = $supplyJob->providerCompany;
@@ -240,7 +296,14 @@ class RentalJobController extends Controller
                     'version' => (int) $latestOffer->version,
                     'total_price' => (string) $latestOffer->total_price,
                     'status' => $latestOffer->status,
+                    'sender_company_id' => $latestOffer->sender_company_id,
+                    'receiver_company_id' => $latestOffer->receiver_company_id,
                 ] : null,
+                'negotiation_controls' => [
+                    'can_handshake' => $canHandshake,
+                    'can_send_offer' => $canSendOffer,
+                    'can_cancel_negotiation' => $canCancel,
+                ],
                 'comments_endpoint' => "/api/supply-jobs/{$supplyJob->id}/comments",
             ];
             return response()->json([

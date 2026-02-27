@@ -6,6 +6,10 @@
     <h1>Create New Equipment</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="card card-warning">
         <div class="card-header">

@@ -15,7 +15,7 @@ class UserProfile extends Model
 
     protected $fillable = [
         'full_name',
-        'birthday',
+        'birthday',      // stored as string (e.g. MM-DD)
         'user_id',
         'profile_picture',
         'mobile',

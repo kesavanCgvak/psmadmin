@@ -6,6 +6,10 @@
     <h1>Edit City</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="card card-warning">
         <div class="card-header">
@@ -15,6 +19,25 @@
             @csrf
             @method('PUT')
             <div class="card-body">
+                <div class="form-group">
+                    <label for="region_id">Region <span class="text-danger">*</span></label>
+                    <select class="form-control @error('region_id') is-invalid @enderror"
+                            id="region_id"
+                            name="region_id"
+                            required>
+                        <option value="">-- Select Region --</option>
+                        @foreach($regions as $region)
+                            <option value="{{ $region->id }}" {{ old('region_id', $city->country->region_id ?? '') == $region->id ? 'selected' : '' }}>
+                                {{ $region->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                    @error('region_id')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <small class="form-text text-muted">Select a region to filter countries</small>
+                </div>
+
                 <div class="row">
                     <div class="col-md-6">
                         <div class="form-group">
@@ -33,6 +56,7 @@
                             @error('country_id')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">Select region first to load countries</small>
                         </div>
                     </div>
 
@@ -52,6 +76,7 @@
                             @error('state_id')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">Select country first to load states (optional)</small>
                         </div>
                     </div>
                 </div>
@@ -72,7 +97,7 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="latitude">Latitude</label>
+                            <label for="latitude">Latitude <span class="text-danger">*</span></label>
                             <input type="number"
                                    step="0.0000001"
                                    class="form-control @error('latitude') is-invalid @enderror"
@@ -80,16 +105,18 @@
                                    name="latitude"
                                    value="{{ old('latitude', $city->latitude) }}"
                                    min="-90"
-                                   max="90">
+                                   max="90"
+                                   required>
                             @error('latitude')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">Required: Range -90 to 90</small>
                         </div>
                     </div>
 
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="longitude">Longitude</label>
+                            <label for="longitude">Longitude <span class="text-danger">*</span></label>
                             <input type="number"
                                    step="0.0000001"
                                    class="form-control @error('longitude') is-invalid @enderror"
@@ -97,10 +124,12 @@
                                    name="longitude"
                                    value="{{ old('longitude', $city->longitude) }}"
                                    min="-180"
-                                   max="180">
+                                   max="180"
+                                   required>
                             @error('longitude')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">Required: Range -180 to 180</small>
                         </div>
                     </div>
                 </div>
@@ -121,36 +150,137 @@
 @section('js')
     <script>
         $(document).ready(function() {
-            // Store the original state_id for edit mode
-            var originalStateId = '{{ old('state_id', $city->state_id) }}';
+            // Store initial values for form reload scenarios
+            const initialRegionId = "{{ old('region_id', $city->country->region_id ?? '') }}";
+            const initialCountryId = "{{ old('country_id', $city->country_id) }}";
+            const initialStateId = "{{ old('state_id', $city->state_id) }}";
 
-            // Load states when country is selected
-            $('#country_id').on('change', function() {
-                var countryId = $(this).val();
-                var stateSelect = $('#state_id');
+            // Disable dependent dropdowns initially
+            $('#country_id').prop('disabled', true);
+            $('#state_id').prop('disabled', true);
 
-                stateSelect.html('<option value="">-- Loading... --</option>');
+            // Enable dropdowns if parent is selected
+            if ($('#region_id').val()) {
+                $('#country_id').prop('disabled', false);
+            }
+            if ($('#country_id').val()) {
+                $('#state_id').prop('disabled', false);
+            }
 
-                if (countryId) {
-                    $.ajax({
-                        url: '/ajax/countries/' + countryId + '/states',
-                        type: 'GET',
-                        dataType: 'json',
-                        success: function(data) {
-                            stateSelect.html('<option value="">-- Select State/Province --</option>');
-                            $.each(data, function(key, state) {
-                                var selected = (state.id == originalStateId) ? 'selected' : '';
-                                stateSelect.append('<option value="' + state.id + '" ' + selected + '>' + state.name + '</option>');
-                            });
-                        },
-                        error: function() {
-                            stateSelect.html('<option value="">-- Error loading states --</option>');
-                        }
-                    });
+            // Load initial data if old values exist (form validation failure)
+            if (initialRegionId && initialCountryId) {
+                loadCountries(initialRegionId, initialCountryId);
+            }
+            if (initialCountryId && initialStateId) {
+                loadStates(initialCountryId, initialStateId);
+            }
+
+            // Region change handler
+            $('#region_id').on('change', function() {
+                const regionId = $(this).val();
+
+                // Reset dependent dropdowns
+                resetDropdown($('#country_id'), 'Select Country');
+                resetDropdown($('#state_id'), 'Select State/Province');
+
+                if (regionId) {
+                    $('#country_id').prop('disabled', false);
+                    loadCountries(regionId);
                 } else {
-                    stateSelect.html('<option value="">-- Select State/Province --</option>');
+                    $('#country_id').prop('disabled', true);
+                    $('#state_id').prop('disabled', true);
                 }
             });
+
+            // Country change handler
+            $('#country_id').on('change', function() {
+                const countryId = $(this).val();
+
+                // Reset state dropdown
+                resetDropdown($('#state_id'), 'Select State/Province');
+
+                if (countryId) {
+                    $('#state_id').prop('disabled', false);
+                    loadStates(countryId);
+                } else {
+                    $('#state_id').prop('disabled', true);
+                }
+            });
+
+            // Function to load countries by region
+            function loadCountries(regionId, selectedId = null) {
+                showLoading($('#country_id'));
+
+                $.ajax({
+                    url: '/ajax/regions/' + regionId + '/countries-for-cities',
+                    type: 'GET',
+                    dataType: 'json',
+                    success: function(data) {
+                        populateCountriesDropdown($('#country_id'), data, 'Select Country', selectedId);
+                    },
+                    error: function() {
+                        resetDropdown($('#country_id'), 'Error loading countries');
+                        console.error('Failed to load countries');
+                    }
+                });
+            }
+
+            // Function to load states by country
+            function loadStates(countryId, selectedId = null) {
+                showLoading($('#state_id'));
+
+                $.ajax({
+                    url: '/ajax/countries/' + countryId + '/states',
+                    type: 'GET',
+                    dataType: 'json',
+                    success: function(data) {
+                        populateDropdown($('#state_id'), data, 'Select State/Province', selectedId);
+                    },
+                    error: function() {
+                        resetDropdown($('#state_id'), 'Error loading states');
+                        console.error('Failed to load states');
+                    }
+                });
+            }
+
+            // Helper function to populate countries dropdown with ISO code
+            function populateCountriesDropdown($select, data, placeholder, selectedId = null) {
+                $select.html('<option value="">-- ' + placeholder + ' --</option>');
+
+                if (data && data.length > 0) {
+                    $.each(data, function(key, item) {
+                        const selected = selectedId && item.id == selectedId ? ' selected' : '';
+                        const displayName = item.name + (item.iso_code ? ' (' + item.iso_code + ')' : '');
+                        $select.append('<option value="' + item.id + '"' + selected + '>' + displayName + '</option>');
+                    });
+                } else {
+                    $select.append('<option value="">No ' + placeholder.toLowerCase() + ' available</option>');
+                }
+            }
+
+            // Helper function to populate dropdown
+            function populateDropdown($select, data, placeholder, selectedId = null) {
+                $select.html('<option value="">-- ' + placeholder + ' --</option>');
+
+                if (data && data.length > 0) {
+                    $.each(data, function(key, item) {
+                        const selected = selectedId && item.id == selectedId ? ' selected' : '';
+                        $select.append('<option value="' + item.id + '"' + selected + '>' + item.name + '</option>');
+                    });
+                } else {
+                    $select.append('<option value="">No ' + placeholder.toLowerCase() + ' available</option>');
+                }
+            }
+
+            // Helper function to reset dropdown
+            function resetDropdown($select, placeholder) {
+                $select.html('<option value="">-- ' + placeholder + ' --</option>');
+            }
+
+            // Helper function to show loading state
+            function showLoading($select) {
+                $select.html('<option value="">-- Loading... --</option>');
+            }
         });
     </script>
 @stop

@@ -8,6 +8,7 @@ class Company extends Model
 {
     protected $fillable = [
         'name',
+        'account_type',
         'description',
         'logo',
         'image1',
@@ -15,7 +16,9 @@ class Company extends Model
         'image3',
         'currency_id',
         'date_format',
+        'date_format_id',
         'pricing_scheme',
+        'pricing_scheme_id',
         'rental_software_id',
         'region_id',
         'country_id',
@@ -28,7 +31,8 @@ class Company extends Model
         'postal_code',
         'latitude',
         'longitude',
-
+        'hide_from_gear_finder',
+        'subscription_mode',
     ];
 
     public function users()
@@ -69,6 +73,16 @@ class Company extends Model
     public function currency()
     {
         return $this->belongsTo(Currency::class);
+    }
+
+    public function dateFormat()
+    {
+        return $this->belongsTo(DateFormat::class);
+    }
+
+    public function pricingScheme()
+    {
+        return $this->belongsTo(PricingScheme::class);
     }
 
     public function region()
@@ -153,5 +167,85 @@ class Company extends Model
         return $this->blocks()->where('user_id', $userId)->exists();
     }
 
+    /**
+     * Get the provider subscription for this company
+     */
+    public function subscription()
+    {
+        return $this->hasOne(Subscription::class, 'company_id')
+            ->where('account_type', 'provider')
+            ->latestOfMany();
+    }
+
+    /**
+     * Get all subscriptions for this company (for reporting/analytics)
+     */
+    public function subscriptions()
+    {
+        return $this->hasMany(Subscription::class, 'company_id');
+    }
+
+    /**
+     * Check if company has an active subscription
+     */
+    public function hasActiveSubscription(): bool
+    {
+        return $this->subscription && $this->subscription->isActive();
+    }
+
+    /**
+     * Get the provider owner (first admin user)
+     */
+    public function providerOwner()
+    {
+        return $this->users()->where('is_admin', 1)->first();
+    }
+
+    /**
+     * Get additional users (excluding provider owner)
+     */
+    public function additionalUsers()
+    {
+        $providerId = $this->providerOwner()?->id;
+        return $this->users()
+            ->when($providerId, fn($q) => $q->where('id', '!=', $providerId))
+            ->get();
+    }
+
+    /**
+     * Get count of additional users (excluding provider owner)
+     */
+    public function additionalUsersCount(): int
+    {
+        $providerId = $this->providerOwner()?->id;
+        return $this->users()
+            ->when($providerId, fn($q) => $q->where('id', '!=', $providerId))
+            ->count();
+    }
+
+    /**
+     * Check if company can add more users (uses configurable limit)
+     */
+    public function canAddMoreUsers(): bool
+    {
+        $limit = \App\Models\Setting::getCompanyUserLimit();
+        return $this->users()->count() < $limit;
+    }
+
+    /**
+     * Get current user count for the company
+     */
+    public function getUserCount(): int
+    {
+        return $this->users()->count();
+    }
+
+    /**
+     * Get maximum user limit for companies
+     */
+    public function getMaxUserLimit(): int
+    {
+        return \App\Models\Setting::getCompanyUserLimit();
+    }
 
 }

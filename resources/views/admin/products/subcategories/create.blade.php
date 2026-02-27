@@ -6,12 +6,16 @@
     <h1>Create New Sub-Category</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="card card-info">
         <div class="card-header">
             <h3 class="card-title">Sub-Category Details</h3>
         </div>
-        <form action="{{ route('subcategories.store') }}" method="POST">
+        <form action="{{ route('admin.subcategories.store') }}" method="POST">
             @csrf
             <div class="card-body">
                 <div class="form-group">
@@ -51,7 +55,7 @@
                 <button type="submit" class="btn btn-info">
                     <i class="fas fa-save"></i> Create Sub-Category
                 </button>
-                <a href="{{ route('subcategories.index') }}" class="btn btn-default">
+                <a href="{{ route('admin.subcategories.index') }}" class="btn btn-default">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>

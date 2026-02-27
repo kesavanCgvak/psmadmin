@@ -6,6 +6,10 @@
     <h1>Equipment Management</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     @if(session('success'))
         <div class="alert alert-success alert-dismissible fade show">
@@ -25,6 +29,9 @@
         <div class="card-header">
             <h3 class="card-title">All Equipment</h3>
             <div class="card-tools">
+                <button type="button" id="bulkDeleteBtn" class="btn btn-danger btn-sm" style="display: none; margin-right: 5px;">
+                    <i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>
+                </button>
                 <a href="{{ route('admin.equipment.create') }}" class="btn btn-warning btn-sm">
                     <i class="fas fa-plus"></i> Add New Equipment
                 </a>
@@ -34,6 +41,9 @@
             <table id="equipmentTable" class="table table-bordered table-striped">
                 <thead>
                     <tr>
+                        <th style="width: 40px;">
+                            <input type="checkbox" id="selectAll" title="Select All">
+                        </th>
                         <th>ID</th>
                         <th>Company</th>
                         <th>Product</th>
@@ -49,6 +59,10 @@
                 <tbody>
                     @foreach($equipments as $equipment)
                         <tr>
+                            <td>
+                                <input type="checkbox" class="row-checkbox" name="equipment_ids[]" value="{{ $equipment->id }}"
+                                       data-name="{{ $equipment->product->model ?? 'Equipment #' . $equipment->id }}">
+                            </td>
                             <td>{{ $equipment->id }}</td>
                             <td>
                                 <span class="badge badge-primary">{{ $equipment->company?->name ?? 'N/A' }}</span>
@@ -90,15 +104,91 @@
 @stop
 
 @section('js')
+    @include('partials.responsive-js')
     <script>
         $(document).ready(function() {
-            $('#equipmentTable').DataTable({
-                "responsive": true,
-                "lengthChange": true,
-                "autoWidth": false,
-                "buttons": ["copy", "csv", "excel", "pdf", "print", "colvis"],
-                "order": [[0, "desc"]]
-            }).buttons().container().appendTo('#equipmentTable_wrapper .col-md-6:eq(0)');
+            var table = initResponsiveDataTable('equipmentTable', {
+                "columnDefs": [
+                    { "orderable": false, "targets": [0, -1] },
+                    { "searchable": false, "targets": [0, -1] },
+                    { "responsivePriority": 1, "targets": 3 },
+                    { "responsivePriority": 2, "targets": -1 }
+                ]
+            });
+
+            // Bulk delete functionality
+            $('#selectAll').on('change', function() {
+                $('.row-checkbox').prop('checked', $(this).prop('checked'));
+                updateBulkDeleteButton();
+            });
+
+            $(document).on('change', '.row-checkbox', function() {
+                updateBulkDeleteButton();
+                var totalCheckboxes = $('.row-checkbox').length;
+                var checkedCheckboxes = $('.row-checkbox:checked').length;
+                $('#selectAll').prop('checked', totalCheckboxes === checkedCheckboxes);
+            });
+
+            function updateBulkDeleteButton() {
+                var checked = $('.row-checkbox:checked');
+                if (checked.length > 0) {
+                    $('#bulkDeleteBtn').show().html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected (' + checked.length + ')</span><span class="d-lg-none">Delete</span>');
+                } else {
+                    $('#bulkDeleteBtn').hide();
+                }
+            }
+
+            $('#bulkDeleteBtn').on('click', function() {
+                var selectedIds = [];
+                var selectedNames = [];
+                $('.row-checkbox:checked').each(function() {
+                    selectedIds.push($(this).val());
+                    selectedNames.push($(this).data('name'));
+                });
+
+                if (selectedIds.length === 0) {
+                    alert('Please select at least one equipment to delete.');
+                    return;
+                }
+
+                var message = 'Are you sure you want to delete ' + selectedIds.length + ' equipment?\n\n';
+                message += 'Equipment to be deleted:\n';
+                selectedNames.forEach(function(name, index) {
+                    message += (index + 1) + '. ' + name + '\n';
+                });
+                message += '\nThis action cannot be undone!';
+
+                if (confirm(message)) {
+                    $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Deleting...');
+
+                    $.ajax({
+                        url: '{{ route("admin.admin.equipment.bulk-delete") }}',
+                        method: 'POST',
+                        data: {
+                            _token: '{{ csrf_token() }}',
+                            equipment_ids: selectedIds
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                alert('Successfully deleted ' + response.deleted_count + ' equipment.');
+                                location.reload();
+                            } else {
+                                alert('Error: ' + (response.message || 'Failed to delete equipment.'));
+                            }
+                        },
+                        error: function(xhr) {
+                            var message = 'An error occurred while deleting equipment.';
+                            if (xhr.responseJSON && xhr.responseJSON.message) {
+                                message = xhr.responseJSON.message;
+                            }
+                            alert(message);
+                        },
+                        complete: function() {
+                            $('#bulkDeleteBtn').prop('disabled', false).html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>');
+                        }
+                    });
+                }
+            });
         });
     </script>
 @stop

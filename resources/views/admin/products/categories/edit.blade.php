@@ -6,12 +6,16 @@
     <h1>Edit Category</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="card card-warning">
         <div class="card-header">
             <h3 class="card-title">Category Details</h3>
         </div>
-        <form action="{{ route('categories.update', $category) }}" method="POST">
+        <form action="{{ route('admin.categories.update', $category) }}" method="POST">
             @csrf
             @method('PUT')
             <div class="card-body">
@@ -33,7 +37,7 @@
                 <button type="submit" class="btn btn-warning">
                     <i class="fas fa-save"></i> Update Category
                 </button>
-                <a href="{{ route('categories.index') }}" class="btn btn-default">
+                <a href="{{ route('admin.categories.index') }}" class="btn btn-default">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>

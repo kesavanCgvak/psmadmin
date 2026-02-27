@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Country;
 use App\Models\Region;
+use App\Models\Company;
+use App\Services\BulkDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -43,6 +45,13 @@ class CountryController extends Controller
         if ($validator->fails()) {
             return redirect()->back()
                 ->withErrors($validator)
+                ->withInput();
+        }
+
+        // Check for duplicate using normalized name comparison within the same region
+        if (Country::isDuplicate($request->name, $request->region_id)) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A country with this name already exists in the selected region.'])
                 ->withInput();
         }
 
@@ -88,6 +97,13 @@ class CountryController extends Controller
                 ->withInput();
         }
 
+        // Check for duplicate using normalized name comparison within the same region (excluding current record)
+        if (Country::isDuplicate($request->name, $request->region_id, $country->id)) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A country with this name already exists in the selected region.'])
+                ->withInput();
+        }
+
         $country->update($request->all());
 
         return redirect()->route('countries.index')
@@ -99,14 +115,91 @@ class CountryController extends Controller
      */
     public function destroy(Country $country)
     {
+        // Relation checks before deletion
+        if ($country->statesProvinces()->exists()) {
+            return redirect()->route('countries.index')
+                ->with('error', 'Cannot delete — this country is assigned to one or more states.');
+        }
+        if ($country->cities()->exists()) {
+            return redirect()->route('countries.index')
+                ->with('error', 'Cannot delete — this country has associated cities.');
+        }
+        if (\App\Models\Company::where('country_id', $country->id)->exists()) {
+            return redirect()->route('countries.index')
+                ->with('error', 'Cannot delete — this country is used by one or more companies.');
+        }
+
         try {
             $country->delete();
             return redirect()->route('countries.index')
                 ->with('success', 'Country deleted successfully.');
         } catch (\Exception $e) {
             return redirect()->route('countries.index')
-                ->with('error', 'Cannot delete country. It may have associated states/provinces or cities.');
+                ->with('error', 'Cannot delete country. ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Bulk delete multiple countries.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'country_ids' => 'required|array',
+            'country_ids.*' => 'exists:countries,id'
+        ]);
+
+        $countries = Country::whereIn('id', $request->country_ids)->get();
+        $service = new BulkDeletionService();
+
+        $result = $service->deleteWithChecks($countries->all(), [
+            function (Country $country) {
+                if ($country->statesProvinces()->exists()) {
+                    return 'Cannot delete — this country is assigned to one or more states.';
+                }
+                if ($country->cities()->exists()) {
+                    return 'Cannot delete — this country has associated cities.';
+                }
+                if (Company::where('country_id', $country->id)->exists()) {
+                    return 'Cannot delete — this country is used by one or more companies.';
+                }
+                return null;
+            },
+        ]);
+
+        $deletedCount = $result['deleted_count'];
+        $errors = $result['errors'];
+        $blocked = $result['blocked'];
+
+        $messageParts = [];
+        if ($deletedCount > 0) {
+            $messageParts[] = "Successfully deleted {$deletedCount} country/countries.";
+        }
+        if (!empty($blocked)) {
+            $blockedList = array_map(function ($b) {
+                return $b['label'] . ' — ' . $b['reason'];
+            }, $blocked);
+            $messageParts[] = 'Skipped: ' . implode('; ', $blockedList);
+        }
+        if (!empty($errors)) {
+            $messageParts[] = 'Errors: ' . implode('; ', $errors);
+        }
+
+        $message = implode(' ', $messageParts) ?: 'No countries were deleted.';
+        $success = $deletedCount > 0;
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => $success,
+                'message' => $message,
+                'deleted_count' => $deletedCount,
+                'blocked' => $blocked,
+                'errors' => $errors
+            ]);
+        }
+
+        return redirect()->route('countries.index')
+            ->with($success ? 'success' : 'error', $message);
     }
 }
 

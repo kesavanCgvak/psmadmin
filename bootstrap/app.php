@@ -18,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'jwt.verify' => JwtMiddleware::class,
+            'require.subscription' => \App\Http\Middleware\RequireSubscription::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -6,12 +6,16 @@
     <h1>Create New Brand</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="card card-success">
         <div class="card-header">
             <h3 class="card-title">Brand Details</h3>
         </div>
-        <form action="{{ route('brands.store') }}" method="POST">
+        <form action="{{ route('admin.brands.store') }}" method="POST">
             @csrf
             <div class="card-body">
                 <div class="form-group">
@@ -34,7 +38,7 @@
                 <button type="submit" class="btn btn-success">
                     <i class="fas fa-save"></i> Create Brand
                 </button>
-                <a href="{{ route('brands.index') }}" class="btn btn-default">
+                <a href="{{ route('admin.brands.index') }}" class="btn btn-default">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>

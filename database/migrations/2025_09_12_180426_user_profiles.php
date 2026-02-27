@@ -12,7 +12,7 @@ return new class extends Migration {
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
             $table->string('profile_picture')->nullable();
             $table->string('full_name');
-            $table->date('birthday')->nullable();
+            $table->string('birthday')->nullable();
             $table->string('email');
             $table->string('mobile')->nullable();
             $table->timestamps();

@@ -9,7 +9,8 @@ use App\Models\Company;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class UserManagementController extends Controller
 {
@@ -29,10 +30,12 @@ class UserManagementController extends Controller
     /**
      * Show the form for creating a new user.
      */
-    public function create()
+    public function create(Request $request)
     {
         $companies = Company::orderBy('name')->get();
-        return view('admin.users.create', compact('companies'));
+        $selectedCompanyId = $request->query('company_id');
+
+        return view('admin.users.create', compact('companies', 'selectedCompanyId'));
     }
 
     /**
@@ -42,29 +45,63 @@ class UserManagementController extends Controller
     {
         $request->validate([
             'username' => 'required|string|max:255|unique:users',
-            'email' => 'required|email|max:255|unique:users',
+            'email' => 'required|email|max:255',
             'password' => 'required|string|min:8|confirmed',
-            'account_type' => 'required|in:individual,company,provider',
-            'role' => 'required|in:user,admin,super_admin',
-            'is_admin' => 'boolean',
+            'account_type' => 'nullable|in:Provider,User',
+            'role' => 'required|in:admin,user',
             'email_verified' => 'boolean',
-            'company_id' => 'nullable|exists:companies,id',
+            'company_id' => 'required|exists:companies,id',
+            'set_as_default_contact' => 'boolean',
 
             // Profile fields
-            'full_name' => 'nullable|string|max:255',
-            'mobile' => 'nullable|string|max:20',
-            'birthday' => 'nullable|date',
+            'full_name' => 'required|string|max:255',
+            'mobile' => 'required|string|max:20',
+            'birthday' => ['nullable', 'string', 'max:255', 'regex:/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/'],
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+        ], [
+            'account_type.in' => 'Account type must be either Provider or User.',
+            'role.in' => 'Role must be either Admin or User.',
+            'birthday.regex' => 'Birthday must be in MM-DD format (e.g., 12-25).',
         ]);
+
+        // Auto-assign account_type based on company if not provided
+        $company = Company::find($request->company_id);
+        
+        // Check if company can add more users (configurable limit)
+        if ($company && !$company->canAddMoreUsers()) {
+            $currentCount = $company->getUserCount();
+            $maxLimit = $company->getMaxUserLimit();
+            return redirect()->back()
+                ->withErrors(['company_id' => "This company has reached the maximum allowed users ({$maxLimit}). Current users: {$currentCount}."])
+                ->withInput();
+        }
+        
+        $accountType = $request->account_type ?: $company->account_type;
+
+        // Normalize account type to match validation requirements (Provider/User)
+        if ($accountType) {
+            $accountType = ucfirst(strtolower($accountType)); // Ensure first letter is capitalized
+            // Validate the normalized value matches expected values
+            if (!in_array($accountType, ['Provider', 'User'])) {
+                $accountType = null; // Reset if invalid
+            }
+        }
+
+        // Validate that account type is set
+        if (!$accountType) {
+            return redirect()->back()
+                ->withErrors(['account_type' => 'Account type could not be determined. Please ensure the selected company has an account type.'])
+                ->withInput();
+        }
 
         // Create user
         $userData = [
             'username' => $request->username,
             'email' => $request->email,
             'password' => Hash::make($request->password),
-            'account_type' => $request->account_type,
+            'account_type' => $accountType,
             'role' => $request->role,
-            'is_admin' => $request->boolean('is_admin'),
+            'is_admin' => $request->role === 'admin',
             'email_verified' => $request->boolean('email_verified'),
             'company_id' => $request->company_id,
         ];
@@ -80,6 +117,7 @@ class UserManagementController extends Controller
         $profileData = [
             'user_id' => $user->id,
             'full_name' => $request->full_name,
+            'email' => $request->email,
             'mobile' => $request->mobile,
             'birthday' => $request->birthday,
         ];
@@ -88,11 +126,82 @@ class UserManagementController extends Controller
         if ($request->hasFile('profile_picture')) {
             $file = $request->file('profile_picture');
             $filename = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('profile_pictures', $filename, 'public');
-            $profileData['profile_picture'] = $path;
+
+            // Store in public/images/profile_pictures directory
+            $uploadPath = public_path('images/profile_pictures');
+            if (!file_exists($uploadPath)) {
+                mkdir($uploadPath, 0755, true);
+            }
+
+            // Move file to public/images/profile_pictures
+            $file->move($uploadPath, $filename);
+
+            // Store path relative to public directory
+            $profileData['profile_picture'] = 'images/profile_pictures/' . $filename;
         }
 
         UserProfile::create($profileData);
+
+        // Handle default contact assignment
+        $setAsDefaultContact = $request->boolean('set_as_default_contact');
+        $shouldSetAsDefault = false;
+
+        // Case A: Company has NO default_contact_id
+        // Automatically set the newly created user as default_contact_id (even if checkbox is not checked)
+        if (empty($company->default_contact_id)) {
+            $shouldSetAsDefault = true;
+        }
+        // Case B: Company already HAS a default_contact_id
+        // Only update if checkbox IS checked
+        elseif ($setAsDefaultContact) {
+            $shouldSetAsDefault = true;
+        }
+
+        // Update company's default_contact_id if needed
+        if ($shouldSetAsDefault) {
+            $company->default_contact_id = $user->id;
+            $company->save();
+        }
+
+        // Send emails to the newly created USER (not admin)
+        try {
+            // Send user credentials email to USER - ALL THE TIME (regardless of verification status)
+            // Email is sent TO the user's email address ($request->email)
+            Mail::send('emails.registrationSuccess', [
+                'name' => $request->full_name,
+                'email' => $request->email,
+                'username' => $request->username,
+                'password' => $request->password,
+                'account_type' => $accountType,
+                'login_url' => env('APP_URL'),
+            ], function ($message) use ($request) {
+                $message->to($request->email); // TO: User's email address
+                $message->subject('Welcome to ProSub Marketplace - Account Created Successfully');
+                $message->from(config('mail.from.address'), config('mail.from.name')); // FROM: System email
+            });
+
+            // Send verification email to USER - ONLY if Email Verified checkbox is NOT checked
+            if (!$user->email_verified) {
+                $token = Str::random(30);
+                $user->update(['token' => $token]);
+
+                Mail::send('emails.verificationEmail', [
+                    'token' => $token,
+                    'username' => $request->username
+                ], function ($message) use ($request) {
+                    $message->to($request->email); // TO: User's email address
+                    $message->subject('Email Verification - ProSub Marketplace');
+                    $message->from(config('mail.from.address'), config('mail.from.name')); // FROM: System email
+                });
+            }
+        } catch (\Exception $e) {
+            // Log email sending error but don't fail the user creation
+            \Log::error('Failed to send email to user', [
+                'user_id' => $user->id,
+                'user_email' => $request->email, // User's email where email was supposed to be sent
+                'error' => $e->getMessage()
+            ]);
+        }
 
         return redirect()->route('admin.users.index')
             ->with('success', 'User created successfully.');
@@ -133,10 +242,8 @@ class UserManagementController extends Controller
                 'required',
                 'email',
                 'max:255',
-                Rule::unique('users')->ignore($user->id)
             ],
             'password' => 'nullable|string|min:8|confirmed',
-            'account_type' => 'required|in:individual,company,provider',
             'role' => 'required|in:user,admin,super_admin',
             'is_admin' => 'boolean',
             'email_verified' => 'boolean',
@@ -145,20 +252,31 @@ class UserManagementController extends Controller
             // Profile fields
             'full_name' => 'nullable|string|max:255',
             'mobile' => 'nullable|string|max:20',
-            'birthday' => 'nullable|date',
+            'birthday' => ['nullable', 'string', 'max:255', 'regex:/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/'],
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+        ], [
+            'birthday.regex' => 'Birthday must be in MM-DD format (e.g., 12-25).',
         ]);
 
-        // Update user
+        // Update user (account type is derived from company and not editable here)
         $userData = [
             'username' => $request->username,
             'email' => $request->email,
-            'account_type' => $request->account_type,
             'role' => $request->role,
             'is_admin' => $request->boolean('is_admin'),
             'email_verified' => $request->boolean('email_verified'),
             'company_id' => $request->company_id,
         ];
+
+        // If company is selected, derive account_type from the company; if none, clear it
+        if ($request->filled('company_id')) {
+            $companyForType = Company::find($request->company_id);
+            if ($companyForType) {
+                $userData['account_type'] = $companyForType->account_type;
+            }
+        } else {
+            $userData['account_type'] = null;
+        }
 
         if ($request->filled('password')) {
             $userData['password'] = Hash::make($request->password);
@@ -176,6 +294,7 @@ class UserManagementController extends Controller
         // Update or create user profile
         $profileData = [
             'full_name' => $request->full_name,
+            'email' => $request->email,
             'mobile' => $request->mobile,
             'birthday' => $request->birthday,
         ];
@@ -184,13 +303,26 @@ class UserManagementController extends Controller
         if ($request->hasFile('profile_picture')) {
             // Delete old profile picture
             if ($user->profile && $user->profile->profile_picture) {
-                Storage::disk('public')->delete($user->profile->profile_picture);
+                $oldPicturePath = public_path($user->profile->profile_picture);
+                if (file_exists($oldPicturePath)) {
+                    unlink($oldPicturePath);
+                }
             }
 
             $file = $request->file('profile_picture');
             $filename = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('profile_pictures', $filename, 'public');
-            $profileData['profile_picture'] = $path;
+
+            // Store in public/images/profile_pictures directory
+            $uploadPath = public_path('images/profile_pictures');
+            if (!file_exists($uploadPath)) {
+                mkdir($uploadPath, 0755, true);
+            }
+
+            // Move file to public/images/profile_pictures
+            $file->move($uploadPath, $filename);
+
+            // Store path relative to public directory
+            $profileData['profile_picture'] = 'images/profile_pictures/' . $filename;
         }
 
         if ($user->profile) {
@@ -200,7 +332,15 @@ class UserManagementController extends Controller
             UserProfile::create($profileData);
         }
 
-        return redirect()->route('admin.users.index')
+        // Preserve filter parameters from the request if they exist
+        $filterParams = $request->only(['country', 'city', 'state', 'search', 'page']);
+        $redirectUrl = route('admin.users.index');
+
+        if (!empty(array_filter($filterParams))) {
+            $redirectUrl .= '?' . http_build_query(array_filter($filterParams));
+        }
+
+        return redirect($redirectUrl)
             ->with('success', 'User updated successfully.');
     }
 
@@ -209,9 +349,24 @@ class UserManagementController extends Controller
      */
     public function destroy(User $user)
     {
+        // Prevent deleting super admins
+        if ($user->role === 'super_admin') {
+            return redirect()->route('admin.users.index')
+                ->with('error', 'Super admin users cannot be deleted.');
+        }
+
+        // Prevent deleting own account
+        if ($user->id === auth()->id()) {
+            return redirect()->route('admin.users.index')
+                ->with('error', 'You cannot delete your own account.');
+        }
+
         // Delete profile picture
         if ($user->profile && $user->profile->profile_picture) {
-            Storage::disk('public')->delete($user->profile->profile_picture);
+            $picturePath = public_path($user->profile->profile_picture);
+            if (file_exists($picturePath)) {
+                unlink($picturePath);
+            }
         }
 
         // Delete user profile
@@ -222,6 +377,93 @@ class UserManagementController extends Controller
 
         return redirect()->route('admin.users.index')
             ->with('success', 'User deleted successfully.');
+    }
+
+    /**
+     * Bulk delete multiple users.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'user_ids' => 'required|array',
+            'user_ids.*' => 'exists:users,id'
+        ]);
+
+        $userIds = $request->user_ids;
+        $deletedCount = 0;
+        $errors = [];
+
+        foreach ($userIds as $userId) {
+            $user = User::find($userId);
+
+            if (!$user) {
+                continue;
+            }
+
+            // Prevent deleting super admins
+            if ($user->role === 'super_admin') {
+                $errors[] = "Cannot delete super admin: {$user->username}";
+                continue;
+            }
+
+            // Prevent deleting own account
+            if ($user->id === auth()->id()) {
+                $errors[] = "Cannot delete your own account: {$user->username}";
+                continue;
+            }
+
+            try {
+                // Delete profile picture
+                if ($user->profile && $user->profile->profile_picture) {
+                    $picturePath = public_path($user->profile->profile_picture);
+                    if (file_exists($picturePath)) {
+                        unlink($picturePath);
+                    }
+                }
+
+                // Delete user profile
+                $user->profile()->delete();
+
+                // Delete user
+                $user->delete();
+                $deletedCount++;
+            } catch (\Exception $e) {
+                $errors[] = "Failed to delete user: {$user->username} - " . $e->getMessage();
+            }
+        }
+
+        if ($deletedCount > 0) {
+            $message = "Successfully deleted {$deletedCount} user(s).";
+            if (!empty($errors)) {
+                $message .= " Errors: " . implode(', ', $errors);
+            }
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'deleted_count' => $deletedCount,
+                    'errors' => $errors
+                ]);
+            }
+
+            return redirect()->route('admin.users.index')
+                ->with('success', $message);
+        } else {
+            $message = 'No users were deleted. ' . (!empty($errors) ? implode(', ', $errors) : '');
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'deleted_count' => 0,
+                    'errors' => $errors
+                ]);
+            }
+
+            return redirect()->route('admin.users.index')
+                ->with('error', $message);
+        }
     }
 
     /**
@@ -256,5 +498,85 @@ class UserManagementController extends Controller
         $status = $user->is_admin ? 'granted admin privileges' : 'revoked admin privileges';
         return redirect()->back()
             ->with('success', "User {$status} successfully.");
+    }
+
+    /**
+     * Check if username is available (AJAX endpoint).
+     */
+    public function checkUsername(Request $request)
+    {
+        $username = $request->query('username');
+        $userId = $request->query('user_id'); // For edit mode
+
+        if (empty($username)) {
+            return response()->json([
+                'available' => false,
+                'message' => 'Username is required.'
+            ]);
+        }
+
+        $query = User::where('username', $username);
+
+        // Exclude current user if editing
+        if ($userId) {
+            $query->where('id', '!=', $userId);
+        }
+
+        $exists = $query->exists();
+
+        return response()->json([
+            'available' => !$exists,
+            'message' => $exists ? 'Username is already taken.' : 'Username is available.'
+        ]);
+    }
+
+    /**
+     * Get phone format information for a company (AJAX endpoint).
+     */
+    public function getPhoneFormat(Company $company)
+    {
+        $company->load(['country', 'state']);
+
+        $phoneFormat = '';
+        $countryCode = '';
+
+        if ($company->country) {
+            $countryName = $company->country->name;
+            $countryCode = $company->country->phone_code ?? '';
+
+            // Basic phone format patterns by country (can be expanded)
+            $phoneFormats = [
+                'United States' => '+1 (###) ###-####',
+                'Canada' => '+1 (###) ###-####',
+                'United Kingdom' => '+44 #### ######',
+                'Australia' => '+61 # #### ####',
+                'Germany' => '+49 ### #######',
+                'France' => '+33 # ## ## ## ##',
+                'India' => '+91 ##### #####',
+                'China' => '+86 ### #### ####',
+                'Japan' => '+81 ##-####-####',
+                'Brazil' => '+55 (##) #####-####',
+            ];
+
+            $phoneFormat = $phoneFormats[$countryName] ?? "+$countryCode ###########";
+        }
+
+        // Get user limit information
+        $currentUserCount = $company->getUserCount();
+        $maxUserLimit = $company->getMaxUserLimit();
+        $canCreateUser = $company->canAddMoreUsers();
+
+        return response()->json([
+            'country' => $company->country ? $company->country->name : null,
+            'state' => $company->state ? $company->state->name : null,
+            'phone_format' => $phoneFormat,
+            'country_code' => $countryCode,
+            'account_type' => $company->account_type,
+            'user_limit' => [
+                'current_user_count' => $currentUserCount,
+                'max_user_limit' => $maxUserLimit,
+                'can_create_user' => $canCreateUser,
+            ],
+        ]);
     }
 }

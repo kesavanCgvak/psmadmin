@@ -1,77 +1,153 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-  <meta charset="UTF-8">
-  <title>Quote Request</title>
+    <meta charset="UTF-8">
+    <title>New Quote Request - Pro Subrental Marketplace</title>
 </head>
+
 <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; color: #333;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: auto; background-color: #ffffff; border-radius: 6px; overflow: hidden; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
-    
-    <!-- Header with Logo -->
-    <tr style="background-color: #000000;">
-      <td style="text-align: center; padding: 20px;">
-        <img src="{{asset('images/logo.png')}}" alt="secondwarehouse.com" style="max-width: 200px;">
-      </td>
-    </tr>
+    <table width="100%" cellpadding="0" cellspacing="0"
+        style="max-width: 650px; margin: 0 auto; background-color: #ffffff; border-radius: 6px; overflow: hidden; box-shadow: 0 0 10px rgba(0,0,0,0.08);">
 
-    <!-- Body Content -->
-    <tr>
-      <td style="padding: 20px;">
-        <h2 style="color: #1a73e8;">New Quote Request</h2>
-        <p><strong>{{$company_name}}</strong> is requesting a quote for equipment sourced at Pro Subrental Marketplace.</p>
-        <p>
-          <strong>Email:</strong> {{$email}}<br>
-          <strong>Phone:</strong> {{$mobile}}
-        </p>
+        <!-- Header -->
+        <tr style="background-color: #726d6c;">
+            <td style="text-align: center; padding: 20px;">
+                <img src="{{ asset('images/logo-white.png') }}" alt="Pro Subrental Marketplace"
+                    style="max-width: 200px; height: auto; display: block; margin: 0 auto;">
+            </td>
+        </tr>
 
-        <h3>Rental Details</h3>
-        <p>
-          <strong>Rental Name:</strong> {{$rental_name}} <br>
-          <strong>Rental Dates:</strong> {{$from_date}} - {{$to_date}} <br>
-          <strong>Delivery Address:</strong> {{$delivery_address}}
-        </p>
+        <!-- Body -->
+        <tr>
+            <td style="padding: 25px;">
+                <h2 style="color: #1a73e8; margin-top: 0;">New Quote Request from {{ $user_company}}</h2>
 
-        <h3>Offer</h3>
-        <p>{{$offer_requirements}}</p>
+                <p>
+                    Hello <strong>{{ $provider_contact_name ?? 'there' }}</strong>,<br><br>
+                    You’ve received a new quote request from
+                    <strong>{{ $user_company}}</strong> via
+                    <strong>Pro Subrental Marketplace</strong>.
+                </p>
 
-        <h3>Private Message</h3>
-        <p>{{$private_message}}</p>
+                <!-- User Contact Info -->
+                <table cellpadding="5" cellspacing="0" style="margin: 15px 0; font-size: 14px;">
+                    <tr>
+                        <td><strong>Contact Person:</strong></td>
+                        <td>{{ $user_name }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Email:</strong></td>
+                        <td>{{ $user_email }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Phone:</strong></td>
+                        <td>{{ $user_mobile }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Company:</strong></td>
+                        <td>{{ $user_company }}</td>
+                    </tr>
+                </table>
 
-        <h3>Equipment Requested</h3>
-        <table width="100%" border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; text-align: left;">
-          <thead style="background-color: #f0f0f0;">
-            <tr>
-              <th>PSM Code</th>
-              <th>Qty</th>
-              <th>Equipment</th>
-              <th>Rental Software Code</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>{{$psm_code}}</td>
-              <td>{{$requested_quantity}}</td>
-              <td>{{$model}}</td>
-              <td>{{$software_code}}</td>
-            </tr>
-          </tbody>
-        </table>
+                <!-- Rental Details -->
+                <h3 style="color: #1a73e8; margin-top: 30px;">Rental Details</h3>
+                <p style="margin-bottom: 10px;">
+                    <strong>Rental Name:</strong> {{ $rental_name }}<br>
+                    <strong>Rental Dates:</strong> {{ $from_date }} to {{ $to_date }}<br>
+                    <strong>Delivery Address:</strong> {{ $delivery_address }}
+                </p>
 
-        <p style="margin-top: 20px;">Good luck with your rental. Remember that the sooner you reply to <strong>{{$company_name}}</strong>'s request, the more likely you will get the rental.</p>
+                @if (!empty($global_message))
+                    <h3 style="color: #1a73e8;">Global Message</h3>
+                    <p style="background: #f9f9f9; padding: 12px; border-left: 4px solid #1a73e8;">
+                        {{ $global_message }}
+                    </p>
+                @endif
 
-        <p style="font-size: 14px; color: #666;">
-          Our job at Pro Subrental Marketplace is to bring you opportunities to maximize the investments you have made in your gear and introduce you to people with whom you can build new relationships.
-        </p>
-      </td>
-    </tr>
+                @if(!empty($offer_requirements))
+                    <h3 style="color: #1a73e8;">Offer Requirements</h3>
+                    <p>{{ $offer_requirements }}</p>
+                @endif
 
-    <!-- Footer -->
-    <tr style="background-color: #000000;">
-      <td style="text-align: center; padding: 20px;">
-        <img src="{{asset('images/logo.png')}}" alt="Second Warehouse Footer Logo" style="max-width: 290px;margin-bottom: 10px;">
-        <div style="color: #FFD700;font-size: 13px;font-weight: bold;">Your Rental Equipment Network</div>
-      </td>
-    </tr>
-  </table>
+                @if(!empty($private_message))
+                    <h3 style="color: #1a73e8;">Private Message</h3>
+                    <p style="background: #f9f9f9; padding: 12px; border-left: 4px solid #1a73e8;">
+                        {{ $private_message }}
+                    </p>
+                @endif
+
+                @if(!empty($initial_offer))
+                    <h3 style="color: #1a73e8;">Initital Offer Negotitaion</h3>
+                    <p><b>Offer Price : </b>{{ $currency_symbol }}{{ $initial_offer }}</p>
+                @endif
+
+
+                <!-- Equipment List -->
+                <h3 style="color: #1a73e8;">Requested Equipment</h3>
+                <table width="100%" cellpadding="8" cellspacing="0"
+                    style="border-collapse: collapse; margin-top: 10px; font-size: 14px;">
+                    <thead style="background-color: #f0f0f0; border-bottom: 2px solid #ddd;">
+                        <tr>
+                            <th align="left">Equipment</th>
+                            <th align="left">PSM Code</th>
+                            <th align="left">Software Code</th>
+                            <th align="left">Qty</th>
+                            <th align="left">Price</th>
+                            <th align="left">Total Price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <tbody>
+                        @php
+                            $grandTotal = 0;
+                        @endphp
+
+                        @foreach($products as $product)
+                            @php
+                                $itemTotal = $product['total_price'] ?? 0;
+                                $grandTotal += $itemTotal;
+                            @endphp
+
+                            <tr style="border-bottom: 1px solid #eee;">
+                                <td>{{ $product['model'] ?? '-' }}</td>
+                                <td>{{ $product['psm_code'] ?? '—' }}</td>
+                                <td>{{ $product['software_code'] ?? '—' }}</td>
+                                <td>{{ $product['requested_quantity'] ?? '-' }}</td>
+                                <td>{{ $currency_symbol }}{{ number_format($product['price_per_unit'] ?? 0, 2) }}</td>
+                                <td>{{ $currency_symbol }}{{ number_format($itemTotal, 2) }}</td>
+                            </tr>
+                        @endforeach
+
+                        <!-- ✅ Grand Total Row -->
+                        <tr style="border-top: 2px solid #ddd; background-color: #f9f9f9;">
+                            <td colspan="5" align="right" style="font-weight: bold; padding-right: 10px;">Grand Total:
+                            </td>
+                            <td style="font-weight: bold;">{{ $currency_symbol }}{{ number_format($grandTotal, 2) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p style="margin-top: 25px; font-size: 15px; line-height: 1.5;">
+                    Please review the request and respond promptly to increase your chance of securing this rental
+                    opportunity with <strong>{{ $user_company}}</strong>.
+                </p>
+
+                <p style="font-size: 13px; color: #666; line-height: 1.6;">
+                    <strong>Pro Subrental Marketplace</strong> connects rental companies to help you maximize
+                    equipment utilization and grow your network in the rental industry.
+                </p>
+            </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+            <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
+                &copy; {{ date('Y') }} Pro Subrental Marketplace. All rights reserved.
+            </td>
+        </tr>
+
+    </table>
 </body>
+
 </html>

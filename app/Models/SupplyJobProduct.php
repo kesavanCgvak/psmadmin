@@ -12,17 +12,27 @@ class SupplyJobProduct extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['supply_job_id', 'product_id', 'offered_quantity', 'price_per_unit'];
+    protected $fillable = ['supply_job_id', 'product_id', 'required_quantity', 'offered_quantity', 'price_per_unit'];
 
     public function supplyJob()
     {
         return $this->belongsTo(SupplyJob::class);
     }
 
+    // public function product()
+    // {
+    //     return $this->belongsTo(Product::class);
+    // }
+
     public function product()
     {
-        return $this->belongsTo(Product::class);
+        return $this->belongsTo(Product::class, 'product_id', 'id');
     }
 
+    // Equipment related to the product (not direct FK here)
+    public function equipment()
+    {
+        return $this->hasOne(Equipment::class, 'product_id', 'product_id');
+    }
 }
 

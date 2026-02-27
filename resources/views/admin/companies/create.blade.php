@@ -6,9 +6,16 @@
     <h1>Create New Company</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <form action="{{ route('admin.companies.store') }}" method="POST">
         @csrf
+        @if($returnToUserCreate)
+            <input type="hidden" name="return_to_user_create" value="1">
+        @endif
 
         <!-- Basic Information -->
         <div class="card card-primary">
@@ -31,6 +38,21 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="account_type">Company Type <span class="text-danger">*</span></label>
+                    <select class="form-control @error('account_type') is-invalid @enderror"
+                            id="account_type"
+                            name="account_type"
+                            required>
+                        <option value="">-- Select Company Type --</option>
+                        <option value="user" {{ old('account_type') == 'user' ? 'selected' : '' }}>User Company</option>
+                        <option value="provider" {{ old('account_type') == 'provider' ? 'selected' : '' }}>Provider Company</option>
+                    </select>
+                    @error('account_type')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                </div>
+
+                <div class="form-group">
                     <label for="description">Description</label>
                     <textarea class="form-control @error('description') is-invalid @enderror"
                               id="description"
@@ -40,6 +62,37 @@
                     @error('description')
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
+                </div>
+
+                <div class="form-group">
+                    <label for="subscription_mode">Subscription Mode <span class="text-danger">*</span></label>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input @error('subscription_mode') is-invalid @enderror"
+                               type="radio"
+                               name="subscription_mode"
+                               id="subscription_mode_paid"
+                               value="paid"
+                               {{ old('subscription_mode', 'paid') === 'paid' ? 'checked' : '' }}
+                               required>
+                        <label class="form-check-label" for="subscription_mode_paid">
+                            <strong>Paid</strong>
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input @error('subscription_mode') is-invalid @enderror"
+                               type="radio"
+                               name="subscription_mode"
+                               id="subscription_mode_free"
+                               value="free"
+                               {{ old('subscription_mode') === 'free' ? 'checked' : '' }}>
+                        <label class="form-check-label" for="subscription_mode_free">
+                            <strong>Free</strong>
+                        </label>
+                    </div>
+                    @error('subscription_mode')
+                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                    @enderror
+                    <small class="form-text text-muted">Default is Paid for new companies</small>
                 </div>
             </div>
         </div>
@@ -187,10 +240,15 @@
                                    id="latitude"
                                    name="latitude"
                                    value="{{ old('latitude') }}"
-                                   min="-90" max="90">
+                                   min="-90" max="90"
+                                   readonly
+                                   style="background-color: #e9ecef; cursor: not-allowed;">
                             @error('latitude')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">
+                                Automatically loaded based on selected city
+                            </small>
                         </div>
                     </div>
 
@@ -203,10 +261,15 @@
                                    id="longitude"
                                    name="longitude"
                                    value="{{ old('longitude') }}"
-                                   min="-180" max="180">
+                                   min="-180" max="180"
+                                   readonly
+                                   style="background-color: #e9ecef; cursor: not-allowed;">
                             @error('longitude')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">
+                                Automatically loaded based on selected city
+                            </small>
                         </div>
                     </div>
                 </div>
@@ -265,53 +328,45 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="date_format">Date Format</label>
-                            <select class="form-control @error('date_format') is-invalid @enderror"
-                                    id="date_format"
-                                    name="date_format">
+                            <label for="date_format_id">Date Format</label>
+                            <select class="form-control @error('date_format_id') is-invalid @enderror"
+                                    id="date_format_id"
+                                    name="date_format_id">
                                 <option value="">-- Select Format --</option>
-                                <option value="MM/DD/YYYY" {{ old('date_format') == 'MM/DD/YYYY' ? 'selected' : '' }}>MM/DD/YYYY</option>
-                                <option value="DD/MM/YYYY" {{ old('date_format') == 'DD/MM/YYYY' ? 'selected' : '' }}>DD/MM/YYYY</option>
-                                <option value="YYYY-MM-DD" {{ old('date_format') == 'YYYY-MM-DD' ? 'selected' : '' }}>YYYY-MM-DD</option>
+                                @foreach($dateFormats as $dateFormat)
+                                    <option value="{{ $dateFormat->id }}" {{ old('date_format_id') == $dateFormat->id ? 'selected' : '' }}>
+                                        {{ $dateFormat->name }} ({{ $dateFormat->format }})
+                                    </option>
+                                @endforeach
                             </select>
-                            @error('date_format')
+                            @error('date_format_id')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">Or use legacy format field below</small>
                         </div>
                     </div>
 
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="pricing_scheme">Pricing Scheme</label>
-                            <select class="form-control @error('pricing_scheme') is-invalid @enderror"
-                                    id="pricing_scheme"
-                                    name="pricing_scheme">
+                            <label for="pricing_scheme_id">Pricing Scheme</label>
+                            <select class="form-control @error('pricing_scheme_id') is-invalid @enderror"
+                                    id="pricing_scheme_id"
+                                    name="pricing_scheme_id">
                                 <option value="">-- Select Scheme --</option>
-                                <option value="Day Price" {{ old('pricing_scheme') == 'Day Price' ? 'selected' : '' }}>Day Price</option>
-                                <option value="Week Price" {{ old('pricing_scheme') == 'Week Price' ? 'selected' : '' }}>Week Price</option>
-                                <option value="Month Price" {{ old('pricing_scheme') == 'Month Price' ? 'selected' : '' }}>Month Price</option>
-                                <option value="Custom" {{ old('pricing_scheme') == 'Custom' ? 'selected' : '' }}>Custom</option>
+                                @foreach($pricingSchemes as $pricingScheme)
+                                    <option value="{{ $pricingScheme->id }}" {{ old('pricing_scheme_id') == $pricingScheme->id ? 'selected' : '' }}>
+                                        {{ $pricingScheme->name }} ({{ $pricingScheme->code }})
+                                    </option>
+                                @endforeach
                             </select>
-                            @error('pricing_scheme')
+                            @error('pricing_scheme_id')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            <small class="form-text text-muted">Or use legacy scheme field below</small>
                         </div>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="search_priority">Search Priority</label>
-                    <input type="text"
-                           class="form-control @error('search_priority') is-invalid @enderror"
-                           id="search_priority"
-                           name="search_priority"
-                           value="{{ old('search_priority') }}"
-                           placeholder="e.g., 1, 2, 3">
-                    @error('search_priority')
-                        <div class="invalid-feedback">{{ $message }}</div>
-                    @enderror
-                    <small class="form-text text-muted">Lower numbers appear first in search results</small>
-                </div>
             </div>
         </div>
 
@@ -324,5 +379,222 @@
             </a>
         </div>
     </form>
+@stop
+
+@section('js')
+<script>
+$(document).ready(function() {
+    // Store initial values for form reload scenarios
+    const initialCountryId = "{{ old('country_id') }}";
+    const initialStateId = "{{ old('state_id') }}";
+    const initialCityId = "{{ old('city_id') }}";
+
+    // Disable dependent dropdowns initially
+    $('#country_id').prop('disabled', true);
+    $('#state_id').prop('disabled', true);
+    $('#city_id').prop('disabled', true);
+
+    // Enable country dropdown if region is selected
+    if ($('#region_id').val()) {
+        $('#country_id').prop('disabled', false);
+    }
+
+    // Load initial data if old values exist (form validation failure)
+    if (initialCountryId && $('#region_id').val()) {
+        loadCountries($('#region_id').val(), initialCountryId);
+    }
+    if (initialStateId && initialCountryId) {
+        loadStates(initialCountryId, initialStateId);
+    }
+    if (initialCityId && initialStateId) {
+        loadCities(initialStateId, initialCityId);
+    }
+
+    // Region change handler
+    $('#region_id').on('change', function() {
+        const regionId = $(this).val();
+
+        // Reset and disable dependent dropdowns
+        resetDropdown($('#country_id'), 'Select Country');
+        resetDropdown($('#state_id'), 'Select State/Province');
+        resetDropdown($('#city_id'), 'Select City');
+        clearCoordinates();
+
+        if (regionId) {
+            $('#country_id').prop('disabled', false);
+            loadCountries(regionId);
+        } else {
+            $('#country_id').prop('disabled', true);
+            $('#state_id').prop('disabled', true);
+            $('#city_id').prop('disabled', true);
+        }
+    });
+
+    // Country change handler
+    $('#country_id').on('change', function() {
+        const countryId = $(this).val();
+
+        // Reset dependent dropdowns
+        resetDropdown($('#state_id'), 'Select State/Province');
+        resetDropdown($('#city_id'), 'Select City');
+        clearCoordinates();
+
+        if (countryId) {
+            $('#state_id').prop('disabled', false);
+            loadStates(countryId);
+        } else {
+            $('#state_id').prop('disabled', true);
+            $('#city_id').prop('disabled', true);
+        }
+    });
+
+    // State change handler
+    $('#state_id').on('change', function() {
+        const stateId = $(this).val();
+
+        // Reset city dropdown
+        resetDropdown($('#city_id'), 'Select City');
+        clearCoordinates();
+
+        if (stateId) {
+            $('#city_id').prop('disabled', false);
+            loadCities(stateId);
+        } else {
+            $('#city_id').prop('disabled', true);
+        }
+    });
+
+    // City change handler - auto-fetch coordinates
+    $('#city_id').on('change', function() {
+        const cityId = $(this).val();
+
+        clearCoordinates();
+
+        if (cityId) {
+            loadCityCoordinates(cityId);
+        }
+    });
+
+    // Function to load countries by region
+    function loadCountries(regionId, selectedId = null) {
+        showLoading($('#country_id'));
+
+        $.ajax({
+            url: '/admin/ajax/regions/' + regionId + '/countries',
+            type: 'GET',
+            dataType: 'json',
+            success: function(data) {
+                populateDropdown($('#country_id'), data, 'Select Country', selectedId);
+            },
+            error: function() {
+                resetDropdown($('#country_id'), 'Error loading countries');
+                showNotification('error', 'Failed to load countries');
+            }
+        });
+    }
+
+    // Function to load states by country
+    function loadStates(countryId, selectedId = null) {
+        showLoading($('#state_id'));
+
+        $.ajax({
+            url: '/admin/ajax/countries/' + countryId + '/states',
+            type: 'GET',
+            dataType: 'json',
+            success: function(data) {
+                populateDropdown($('#state_id'), data, 'Select State/Province', selectedId);
+            },
+            error: function() {
+                resetDropdown($('#state_id'), 'Error loading states');
+                showNotification('error', 'Failed to load states/provinces');
+            }
+        });
+    }
+
+    // Function to load cities by state
+    function loadCities(stateId, selectedId = null) {
+        showLoading($('#city_id'));
+
+        $.ajax({
+            url: '/admin/ajax/states/' + stateId + '/cities',
+            type: 'GET',
+            dataType: 'json',
+            success: function(data) {
+                populateDropdown($('#city_id'), data, 'Select City', selectedId);
+            },
+            error: function() {
+                resetDropdown($('#city_id'), 'Error loading cities');
+                showNotification('error', 'Failed to load cities');
+            }
+        });
+    }
+
+    // Function to load city coordinates
+    function loadCityCoordinates(cityId) {
+        // Show loading state
+        $('#latitude').val('').attr('placeholder', 'Loading...');
+        $('#longitude').val('').attr('placeholder', 'Loading...');
+
+        $.ajax({
+            url: '/admin/ajax/cities/' + cityId + '/coordinates',
+            type: 'GET',
+            dataType: 'json',
+            success: function(data) {
+                if (data.latitude && data.longitude) {
+                    $('#latitude').val(data.latitude).attr('placeholder', 'Latitude');
+                    $('#longitude').val(data.longitude).attr('placeholder', 'Longitude');
+                    showNotification('success', 'Coordinates loaded successfully');
+                } else {
+                    $('#latitude').attr('placeholder', 'Not available');
+                    $('#longitude').attr('placeholder', 'Not available');
+                    showNotification('info', 'No coordinates available for this city');
+                }
+            },
+            error: function() {
+                $('#latitude').attr('placeholder', 'Error loading');
+                $('#longitude').attr('placeholder', 'Error loading');
+                showNotification('error', 'Failed to load coordinates');
+            }
+        });
+    }
+
+    // Helper function to populate dropdown
+    function populateDropdown($select, data, placeholder, selectedId = null) {
+        $select.html('<option value="">-- ' + placeholder + ' --</option>');
+
+        if (data && data.length > 0) {
+            $.each(data, function(key, item) {
+                const selected = selectedId && item.id == selectedId ? ' selected' : '';
+                $select.append('<option value="' + item.id + '"' + selected + '>' + item.name + '</option>');
+            });
+        } else {
+            $select.append('<option value="">No ' + placeholder.toLowerCase() + ' available</option>');
+        }
+    }
+
+    // Helper function to reset dropdown
+    function resetDropdown($select, placeholder) {
+        $select.html('<option value="">-- ' + placeholder + ' --</option>');
+    }
+
+    // Helper function to show loading state
+    function showLoading($select) {
+        $select.html('<option value="">-- Loading... --</option>');
+    }
+
+    // Helper function to clear coordinates
+    function clearCoordinates() {
+        $('#latitude').val('').attr('placeholder', 'Latitude');
+        $('#longitude').val('').attr('placeholder', 'Longitude');
+    }
+
+    // Helper function to show notifications
+    function showNotification(type, message) {
+        // You can implement a toast notification here if desired
+        // For now, just console log
+        console.log(type.toUpperCase() + ': ' + message);
+    }
+});
+</script>
 @stop
 

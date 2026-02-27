@@ -25,6 +25,9 @@
         <div class="card-header">
             <h3 class="card-title">All Companies</h3>
             <div class="card-tools">
+                <button type="button" id="bulkDeleteBtn" class="btn btn-danger btn-sm" style="display: none; margin-right: 5px;">
+                    <i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>
+                </button>
                 <a href="{{ route('admin.companies.create') }}" class="btn btn-primary btn-sm">
                     <i class="fas fa-plus"></i> Add New Company
                 </a>
@@ -34,11 +37,15 @@
             <table id="companiesTable" class="table table-bordered table-striped">
                 <thead>
                     <tr>
+                        <th style="width: 40px;">
+                            <input type="checkbox" id="selectAll" title="Select All">
+                        </th>
                         <th>ID</th>
                         <th>Name</th>
                         <th>Location</th>
                         <th>Currency</th>
                         <th>Rental Software</th>
+                        <th>Subscription Mode</th>
                         <th>Users</th>
                         <th>Equipment</th>
                         <th>Rating</th>
@@ -49,6 +56,10 @@
                 <tbody>
                     @foreach($companies as $company)
                         <tr>
+                            <td>
+                                <input type="checkbox" class="row-checkbox" name="company_ids[]" value="{{ $company->id }}"
+                                       data-name="{{ $company->name }}">
+                            </td>
                             <td>{{ $company->id }}</td>
                             <td><strong>{{ $company->name }}</strong></td>
                             <td>
@@ -69,6 +80,13 @@
                                     <span class="badge badge-info">{{ $company->rentalSoftware->name }}</span>
                                 @else
                                     <span class="text-muted">N/A</span>
+                                @endif
+                            </td>
+                            <td>
+                                @if($company->subscription_mode === 'free')
+                                    <span class="badge badge-secondary">Free</span>
+                                @else
+                                    <span class="badge badge-success">Paid</span>
                                 @endif
                             </td>
                             <td><span class="badge badge-primary">{{ $company->users_count }}</span></td>
@@ -111,16 +129,95 @@
     </div>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('js')
+    @include('partials.responsive-js')
     <script>
         $(document).ready(function() {
-            $('#companiesTable').DataTable({
-                "responsive": true,
-                "lengthChange": true,
-                "autoWidth": false,
-                "buttons": ["copy", "csv", "excel", "pdf", "print", "colvis"],
-                "order": [[0, "desc"]]
-            }).buttons().container().appendTo('#companiesTable_wrapper .col-md-6:eq(0)');
+            var table = initResponsiveDataTable('companiesTable', {
+                "columnDefs": [
+                    { "orderable": false, "targets": [0, 9, 11] },
+                    { "responsivePriority": 1, "targets": 2 },
+                    { "responsivePriority": 2, "targets": 11 }
+                ]
+            });
+
+            // Bulk delete functionality
+            $('#selectAll').on('change', function() {
+                $('.row-checkbox').prop('checked', $(this).prop('checked'));
+                updateBulkDeleteButton();
+            });
+
+            $(document).on('change', '.row-checkbox', function() {
+                updateBulkDeleteButton();
+                var totalCheckboxes = $('.row-checkbox').length;
+                var checkedCheckboxes = $('.row-checkbox:checked').length;
+                $('#selectAll').prop('checked', totalCheckboxes === checkedCheckboxes);
+            });
+
+            function updateBulkDeleteButton() {
+                var checked = $('.row-checkbox:checked');
+                if (checked.length > 0) {
+                    $('#bulkDeleteBtn').show().html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected (' + checked.length + ')</span><span class="d-lg-none">Delete</span>');
+                } else {
+                    $('#bulkDeleteBtn').hide();
+                }
+            }
+
+            $('#bulkDeleteBtn').on('click', function() {
+                var selectedIds = [];
+                var selectedNames = [];
+                $('.row-checkbox:checked').each(function() {
+                    selectedIds.push($(this).val());
+                    selectedNames.push($(this).data('name'));
+                });
+
+                if (selectedIds.length === 0) {
+                    alert('Please select at least one company to delete.');
+                    return;
+                }
+
+                var message = 'Are you sure you want to delete ' + selectedIds.length + ' company/companies?\n\n';
+                message += 'Companies to be deleted:\n';
+                selectedNames.forEach(function(name, index) {
+                    message += (index + 1) + '. ' + name + '\n';
+                });
+                message += '\nThis will also delete all associated users and equipment. This action cannot be undone!';
+
+                if (confirm(message)) {
+                    $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Deleting...');
+
+                    $.ajax({
+                        url: '{{ route("admin.companies.bulk-delete") }}',
+                        method: 'POST',
+                        data: {
+                            _token: '{{ csrf_token() }}',
+                            company_ids: selectedIds
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                alert('Successfully deleted ' + response.deleted_count + ' company/companies.');
+                                location.reload();
+                            } else {
+                                alert('Error: ' + (response.message || 'Failed to delete companies.'));
+                            }
+                        },
+                        error: function(xhr) {
+                            var message = 'An error occurred while deleting companies.';
+                            if (xhr.responseJSON && xhr.responseJSON.message) {
+                                message = xhr.responseJSON.message;
+                            }
+                            alert(message);
+                        },
+                        complete: function() {
+                            $('#bulkDeleteBtn').prop('disabled', false).html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>');
+                        }
+                    });
+                }
+            });
         });
     </script>
 @stop

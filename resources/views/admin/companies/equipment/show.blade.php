@@ -6,6 +6,10 @@
     <h1>Equipment Details</h1>
 @stop
 
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
 @section('content')
     <div class="row">
         <div class="col-md-8">

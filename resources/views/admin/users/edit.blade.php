@@ -32,7 +32,7 @@
                                 <div class="form-group">
                                     <label for="email">Email <span class="text-danger">*</span></label>
                                     <input type="email" class="form-control @error('email') is-invalid @enderror"
-                                           id="email" name="email" value="{{ old('email', $user->email) }}" required>
+                                           id="email" name="email" value="{{ old('email', $user->profile?->email ?? $user->email) }}" required>
                                     @error('email')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -63,17 +63,9 @@
                         <div class="row">
                             <div class="col-md-4">
                                 <div class="form-group">
-                                    <label for="account_type">Account Type <span class="text-danger">*</span></label>
-                                    <select class="form-control @error('account_type') is-invalid @enderror"
-                                            id="account_type" name="account_type" required>
-                                        <option value="">Select Account Type</option>
-                                        <option value="individual" {{ old('account_type', $user->account_type) === 'individual' ? 'selected' : '' }}>Individual</option>
-                                        <option value="company" {{ old('account_type', $user->account_type) === 'company' ? 'selected' : '' }}>Company</option>
-                                        <option value="provider" {{ old('account_type', $user->account_type) === 'provider' ? 'selected' : '' }}>Provider</option>
-                                    </select>
-                                    @error('account_type')
-                                        <div class="invalid-feedback">{{ $message }}</div>
-                                    @enderror
+                                    <label>Account Type</label>
+                                    <input type="text" id="account_type_display" class="form-control" value="{{ optional($user->company)->account_type ? ucfirst(optional($user->company)->account_type) : 'N/A' }}" disabled>
+                                    <small class="form-text text-muted">Derived from the associated company</small>
                                 </div>
                             </div>
                             <div class="col-md-4">
@@ -97,7 +89,7 @@
                                             id="company_id" name="company_id">
                                         <option value="">Select Company (Optional)</option>
                                         @foreach($companies as $company)
-                                            <option value="{{ $company->id }}" {{ old('company_id', $user->company_id) == $company->id ? 'selected' : '' }}>
+                                            <option value="{{ $company->id }}" data-account-type="{{ $company->account_type }}" {{ old('company_id', $user->company_id) == $company->id ? 'selected' : '' }}>
                                                 {{ $company->name }}
                                             </option>
                                         @endforeach
@@ -165,11 +157,17 @@
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label for="birthday">Birthday</label>
-                                    <input type="date" class="form-control @error('birthday') is-invalid @enderror"
-                                           id="birthday" name="birthday" value="{{ old('birthday', $user->profile?->birthday) }}">
+                                    <input type="text" class="form-control @error('birthday') is-invalid @enderror"
+                                           id="birthday" name="birthday" value="{{ old('birthday', $user->profile?->birthday) }}"
+                                           placeholder="MM-DD (e.g., 12-25)"
+                                           pattern="^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+                                           maxlength="5">
                                     @error('birthday')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
+                                    <small class="form-text text-muted" id="birthdayHelp">
+                                        Format: MM-DD (e.g., 12-25 for December 25th)
+                                    </small>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -177,7 +175,7 @@
                                     <label for="profile_picture">Profile Picture</label>
                                     @if($user->profile?->profile_picture)
                                         <div class="mb-2">
-                                            <img src="{{ asset('storage/' . $user->profile->profile_picture) }}"
+                                            <img src="{{ asset($user->profile->profile_picture) }}"
                                                  alt="Current Profile Picture"
                                                  class="img-circle"
                                                  style="width: 50px; height: 50px;">
@@ -206,4 +204,321 @@
             </div>
         </div>
     </div>
+@stop
+
+@section('css')
+<style>
+    /* ========== Responsive Form Layout ========== */
+    @media (max-width: 576px) {
+        .content-header h1 {
+            font-size: 1.125rem;
+            word-wrap: break-word;
+        }
+
+        .card-header .card-title {
+            font-size: 1rem;
+        }
+
+        .card-body {
+            padding: 0.75rem;
+        }
+
+        .form-group label {
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .form-control,
+        .form-control-file {
+            font-size: 0.875rem;
+            padding: 0.375rem 0.75rem;
+            min-height: 44px;
+        }
+
+        select.form-control {
+            font-size: 0.875rem;
+        }
+
+        .btn {
+            font-size: 0.875rem;
+            padding: 0.5rem 1rem;
+            min-height: 44px;
+        }
+
+        small.form-text {
+            font-size: 0.75rem;
+        }
+
+        .invalid-feedback,
+        .valid-feedback {
+            font-size: 0.75rem;
+        }
+
+        /* Profile picture preview */
+        .img-circle {
+            width: 40px !important;
+            height: 40px !important;
+        }
+
+        .mb-2 {
+            margin-bottom: 0.5rem !important;
+        }
+    }
+
+    @media (min-width: 577px) and (max-width: 768px) {
+        .content-header h1 {
+            font-size: 1.375rem;
+        }
+
+        .form-group label {
+            font-size: 0.9rem;
+        }
+
+        .form-control {
+            font-size: 0.9rem;
+        }
+
+        .btn {
+            font-size: 0.9rem;
+        }
+
+        .img-circle {
+            width: 45px !important;
+            height: 45px !important;
+        }
+    }
+
+    /* ========== Better Spacing on Mobile ========== */
+    @media (max-width: 768px) {
+        .row {
+            margin-left: 0;
+            margin-right: 0;
+        }
+
+        .row > [class*='col-'] {
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+        }
+
+        .card-footer {
+            padding: 0.75rem;
+        }
+
+        .card-footer .btn {
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-footer .btn:last-child {
+            margin-bottom: 0;
+        }
+
+        hr {
+            margin: 1rem 0;
+        }
+
+        h5 {
+            font-size: 1rem;
+            margin-bottom: 0.75rem;
+        }
+    }
+
+    /* ========== Form Check Boxes ========== */
+    @media (max-width: 768px) {
+        .form-check {
+            margin-bottom: 0.5rem;
+        }
+
+        .form-check-label {
+            font-size: 0.875rem;
+        }
+
+        .form-check-input {
+            width: 20px;
+            height: 20px;
+            margin-top: 0.15rem;
+        }
+    }
+
+    /* ========== File Input ========== */
+    .form-control-file {
+        width: 100%;
+        display: block;
+    }
+
+    @media (max-width: 576px) {
+        .form-control-file {
+            font-size: 0.75rem;
+        }
+    }
+
+    /* ========== Profile Picture Section ========== */
+    .img-circle {
+        border: 2px solid #dee2e6;
+        object-fit: cover;
+    }
+
+    @media (max-width: 576px) {
+        .d-block {
+            font-size: 0.75rem;
+        }
+    }
+
+    /* ========== Card Header on Mobile ========== */
+    @media (max-width: 576px) {
+        .card-header {
+            padding: 0.75rem;
+        }
+
+        .card-header .card-title {
+            margin-bottom: 0;
+        }
+    }
+
+    /* ========== Better Icon Spacing ========== */
+    .btn i {
+        margin-right: 0.25rem;
+    }
+
+    @media (max-width: 576px) {
+        .btn i {
+            margin-right: 0.15rem;
+        }
+    }
+
+    /* ========== Text Wrapping ========== */
+    .content-header h1 {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+
+    /* ========== Password Note ========== */
+    @media (max-width: 576px) {
+        label small.text-muted {
+            display: block;
+            margin-top: 0.25rem;
+        }
+    }
+
+    /* ========== Medium Screens ========== */
+    @media (min-width: 769px) and (max-width: 1024px) {
+        .card-body {
+            padding: 1rem;
+        }
+
+        .form-group label {
+            font-size: 0.925rem;
+        }
+
+        .form-control {
+            font-size: 0.925rem;
+        }
+    }
+
+    /* ========== Large Desktop ========== */
+    @media (min-width: 1025px) {
+        .card-body {
+            padding: 1.25rem;
+        }
+    }
+
+    /* ========== Print Styles ========== */
+    @media print {
+        .card-footer,
+        .btn {
+            display: none !important;
+        }
+
+        .card-body {
+            padding: 0;
+        }
+    }
+</style>
+@stop
+
+@section('js')
+<script>
+    (function() {
+        const companySelect = document.getElementById('company_id');
+        const accountTypeDisplay = document.getElementById('account_type_display');
+
+        function toTitleCase(value) {
+            if (!value) return 'N/A';
+            return value.charAt(0).toUpperCase() + value.slice(1);
+        }
+
+        function updateAccountTypeDisplay() {
+            const selected = companySelect.options[companySelect.selectedIndex];
+            const type = selected ? selected.getAttribute('data-account-type') : '';
+            accountTypeDisplay.value = toTitleCase(type);
+        }
+
+        if (companySelect && accountTypeDisplay) {
+            companySelect.addEventListener('change', updateAccountTypeDisplay);
+        }
+    })();
+
+    // Birthday format validation (MM-DD)
+    (function() {
+        const birthdayInput = document.getElementById('birthday');
+        const birthdayHelp = document.getElementById('birthdayHelp');
+        const mmddPattern = /^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
+
+        if (birthdayInput && birthdayHelp) {
+            birthdayInput.addEventListener('input', function() {
+                const value = this.value;
+
+                if (value.length === 0) {
+                    this.classList.remove('is-valid', 'is-invalid');
+                    birthdayHelp.textContent = 'Format: MM-DD (e.g., 12-25 for December 25th)';
+                    birthdayHelp.classList.remove('text-success', 'text-danger');
+                    return;
+                }
+
+                // Auto-format: add dash after 2 digits
+                if (value.length === 2 && !value.includes('-')) {
+                    this.value = value + '-';
+                }
+
+                if (mmddPattern.test(this.value)) {
+                    this.classList.remove('is-invalid');
+                    this.classList.add('is-valid');
+                    birthdayHelp.innerHTML = '<i class="fas fa-check-circle text-success"></i> Valid format';
+                    birthdayHelp.classList.add('text-success');
+                    birthdayHelp.classList.remove('text-danger');
+                } else {
+                    this.classList.remove('is-valid');
+                    this.classList.add('is-invalid');
+                    birthdayHelp.innerHTML = '<i class="fas fa-times-circle text-danger"></i> Format must be MM-DD (e.g., 12-25)';
+                    birthdayHelp.classList.add('text-danger');
+                    birthdayHelp.classList.remove('text-success');
+                }
+            });
+
+            // Prevent invalid characters
+            birthdayInput.addEventListener('keypress', function(e) {
+                const char = String.fromCharCode(e.which);
+                const currentValue = this.value;
+                
+                // Allow numbers and dash
+                if (!/[0-9-]/.test(char)) {
+                    e.preventDefault();
+                    return false;
+                }
+                
+                // Only allow dash at position 2
+                if (char === '-' && currentValue.length !== 2) {
+                    e.preventDefault();
+                    return false;
+                }
+                
+                // Limit to 5 characters (MM-DD)
+                if (currentValue.length >= 5 && char !== '-') {
+                    e.preventDefault();
+                    return false;
+                }
+            });
+        }
+    })();
+    </script>
 @stop
