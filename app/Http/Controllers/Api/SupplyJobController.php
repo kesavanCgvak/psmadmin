@@ -28,7 +28,7 @@ class SupplyJobController extends Controller
         // Validate query params
         $validated = $request->validate([
             'company_id' => 'required|integer|exists:companies,id',
-            'status' => 'nullable|string|in:open,negotiating,accepted,cancelled,closed,partially_accepted',
+            'status' => 'nullable|string|in:pending,negotiating,accepted,cancelled,closed,partially_accepted,completed',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
             'page' => 'nullable|integer|min:1',
@@ -221,9 +221,9 @@ class SupplyJobController extends Controller
             $loggedInCompany = $user->company_id;
 
             // Default values
-            $canSendOffer = false;
-            $canCancelNegotiation = false;
-            $canHandshake = false;
+            $canSendOffer = true;
+            $canCancelNegotiation = true;
+            $canHandshake = true;
 
             // If we have an offer, adjust permission
             if ($latestOffer) {

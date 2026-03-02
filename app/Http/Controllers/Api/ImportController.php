@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ImportSession;
+use App\Models\ImportSessionItem;
+use App\Models\ImportSessionMatch;
 use App\Services\Import\ImportAnalyzerService;
 use App\Services\Import\ImportConfirmationService;
 use Illuminate\Http\JsonResponse;
@@ -155,35 +157,7 @@ class ImportController extends Controller
 
         try {
             $summary = $analyzer->analyze($session);
-
-            // ✅ Add existing equipment info to matches
-            // This helps users see if they already have the product in inventory
-            if (isset($summary['items']) && $summary['items'] instanceof \Illuminate\Support\Collection) {
-                $summary['items'] = $summary['items']->map(function ($item) use ($session) {
-                    // Add existing equipment info for each match
-                    if ($item->relationLoaded('matches') && $item->matches) {
-                        $item->matches->each(function ($match) use ($session) {
-                            if ($match->product_id) {
-                                $existingEquipment = \App\Models\Equipment::where('user_id', $session->user_id)
-                                    ->where('company_id', $session->company_id)
-                                    ->where('product_id', $match->product_id)
-                                    ->first();
-
-                                if ($existingEquipment) {
-                                    // Add as attribute to the match model
-                                    $match->setAttribute('existing_equipment', [
-                                        'id' => $existingEquipment->id,
-                                        'current_quantity' => $existingEquipment->quantity,
-                                        'software_code' => $existingEquipment->software_code,
-                                    ]);
-                                }
-                            }
-                        });
-                    }
-
-                    return $item;
-                });
-            }
+            $summary = $this->addExistingEquipmentToSummary($summary, $session);
 
             return response()->json([
                 'success' => true,
@@ -196,6 +170,34 @@ class ImportController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Analysis failed',
+            ], 500);
+        }
+    }
+
+    /**
+     * Force re-analysis of an existing import session without re-uploading the file.
+     */
+    public function reanalyze(
+        ImportSession $session,
+        ImportAnalyzerService $analyzer
+    ): JsonResponse {
+        $this->authorize('update', $session);
+
+        try {
+            // Preserve removed/skipped rows: do NOT reset is_skipped here.
+            $summary = $analyzer->reanalyze($session, false);
+            $summary = $this->addExistingEquipmentToSummary($summary, $session);
+
+            return response()->json([
+                'success' => true,
+                'summary' => $summary,
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Re-analysis failed',
             ], 500);
         }
     }
@@ -325,18 +327,25 @@ class ImportController extends Controller
             // Determine current stage/step
             $stage = $this->determineSessionStage($session);
 
-            // ✅ FILTER ITEMS: Only show pending/analyzed items by default (hide confirmed)
-            // This ensures when user continues import, they only see remaining items
-            $items = $session->items;
+            // ✅ FILTER ITEMS:
+            // - Always hide explicitly removed/skipped rows
+            // - By default, also hide confirmed rows so user only sees remaining work
+            $items = $session->items->filter(function ($item) {
+                return !$item->is_skipped;
+            });
             if (!$showAll) {
                 $items = $items->filter(function ($item) {
                     return $item->status !== 'confirmed';
                 });
             }
 
-            // Count items by status for summary
+            // Count items by status for summary (ignore skipped rows for pending count)
             $confirmedCount = $session->items->where('status', 'confirmed')->count();
-            $pendingCount = $session->items->where('status', '!=', 'confirmed')->where('status', '!=', 'rejected')->count();
+            $pendingCount = $session->items
+                ->where('status', '!=', 'confirmed')
+                ->where('status', '!=', 'rejected')
+                ->where('is_skipped', '!=', true)
+                ->count();
 
             return response()->json([
                 'success' => true,
@@ -362,6 +371,7 @@ class ImportController extends Controller
                             'quantity' => $item->quantity,
                             'software_code' => $item->software_code,
                             'status' => $item->status,
+                            'is_skipped' => (bool) $item->is_skipped,
                             'rejection_reason' => $item->rejection_reason,
                             'action' => $item->action,
                             'selected_product_id' => $item->selected_product_id,
@@ -429,6 +439,51 @@ class ImportController extends Controller
     }
 
     /**
+     * Remove a row from the import.
+     * Use with delete icon - permanently excludes the row from matching, validation, and import.
+     */
+    public function removeItem(ImportSession $session, ImportSessionItem $item): JsonResponse
+    {
+        $this->authorize('update', $session);
+
+        if ($item->import_session_id !== $session->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Item does not belong to this import session',
+            ], 422);
+        }
+
+        if ($item->status === 'confirmed') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot remove an already imported row',
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            ImportSessionMatch::where('import_session_item_id', $item->id)->delete();
+            $item->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Row removed from import',
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to remove row',
+            ], 500);
+        }
+    }
+
+    /**
      * Update item selections (save draft state)
      * Allows users to save their matching decisions without confirming
      */
@@ -441,7 +496,9 @@ class ImportController extends Controller
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.id' => 'required|exists:import_session_items,id',
-            'items.*.action' => 'required|in:attach,create',
+            // attach/create = include in import; remove = permanently delete row (exclude from import)
+            'items.*.action' => 'nullable|in:attach,create,skip,remove',
+            'items.*.is_skipped' => 'sometimes|boolean',
             'items.*.product_id' => [
                 'nullable',
                 'integer',
@@ -458,12 +515,34 @@ class ImportController extends Controller
 
                 // Only update if item is not already confirmed
                 if ($item->status !== 'confirmed') {
-                    $item->update([
-                        'action' => $itemData['action'],
-                        'selected_product_id' => $itemData['action'] === 'attach'
-                            ? $itemData['product_id']
-                            : null,
-                    ]);
+                    // If the user chose to remove this row, hard-delete it from the import.
+                    $shouldRemove = false;
+                    if (array_key_exists('action', $itemData) && in_array($itemData['action'], ['skip', 'remove'], true)) {
+                        $shouldRemove = true;
+                    }
+                    if (array_key_exists('is_skipped', $itemData) && $itemData['is_skipped']) {
+                        $shouldRemove = true;
+                    }
+
+                    if ($shouldRemove) {
+                        // Remove all matches for this row, then delete the row itself.
+                        ImportSessionMatch::where('import_session_item_id', $item->id)->delete();
+                        $item->delete();
+                        continue;
+                    }
+
+                    $updates = [];
+
+                    if (array_key_exists('action', $itemData) && !in_array($itemData['action'], ['skip', 'remove'], true)) {
+                        $updates['action'] = $itemData['action'];
+                        $updates['selected_product_id'] = $itemData['action'] === 'attach'
+                            ? ($itemData['product_id'] ?? null)
+                            : null;
+                    }
+
+                    if (!empty($updates)) {
+                        $item->update($updates);
+                    }
                 }
             }
 
@@ -524,10 +603,11 @@ class ImportController extends Controller
 
             DB::commit();
 
-            // Check if there are still pending items
+            // Check if there are still pending items (ignore removed/skipped rows)
             $pendingCount = $session->items()
                 ->where('status', '!=', 'confirmed')
                 ->where('status', '!=', 'rejected')
+                ->where('is_skipped', '!=', true)
                 ->count();
 
             // ✅ Determine if we should return success or partial success
@@ -654,11 +734,16 @@ class ImportController extends Controller
             $session->load('items');
         }
 
-        $totalItems = $session->items->count();
-        $analyzedItems = $session->items->where('status', 'analyzed')->count();
-        $confirmedItems = $session->items->where('status', 'confirmed')->count();
-        $pendingItems = $session->items->where('status', 'pending')->count();
-        $rejectedItems = $session->items->where('status', 'rejected')->count();
+        // Ignore skipped rows when determining overall stage
+        $effectiveItems = $session->items->filter(function ($item) {
+            return !$item->is_skipped;
+        });
+
+        $totalItems = $effectiveItems->count();
+        $analyzedItems = $effectiveItems->where('status', 'analyzed')->count();
+        $confirmedItems = $effectiveItems->where('status', 'confirmed')->count();
+        $pendingItems = $effectiveItems->where('status', 'pending')->count();
+        $rejectedItems = $effectiveItems->where('status', 'rejected')->count();
 
         // Step 1: Start - No items uploaded yet
         if ($totalItems === 0) {
@@ -726,6 +811,39 @@ class ImportController extends Controller
             'name' => 'review',
             'description' => 'Review matches and select actions',
         ];
+    }
+
+    /**
+     * Enrich analysis summary items with existing equipment info for each match.
+     */
+    protected function addExistingEquipmentToSummary(array $summary, ImportSession $session): array
+    {
+        if (isset($summary['items']) && $summary['items'] instanceof \Illuminate\Support\Collection) {
+            $summary['items'] = $summary['items']->map(function ($item) use ($session) {
+                if ($item->relationLoaded('matches') && $item->matches) {
+                    $item->matches->each(function ($match) use ($session) {
+                        if ($match->product_id) {
+                            $existingEquipment = \App\Models\Equipment::where('user_id', $session->user_id)
+                                ->where('company_id', $session->company_id)
+                                ->where('product_id', $match->product_id)
+                                ->first();
+
+                            if ($existingEquipment) {
+                                $match->setAttribute('existing_equipment', [
+                                    'id' => $existingEquipment->id,
+                                    'current_quantity' => $existingEquipment->quantity,
+                                    'software_code' => $existingEquipment->software_code,
+                                ]);
+                            }
+                        }
+                    });
+                }
+
+                return $item;
+            });
+        }
+
+        return $summary;
     }
 
     /**

@@ -333,7 +333,7 @@ class ProductController extends Controller
 
         // Use old category_id if available (from validation errors), otherwise use product's category_id
         $categoryId = old('category_id', $product->category_id);
-        
+
         $subCategories = SubCategory::select(['id', 'name', 'category_id'])
             ->where('category_id', $categoryId)
             ->orderBy('name')
@@ -853,4 +853,3 @@ class ProductController extends Controller
         }
     }
 }
-

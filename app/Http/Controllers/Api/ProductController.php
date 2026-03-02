@@ -39,14 +39,14 @@ class ProductController extends Controller
         ]);
 
         $searchTerm = trim($request->query('search'));
-        
+
         // Extract and normalize model code
         $modelCode = ProductNormalizer::extractModelCode($searchTerm);
         $normalizedCode = $modelCode ? ProductNormalizer::normalizeCode($modelCode) : null;
-        
+
         // Normalize full search term (removes spaces, so "Bose 802" = "bose802")
         $normalizedFull = ProductNormalizer::normalizeFullName(null, $searchTerm);
-        
+
         // Also create a word-order independent normalized version for better matching
         // This handles "Bose 802" and "802 Bose" by sorting words before normalizing
         $normalizedFullOrderIndependent = null;
@@ -56,7 +56,7 @@ class ProductController extends Controller
             $reorderedSearch = implode(' ', $searchWords);
             $normalizedFullOrderIndependent = ProductNormalizer::normalizeFullName(null, $reorderedSearch);
         }
-        
+
         // Split into keywords for fallback search
         $keywords = array_filter(explode(' ', $searchTerm));
 
@@ -82,19 +82,19 @@ class ProductController extends Controller
                     $query->where('p.normalized_model', $normalizedCode)
                           ->orWhere('p.normalized_model', 'LIKE', '%' . $normalizedCode . '%');
                 }
-                
+
                 // Priority 2: Match by normalized_full_name (handles "Apogee SSM -", "EV-DML1122", etc.)
                 if ($normalizedFull) {
                     $query->orWhere('p.normalized_full_name', $normalizedFull)
                           ->orWhere('p.normalized_full_name', 'LIKE', '%' . $normalizedFull . '%');
                 }
-                
+
                 // Priority 2b: Match by word-order independent normalized_full_name
                 // This handles "Bose 802" vs "802 Bose" by checking if all words appear in normalized string
                 if ($normalizedFullOrderIndependent && $normalizedFullOrderIndependent !== $normalizedFull) {
                     $query->orWhere('p.normalized_full_name', 'LIKE', '%' . $normalizedFullOrderIndependent . '%');
                 }
-                
+
                 // Priority 3: Fallback to keyword search (AND logic) - case-insensitive, word-order independent
                 // This ensures ALL keywords appear somewhere in the product fields, handling "Bose 802" and "802 Bose" equally
                 if (!empty($keywords)) {
@@ -104,7 +104,7 @@ class ProductController extends Controller
                         if ($normalizedFullOrderIndependent && strlen($normalizedFullOrderIndependent) >= 3) {
                             $q->whereRaw('p.normalized_full_name LIKE ?', ['%' . $normalizedFullOrderIndependent . '%']);
                         }
-                        
+
                         // Option 2: Ensure ALL keywords appear in product fields (AND logic)
                         // Each keyword must match in at least one field - this handles word order variations
                         // This is OR'd with Option 1, so if normalized_full_name matches, keywords don't need to be checked
@@ -115,8 +115,13 @@ class ProductController extends Controller
                                     continue;
                                 }
                                 $wordLike = '%' . $wordLower . '%';
-                                $normalizedWord = preg_replace('/[^a-z0-9]/', '', $wordLower);
-                                
+
+                                // Preserve decimal points in numeric contexts when normalizing
+                                // Replace decimal points between digits with temporary placeholder
+                                $normalizedWord = preg_replace('/(\d)\.(\d)/', '$1__DECIMAL__$2', $wordLower);
+                                $normalizedWord = preg_replace('/[^a-z0-9]/', '', $normalizedWord);
+                                $normalizedWord = str_replace('__DECIMAL__', '.', $normalizedWord);
+
                                 // Each keyword must appear in at least one of these fields
                                 $keywordQ->where(function ($subQ) use ($wordLike, $normalizedWord) {
                                     $subQ->whereRaw('LOWER(p.model) LIKE ?', [$wordLike])
@@ -124,7 +129,7 @@ class ProductController extends Controller
                                         ->orWhereRaw('LOWER(c.name) LIKE ?', [$wordLike])
                                         ->orWhereRaw('LOWER(sc.name) LIKE ?', [$wordLike])
                                         ->orWhereRaw('LOWER(TRIM(CONCAT_WS(\' \', b.name, p.model))) LIKE ?', [$wordLike]);
-                                    
+
                                     // Also check normalized_full_name for the word (handles word order)
                                     // Since normalized_full_name removes spaces, "bose802" contains both "bose" and "802"
                                     if ($normalizedWord && strlen($normalizedWord) >= 2) {
@@ -137,14 +142,17 @@ class ProductController extends Controller
                 }
             })
             ->orderByRaw(
-                "CASE 
-                    WHEN p.normalized_model = ? THEN 0
-                    WHEN p.normalized_model LIKE ? THEN 1
-                    WHEN p.normalized_full_name = ? THEN 2
-                    WHEN p.normalized_full_name LIKE ? THEN 3
-                    ELSE 4
+                "CASE
+                    WHEN LOWER(TRIM(CONCAT_WS(' ', b.name, p.model))) = LOWER(?) THEN 0
+                    WHEN LOWER(p.model) = LOWER(?) THEN 1
+                    WHEN LOWER(b.name) = LOWER(?) THEN 2
+                    WHEN p.normalized_model = ? THEN 3
+                    WHEN p.normalized_model LIKE ? THEN 4
+                    WHEN p.normalized_full_name = ? THEN 5
+                    WHEN p.normalized_full_name LIKE ? THEN 6
+                    ELSE 7
                  END",
-                [$normalizedCode, '%' . $normalizedCode . '%', $normalizedFull, '%' . $normalizedFull . '%']
+                [$searchTerm, $searchTerm, $searchTerm, $normalizedCode, '%' . $normalizedCode . '%', $normalizedFull, '%' . $normalizedFull . '%']
             )
             ->limit(50)
             ->get();
@@ -384,12 +392,12 @@ class ProductController extends Controller
             if (isset($validated['category']['is_new']) && $validated['category']['is_new']) {
                 $categoryName = trim($validated['category']['name']);
                 $normalizedName = $this->normalizeName($categoryName);
-                
+
                 // Check for duplicate using normalized name
                 $existingCategory = Category::all()->first(function ($cat) use ($normalizedName) {
                     return $this->normalizeName($cat->name) === $normalizedName;
                 });
-                
+
                 if ($existingCategory) {
                     return response()->json([
                         'success' => false,
@@ -403,7 +411,7 @@ class ProductController extends Controller
                         ]
                     ], 409);
                 }
-                
+
                 $category = Category::create(['name' => $categoryName]);
                 $categoryId = $category->id;
             }
@@ -413,14 +421,14 @@ class ProductController extends Controller
             if (isset($validated['sub_category']['is_new']) && $validated['sub_category']['is_new']) {
                 $subCategoryName = trim($validated['sub_category']['name']);
                 $normalizedName = $this->normalizeName($subCategoryName);
-                
+
                 // Check for duplicate sub-category under the same category
                 $existingSubCategory = SubCategory::where('category_id', $categoryId)
                     ->get()
                     ->first(function ($subCat) use ($normalizedName) {
                         return $this->normalizeName($subCat->name) === $normalizedName;
                     });
-                
+
                 if ($existingSubCategory) {
                     return response()->json([
                         'success' => false,
@@ -435,7 +443,7 @@ class ProductController extends Controller
                         ]
                     ], 409);
                 }
-                
+
                 $subCategory = SubCategory::create([
                     'name' => $subCategoryName,
                     'category_id' => $categoryId,
@@ -448,12 +456,12 @@ class ProductController extends Controller
             if (isset($validated['brand']['is_new']) && $validated['brand']['is_new']) {
                 $brandName = trim($validated['brand']['name']);
                 $normalizedName = $this->normalizeName($brandName);
-                
+
                 // Check for duplicate using normalized name
                 $existingBrand = Brand::all()->first(function ($b) use ($normalizedName) {
                     return $this->normalizeName($b->name) === $normalizedName;
                 });
-                
+
                 if ($existingBrand) {
                     return response()->json([
                         'success' => false,
@@ -467,7 +475,7 @@ class ProductController extends Controller
                         ]
                     ], 409);
                 }
-                
+
                 $brand = Brand::create(['name' => $brandName]);
                 $brandId = $brand->id;
             }
@@ -865,12 +873,12 @@ class ProductController extends Controller
             if (isset($validated['category']['is_new']) && $validated['category']['is_new']) {
                 $categoryName = trim($validated['category']['name']);
                 $normalizedName = $this->normalizeName($categoryName);
-                
+
                 // Check for duplicate using normalized name
                 $existingCategory = Category::all()->first(function ($cat) use ($normalizedName) {
                     return $this->normalizeName($cat->name) === $normalizedName;
                 });
-                
+
                 if ($existingCategory) {
                     DB::rollBack();
                     return response()->json([
@@ -885,7 +893,7 @@ class ProductController extends Controller
                         ]
                     ], 409);
                 }
-                
+
                 $category = Category::create(['name' => $categoryName]);
                 $categoryId = $category->id;
             }
@@ -895,14 +903,14 @@ class ProductController extends Controller
             if (isset($validated['sub_category']['is_new']) && $validated['sub_category']['is_new']) {
                 $subCategoryName = trim($validated['sub_category']['name']);
                 $normalizedName = $this->normalizeName($subCategoryName);
-                
+
                 // Check for duplicate sub-category under the same category
                 $existingSubCategory = SubCategory::where('category_id', $categoryId)
                     ->get()
                     ->first(function ($subCat) use ($normalizedName) {
                         return $this->normalizeName($subCat->name) === $normalizedName;
                     });
-                
+
                 if ($existingSubCategory) {
                     DB::rollBack();
                     return response()->json([
@@ -918,7 +926,7 @@ class ProductController extends Controller
                         ]
                     ], 409);
                 }
-                
+
                 $subCategory = SubCategory::create([
                     'name' => $subCategoryName,
                     'category_id' => $categoryId,
@@ -931,12 +939,12 @@ class ProductController extends Controller
             if (isset($validated['brand']['is_new']) && $validated['brand']['is_new']) {
                 $brandName = trim($validated['brand']['name']);
                 $normalizedName = $this->normalizeName($brandName);
-                
+
                 // Check for duplicate using normalized name
                 $existingBrand = Brand::all()->first(function ($b) use ($normalizedName) {
                     return $this->normalizeName($b->name) === $normalizedName;
                 });
-                
+
                 if ($existingBrand) {
                     DB::rollBack();
                     return response()->json([
@@ -951,7 +959,7 @@ class ProductController extends Controller
                         ]
                     ], 409);
                 }
-                
+
                 $brand = Brand::create(['name' => $brandName]);
                 $brandId = $brand->id;
             }

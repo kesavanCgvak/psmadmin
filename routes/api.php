@@ -170,7 +170,9 @@ Route::middleware('jwt.verify')->prefix('import')->group(function () {
     Route::get('/sessions/{session}', [ImportController::class, 'show']); // Get session with items
     Route::post('/sessions/{session}/upload', [ImportController::class, 'upload']); // Upload Excel
     Route::post('/sessions/{session}/analyze', [ImportController::class, 'analyze']); // Run matching
+    Route::post('/sessions/{session}/reanalyze', [ImportController::class, 'reanalyze']); // Force re-analysis using stored data
     Route::put('/sessions/{session}/selections', [ImportController::class, 'updateSelections']); // Save draft selections
+    Route::delete('/sessions/{session}/items/{item}', [ImportController::class, 'removeItem']); // Remove row from import
     Route::post('/sessions/{session}/confirm', [ImportController::class, 'confirm']); // Confirm and import
     Route::post('/sessions/{session}/cancel', [ImportController::class, 'cancel']); // Cancel session
 });
@@ -217,6 +219,9 @@ Route::middleware(['jwt.verify'])->group(function () {
 
     Route::post('/rental-jobs/{id}/cancel', [RentalJobActionsController::class, 'cancelRentalJob']);
 
+    Route::post('/rental-jobs/{id}/rate', [RentalJobActionsController::class, 'rate']);
+    Route::post('/rental-jobs/{id}/rate/skip', [RentalJobActionsController::class, 'rateSkip']);
+
 });
 
 
@@ -246,6 +251,10 @@ Route::middleware(['jwt.verify'])->group(function () {
     Route::get('/supply-jobs', [SupplyJobController::class, 'index']); // ?company_id=123
     Route::get('/supply-jobs/{id}', [SupplyJobController::class, 'show']); // ?company_id=123
     Route::post('/supply-jobs/{supply_job_id}/cancel', [SupplyJobController::class, 'cancelSupplyJob']);
+    Route::post('/supply-jobs/{id}/complete', [SupplyJobController::class, 'complete']);
+    Route::post('/supply-jobs/{id}/rate', [SupplyJobController::class, 'rate']);
+    Route::post('/supply-jobs/{id}/rate/skip', [SupplyJobController::class, 'rateSkip']);
+    Route::post('/supply-jobs/{id}/rating-reply', [SupplyJobController::class, 'ratingReply']);
 });
 
 Route::prefix('jobs')->middleware(['jwt.verify'])->group(function () {

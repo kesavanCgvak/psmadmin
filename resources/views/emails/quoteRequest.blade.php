@@ -93,6 +93,7 @@
                             <th align="left">PSM Code</th>
                             <th align="left">Software Code</th>
                             <th align="left">Qty</th>
+                            <th align="left">Similar OK?</th>
                             <th align="left">Price</th>
                             <th align="left">Total Price</th>
                         </tr>
@@ -114,6 +115,13 @@
                                 <td>{{ $product['psm_code'] ?? '—' }}</td>
                                 <td>{{ $product['software_code'] ?? '—' }}</td>
                                 <td>{{ $product['requested_quantity'] ?? '-' }}</td>
+                                <td>
+                                    @if(!empty($product['is_similar']))
+                                        Yes
+                                    @else
+                                        No
+                                    @endif
+                                </td>
                                 <td>{{ $currency_symbol }}{{ number_format($product['price_per_unit'] ?? 0, 2) }}</td>
                                 <td>{{ $currency_symbol }}{{ number_format($itemTotal, 2) }}</td>
                             </tr>
@@ -121,7 +129,7 @@
 
                         <!-- ✅ Grand Total Row -->
                         <tr style="border-top: 2px solid #ddd; background-color: #f9f9f9;">
-                            <td colspan="5" align="right" style="font-weight: bold; padding-right: 10px;">Grand Total:
+                            <td colspan="6" align="right" style="font-weight: bold; padding-right: 10px;">Grand Total:
                             </td>
                             <td style="font-weight: bold;">{{ $currency_symbol }}{{ number_format($grandTotal, 2) }}</td>
                         </tr>
@@ -132,6 +140,12 @@
                     Please review the request and respond promptly to increase your chance of securing this rental
                     opportunity with <strong>{{ $user_company}}</strong>.
                 </p>
+
+                @if(!empty($is_similar_request))
+                    <p style="margin-top: 15px; padding: 12px; background-color: #e8f4fd; border-left: 4px solid #1a73e8; font-size: 14px; line-height: 1.5;">
+                        <strong>Note:</strong> The requester is also open to similar or equivalent products. Please contact the requester if you can offer suitable alternatives.
+                    </p>
+                @endif
 
                 <p style="font-size: 13px; color: #666; line-height: 1.6;">
                     <strong>Pro Subrental Marketplace</strong> connects rental companies to help you maximize

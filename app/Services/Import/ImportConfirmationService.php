@@ -36,7 +36,8 @@ class ImportConfirmationService
                 ->where('excel_row_number', $rowData['row'])
                 ->first();
 
-            if (!$item || $item->status === 'confirmed') {
+            // Skip rows that are already confirmed or explicitly marked as skipped
+            if (!$item || $item->status === 'confirmed' || $item->is_skipped) {
                 continue;
             }
 
@@ -60,14 +61,22 @@ class ImportConfirmationService
                         ->first();
 
                     $importQuantity = $item->quantity ?? 0;
+                    $importPrice = $item->price;
 
                     if ($existingEquipment) {
                         // Equipment exists - ADD quantities
-                        $existingEquipment->update([
+                        $updateData = [
                             'quantity' => $existingEquipment->quantity + $importQuantity,
                             // Update software_code if provided and different
                             // 'software_code' => $item->software_code ?? $existingEquipment->software_code,
-                        ]);
+                        ];
+
+                        // Only override price if a price was actually provided in the import
+                        if ($importPrice !== null) {
+                            $updateData['price'] = $importPrice;
+                        }
+
+                        $existingEquipment->update($updateData);
                     } else {
                         // Equipment doesn't exist - create new
                         Equipment::create([
@@ -75,6 +84,7 @@ class ImportConfirmationService
                             'company_id' => $companyId,
                             'product_id' => $rowData['product_id'],
                             'quantity' => $importQuantity,
+                            'price' => $importPrice,
                             'software_code' => $item->software_code ?? null,
                         ]);
                     }
@@ -132,13 +142,21 @@ class ImportConfirmationService
                         ->first();
 
                     $importQuantity = $item->quantity ?? 1;
+                    $importPrice = $item->price;
 
                     if ($existingEquipment) {
                         // Equipment exists - ADD quantities
-                        $existingEquipment->update([
+                        $updateData = [
                             'quantity' => $existingEquipment->quantity + $importQuantity,
                             // 'software_code' => $item->software_code ?? $existingEquipment->software_code,
-                        ]);
+                        ];
+
+                        // Only override price if a price was actually provided in the import
+                        if ($importPrice !== null && !empty($importPrice)) {
+                            $updateData['price'] = $importPrice;
+                        }
+
+                        $existingEquipment->update($updateData);
                     } else {
                         // Equipment doesn't exist - create new
                         Equipment::create([
@@ -146,6 +164,7 @@ class ImportConfirmationService
                             'company_id' => $companyId,
                             'product_id' => $product->id,
                             'quantity' => $importQuantity,
+                            'price' => $importPrice,
                             'software_code' => $item->software_code ?? null,
                         ]);
                     }

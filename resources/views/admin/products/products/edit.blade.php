@@ -143,7 +143,7 @@
             var subCategorySelect = $('#sub_category_id');
             // Store the original sub_category_id for edit mode (from old input or product)
             var originalSubCategoryId = '{{ old('sub_category_id', $product->sub_category_id) }}';
-            
+
             // Function to load subcategories
             function loadSubCategories(categoryId, preserveSelection) {
                 subCategorySelect.html('<option value="">-- Loading... --</option>');
@@ -174,7 +174,7 @@
                 var categoryId = $(this).val();
                 loadSubCategories(categoryId, true);
             });
-            
+
             // On page load, if category changed (from old input), reload sub-categories
             var selectedCategoryId = $('#category_id').val();
             var originalCategoryId = '{{ $product->category_id }}';
@@ -185,4 +185,3 @@
         });
     </script>
 @stop
-
