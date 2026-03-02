@@ -56,6 +56,7 @@ class RentalJobController extends Controller
                     'supplyJobs.providerCompany:id,name',
                     'supplyJobs.jobRating',
                     'supplyJobs.ratingReply',
+                    'supplyJobs.renterRating',
                 ])
                 ->orderBy('created_at', 'desc');
 
@@ -102,6 +103,16 @@ class RentalJobController extends Controller
                     }
                     if ($sj->jobRating && $sj->jobRating->skipped_at) {
                         $supplier['rating_skipped'] = true;
+                    }
+                    if ($sj->renterRating && $sj->renterRating->rated_at) {
+                        $rr = $sj->renterRating;
+                        $supplier['provider_rating_of_renter'] = [
+                            'rating' => (int) $rr->rating,
+                            'comment' => $rr->comment,
+                            'rated_at' => $rr->rated_at->toIso8601String(),
+                        ];
+                    } else {
+                        $supplier['provider_rating_of_renter'] = null;
                     }
                     return $supplier;
                 })->values();
@@ -188,6 +199,7 @@ class RentalJobController extends Controller
                 'supplyJobs.providerCompany:id,name',
                 'supplyJobs.jobRating',
                 'supplyJobs.ratingReply',
+                'supplyJobs.renterRating',
             ])->findOrFail($id);
 
             // Security: only users from the same company or admin can view
@@ -221,6 +233,16 @@ class RentalJobController extends Controller
                 }
                 if ($sj->jobRating && $sj->jobRating->skipped_at) {
                     $supplier['rating_skipped'] = true;
+                }
+                if ($sj->renterRating && $sj->renterRating->rated_at) {
+                    $rr = $sj->renterRating;
+                    $supplier['provider_rating_of_renter'] = [
+                        'rating' => (int) $rr->rating,
+                        'comment' => $rr->comment,
+                        'rated_at' => $rr->rated_at->toIso8601String(),
+                    ];
+                } else {
+                    $supplier['provider_rating_of_renter'] = null;
                 }
                 return $supplier;
             })->values();
