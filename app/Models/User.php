@@ -45,7 +45,8 @@ class User extends Authenticatable implements JWTSubject
         'token',
         'stripe_customer_id',
         'subscription_status',
-        'subscription_ends_at'
+        'subscription_ends_at',
+        'sms_consent',
     ];
 
 
@@ -70,6 +71,7 @@ class User extends Authenticatable implements JWTSubject
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'subscription_ends_at' => 'datetime',
+            'sms_consent' => 'boolean',
         ];
     }
 

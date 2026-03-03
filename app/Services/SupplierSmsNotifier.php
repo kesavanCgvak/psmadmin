@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Contracts\SmsProviderInterface;
 use App\Jobs\SendSupplierSmsJob;
 use App\Models\Company;
 use App\Models\DateFormat;
@@ -103,7 +104,12 @@ class SupplierSmsNotifier
 
             $mobile = self::getSupplierMobile($company);
 
-            if (empty($mobile) || !(new TextMagicService)->isValidMobile($mobile)) {
+            $smsProvider = app(SmsProviderInterface::class);
+            if (!$smsProvider->isConfigured()) {
+                return;
+            }
+
+            if (empty($mobile) || !$smsProvider->isValidMobile($mobile)) {
                 Log::info('SupplierSmsNotifier: no valid mobile for supplier, skipping SMS.', [
                     'company_id' => $supplyJob->provider_id,
                 ]);

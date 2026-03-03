@@ -48,6 +48,7 @@ class AuthController extends Controller
             'password' => 'required|string|min:8|confirmed',
             'mobile' => 'required|string|max:20',
             'terms_accepted' => 'accepted',
+            'sms_consent' => 'required|accepted',
         ];
 
         $customMessages = [
@@ -55,6 +56,8 @@ class AuthController extends Controller
             'company_name.unique' => 'This company name is already registered.',
             'username.unique' => 'This username is already taken.',
             'terms_accepted.accepted' => 'You must accept the terms to register.',
+            'sms_consent.required' => 'You must agree to receive SMS notifications to register.',
+            'sms_consent.accepted' => 'You must agree to receive SMS notifications to register.',
         ];
 
         // Add payment validation only if payment is enabled
@@ -137,6 +140,7 @@ class AuthController extends Controller
                 'is_admin' => 1,
                 'is_company_default_contact' => 1,
                 'role' => $company->users()->count() === 0 ? 'admin' : 'user',
+                'sms_consent' => (bool) $request->sms_consent,
             ]);
 
             //Set default contact in company

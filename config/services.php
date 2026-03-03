@@ -41,9 +41,10 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
-    'textmagic' => [
-        'username' => env('TEXTMAGIC_USERNAME'),
-        'key' => env('TEXTMAGIC_API_KEY'),
+    'twilio' => [
+        'sid' => env('TWILIO_ACCOUNT_SID'),
+        'token' => env('TWILIO_AUTH_TOKEN'),
+        'from' => env('TWILIO_SMS_FROM'),
     ],
 
 ];
