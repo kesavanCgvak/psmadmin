@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\EmailTemplate;
+use App\Services\EmailTemplateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
@@ -21,10 +22,14 @@ class EmailTemplateController extends Controller
 
     /**
      * Show the form for editing the specified email template.
+     * Body is run through placeholder replacement so {{ asset('images/logo-white.png') }} etc.
+     * display correctly in the visual editor (no broken image request).
      */
     public function edit(EmailTemplate $emailTemplate)
     {
-        return view('admin.email-templates.edit', compact('emailTemplate'));
+        $emailService = new EmailTemplateService();
+        $bodyForEdit = $emailService->replacePlaceholdersInContent($emailTemplate->body);
+        return view('admin.email-templates.edit', compact('emailTemplate', 'bodyForEdit'));
     }
 
     /**
@@ -101,7 +106,24 @@ class EmailTemplateController extends Controller
     public function preview(EmailTemplate $emailTemplate)
     {
         // Generate sample data based on template variables
-        $sampleData = $this->generateSampleData($emailTemplate->variables ?? []);
+        $variables = $emailTemplate->variables ?? [];
+
+        // Ensure key variables exist for specific templates even if variables list is outdated
+        if ($emailTemplate->name === 'new-admin-user') {
+            $variables = array_unique(array_merge($variables, [
+                'heading',
+                'greeting_name',
+                'body_message',
+                'role_line',
+                'adminPanelUrl',
+                'user_email',
+                'role_display',
+                'capabilities_section',
+                'current_year',
+            ]));
+        }
+
+        $sampleData = $this->generateSampleData($variables);
         
         // Replace variables in subject and body (same variants as EmailTemplateService)
         $subject = $emailTemplate->subject;
@@ -121,6 +143,11 @@ class EmailTemplateController extends Controller
                 $body = str_replace($placeholder, $replacement, $body);
             }
         }
+
+        // Replace env/config/asset placeholders (e.g. {{ asset('images/logo-white.png') }}) so preview doesn't request them as URLs
+        $emailService = new EmailTemplateService();
+        $subject = $emailService->replacePlaceholdersInContent($subject);
+        $body = $emailService->replacePlaceholdersInContent($body);
 
         return view('admin.email-templates.preview', [
             'subject' => $subject,
@@ -217,7 +244,27 @@ class EmailTemplateController extends Controller
                 $sampleData[$varName] = '<p style="margin-top: 15px; padding: 12px; background-color: #e8f4fd; border-left: 4px solid #1a73e8; font-size: 14px; line-height: 1.5;"><strong>Note:</strong> The requester is also open to similar or equivalent products. Please contact the requester if you can offer suitable alternatives.</p>';
             } elseif (stripos($varName, 'products_section') !== false && stripos($varName, 'products_table') === false) {
                 // Sample for jobNegotiationCancelled / jobPartialFulfilled (Product Details table)
-                $sampleData[$varName] = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse;"><thead><tr style="background:#e8f0fe;"><th style="border-bottom:1px solid #ccc;">PSM Code</th><th style="border-bottom:1px solid #ccc;">Model</th><th style="border-bottom:1px solid #ccc;">Software Code</th><th style="border-bottom:1px solid #ccc;">Requested Qty</th><th style="border-bottom:1px solid #ccc;">Fulfilled</th><th style="border-bottom:1px solid #ccc;">Remaining</th></tr></thead><tbody><tr><td>PSM-001</td><td>Canon EOS R5</td><td>SW-001</td><td>10</td><td>6</td><td>4</td></tr></tbody></table>';
+                // Match the actual runtime structure in JobNegotiationController (Qty / Price / Total)
+                $sampleData[$varName] = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3>'
+                    . '<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">'
+                    . '<thead><tr style="background:#e8f0fe;">'
+                    . '<th style="border-bottom:1px solid #ccc;">PSM Code</th>'
+                    . '<th style="border-bottom:1px solid #ccc;">Model</th>'
+                    . '<th style="border-bottom:1px solid #ccc;">Software Code</th>'
+                    . '<th style="border-bottom:1px solid #ccc;">Qty</th>'
+                    . '<th style="border-bottom:1px solid #ccc;">Price</th>'
+                    . '<th style="border-bottom:1px solid #ccc;">Total</th>'
+                    . '</tr></thead>'
+                    . '<tbody>'
+                    . '<tr>'
+                    . '<td>PSM19563</td>'
+                    . '<td>AMORAN</td>'
+                    . '<td>PSM00022</td>'
+                    . '<td>10</td>'
+                    . '<td>$40.00</td>'
+                    . '<td>$400.00</td>'
+                    . '</tr>'
+                    . '</tbody></table>';
             } elseif (stripos($varName, 'reason') !== false) {
                 $sampleData[$varName] = 'No longer needed.';
             } elseif (stripos($varName, 'total_price') !== false && stripos($varName, 'product') === false) {
