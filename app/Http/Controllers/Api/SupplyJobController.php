@@ -13,6 +13,7 @@ use App\Models\SupplyJobProduct;
 use App\Models\JobRating;
 use App\Models\JobRatingReply;
 use App\Models\Company;
+use App\Models\CompanyRating;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -278,11 +279,21 @@ class SupplyJobController extends Controller
 
 
             $effectiveStatus = $this->effectiveSupplyJobStatus($supplyJob->status, $supplyJob->jobRating);
+
+            // Renter company's average rating (as rated by providers / others via company_ratings)
+            $renterCompanyId = $rentalJob->user->company_id ?? null;
+            $renterCompanyRating = null;
+            if ($renterCompanyId) {
+                $avg = CompanyRating::where('company_id', $renterCompanyId)->avg('rating');
+                $renterCompanyRating = $avg !== null ? round((float) $avg, 1) : null;
+            }
+
             $data = [
                 'id' => $supplyJob->id,
                 'name' => $supplyJob->rentalJob->name,
                 'rental_job_id' => $supplyJob->rentalJob->id,
                 'renter_company_name' => optional($rentalJob->user->company)->name,
+                'renter_company_rating' => $renterCompanyRating,
                 'start_date' => $supplyJob->rentalJob->from_date,
                 'end_date' => $supplyJob->rentalJob->to_date,
                 'packing_date' => $supplyJob->packing_date,
