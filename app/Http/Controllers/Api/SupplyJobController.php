@@ -293,12 +293,38 @@ class SupplyJobController extends Controller
 
             $effectiveStatus = $this->effectiveSupplyJobStatus($supplyJob->status, $supplyJob->jobRating);
 
-            // Renter company's average rating (as rated by providers / others via company_ratings)
-            $renterCompanyId = $rentalJob->user->company_id ?? null;
+            // Renter company's average rating and count: only for THIS renter company (from this supply job's rental job)
+            $renterCompanyId = $rentalJob->user?->company_id ?? null;
             $renterCompanyRating = null;
+            $renterCompanyRatingCount = null;
             if ($renterCompanyId) {
-                $avg = CompanyRating::where('company_id', $renterCompanyId)->avg('rating');
-                $renterCompanyRating = $avg !== null ? round((float) $avg, 1) : null;
+                // Supply job IDs that belong to this renter company (rental job owner's company)
+                $supplyJobIdsForRenter = DB::table('supply_jobs')
+                    ->join('rental_jobs', 'supply_jobs.rental_job_id', '=', 'rental_jobs.id')
+                    ->whereIn('rental_jobs.user_id', function ($q) use ($renterCompanyId) {
+                        $q->select('id')->from('users')->where('company_id', $renterCompanyId);
+                    })
+                    ->pluck('supply_jobs.id');
+                $avgFromRenterRatings = null;
+                $countFromRenterRatings = 0;
+                if ($supplyJobIdsForRenter->isNotEmpty()) {
+                    $query = DB::table('renter_ratings')
+                        ->whereIn('supply_job_id', $supplyJobIdsForRenter)
+                        ->whereNotNull('rated_at')
+                        ->whereNotNull('rating');
+                    $avgFromRenterRatings = $query->avg('rating');
+                    $countFromRenterRatings = $query->count();
+                }
+                if ($avgFromRenterRatings !== null) {
+                    $renterCompanyRating = round((float) $avgFromRenterRatings, 1);
+                    $renterCompanyRatingCount = (int) $countFromRenterRatings;
+                } else {
+                    $avgFromCompanyRatings = CompanyRating::where('company_id', $renterCompanyId)->avg('rating');
+                    if ($avgFromCompanyRatings !== null) {
+                        $renterCompanyRating = round((float) $avgFromCompanyRatings, 1);
+                        $renterCompanyRatingCount = (int) CompanyRating::where('company_id', $renterCompanyId)->count();
+                    }
+                }
             }
 
             $data = [
@@ -307,6 +333,7 @@ class SupplyJobController extends Controller
                 'rental_job_id' => $supplyJob->rentalJob->id,
                 'renter_company_name' => optional($rentalJob->user->company)->name,
                 'renter_company_rating' => $renterCompanyRating,
+                'renter_company_rating_count' => $renterCompanyRatingCount,
                 'start_date' => $supplyJob->rentalJob->from_date,
                 'end_date' => $supplyJob->rentalJob->to_date,
                 'packing_date' => $supplyJob->packing_date,
