@@ -224,8 +224,25 @@ class EmailTemplateController extends Controller
             } elseif (stripos($varName, 'products_count') !== false) {
                 $sampleData[$varName] = '3';
             } elseif (stripos($varName, 'products_table_html') !== false) {
-                // Match quoteRequest actual structure: Requested Equipment with Equipment, PSM Code, Software Code, Qty, Similar OK?, Price, Total Price
-                $sampleData[$varName] = '<h3 style="color: #1a73e8;">Requested Equipment</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px; font-size: 14px;"><thead style="background-color: #f0f0f0; border-bottom: 2px solid #ddd;"><tr><th align="left">Equipment</th><th align="left">PSM Code</th><th align="left">Software Code</th><th align="left">Qty</th><th align="left">Similar OK?</th><th align="left">Price</th><th align="left">Total Price</th></tr></thead><tbody><tr style="border-bottom: 1px solid #eee;"><td>Sharpy Wash 330</td><td>PSM08137</td><td>TC7827</td><td>1</td><td>Yes</td><td>$119.00</td><td>$119.00</td></tr><tr style="border-top: 2px solid #ddd; background-color: #f9f9f9;"><td colspan="6" align="right" style="font-weight: bold; padding-right: 10px;">Grand Total:</td><td style="font-weight: bold;">$119.00</td></tr></tbody></table>';
+                // For imported_products: show Imported Products table
+                // For quoteRequest: this still looks reasonable as a generic equipment table
+                $sampleData[$varName] =
+                    '<h3 style="margin-top: 25px; color: #1a73e8;">Imported Products (3)</h3>'
+                    . '<table width="100%" cellpadding="8" cellspacing="0" style="border: 1px solid #ccc; border-radius: 6px; margin-top: 10px; font-size: 14px;">'
+                    . '<thead style="background-color: #e8eef8;">'
+                    . '<tr>'
+                    . '<th align="left">Model</th>'
+                    . '<th align="left">Brand</th>'
+                    . '<th align="left">Category</th>'
+                    . '<th align="left">PSM Code</th>'
+                    . '<th align="left">Rental Software Code</th>'
+                    . '</tr>'
+                    . '</thead>'
+                    . '<tbody>'
+                    . '<tr><td>Sharpy Wash 330</td><td>Clay Paky</td><td>Moving Lights</td><td>PSM08137</td><td>TC7827</td></tr>'
+                    . '<tr><td>VL3500 Spot</td><td>Vari-Lite</td><td>Moving Lights</td><td>PSM09210</td><td>VL3500</td></tr>'
+                    . '<tr><td>GrandMA3 Full Size</td><td>MA Lighting</td><td>Lighting Console</td><td>PSM10001</td><td>GMA3FS</td></tr>'
+                    . '</tbody></table>';
             } elseif (stripos($varName, 'from_date') !== false || stripos($varName, 'to_date') !== false) {
                 $sampleData[$varName] = date('M d, Y');
             } elseif (stripos($varName, 'delivery_address') !== false) {
