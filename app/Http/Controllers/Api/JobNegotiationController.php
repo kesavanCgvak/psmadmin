@@ -440,10 +440,14 @@ class JobNegotiationController extends Controller
                     ->get();
 
                 foreach ($otherSuppliers as $other) {
-                    // $email = optional($other->provider->defaultContact->profile)->email;
                     $email = data_get($other, 'provider.defaultContact.profile.email');
                     if ($email) {
+                        $receiverName = data_get($other, 'provider.defaultContact.profile.full_name')
+                            ?? $email
+                            ?? 'there';
+
                         $cancelMail = [
+                            'receiver_contact_name' => $receiverName,
                             'rental_job_name' => $rentalJob->name,
                             'fulfilled_quantity' => $rentalJob->fulfilled_quantity,
                             'date' => now()->format('d M Y, h:i A'),

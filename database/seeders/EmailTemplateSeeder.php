@@ -165,7 +165,7 @@ class EmailTemplateSeeder extends Seeder
                 'name' => 'jobAutoCancelled',
                 'subject' => 'Job Auto-Cancelled',
                 'description' => 'Email sent to supplier when a job is auto-cancelled (e.g. handshake completed by another)',
-                'variables' => ['rental_job_name', 'receiver', 'current_year'],
+                'variables' => ['receiver_contact_name', 'rental_job_name', 'fulfilled_quantity', 'date', 'current_year'],
                 'file' => 'jobAutoCancelled.blade.php',
             ],
             [

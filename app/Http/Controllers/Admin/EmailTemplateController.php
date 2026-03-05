@@ -121,6 +121,15 @@ class EmailTemplateController extends Controller
                 'capabilities_section',
                 'current_year',
             ]));
+        } elseif ($emailTemplate->name === 'jobAutoCancelled') {
+            // jobAutoCancelled template expects these, even if DB variables list is older
+            $variables = array_unique(array_merge($variables, [
+                'receiver_contact_name',
+                'rental_job_name',
+                'fulfilled_quantity',
+                'date',
+                'current_year',
+            ]));
         }
 
         $sampleData = $this->generateSampleData($variables);
@@ -195,10 +204,15 @@ class EmailTemplateController extends Controller
                 $sampleData[$varName] = 'https://example.com/action';
             } elseif (stripos($varName, 'current_year') !== false) {
                 $sampleData[$varName] = (string) date('Y');
+            } elseif (stripos($varName, 'from_date') !== false || stripos($varName, 'to_date') !== false) {
+                // Rental dates in quoteRequest emails should show date only
+                $sampleData[$varName] = date('d M Y');
             } elseif (stripos($varName, 'date') !== false) {
-                $sampleData[$varName] = date('M d, Y');
+                // Other generic date fields (e.g. jobNegotiationCancelled "date") include time
+                $sampleData[$varName] = date('d M Y, h:i A');
             } elseif (stripos($varName, 'amount') !== false || stripos($varName, 'price') !== false) {
-                $sampleData[$varName] = '$1,000.00';
+                // Amounts are numeric; currency symbol comes from currency_symbol
+                $sampleData[$varName] = '1,000.00';
             } elseif (stripos($varName, 'currency_symbol') !== false) {
                 $sampleData[$varName] = '$';
             } elseif (stripos($varName, 'provider_contact_name') !== false) {
