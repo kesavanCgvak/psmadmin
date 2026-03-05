@@ -542,7 +542,7 @@ class ProductController extends Controller
     {
         $request->validate([
             'product_ids' => 'required|array',
-            'product_ids.*' => 'exists:products,id'
+            'product_ids.*' => 'exists:inventory_master,id'
         ]);
 
         $products = Product::whereIn('id', $request->product_ids)->get();
@@ -662,7 +662,7 @@ class ProductController extends Controller
     public function merge(Request $request, Product $product)
     {
         $validator = Validator::make($request->all(), [
-            'correct_product_id' => 'required|exists:products,id|different:id'
+            'correct_product_id' => 'required|exists:inventory_master,id|different:id'
         ]);
 
         if ($validator->fails()) {
@@ -749,13 +749,13 @@ class ProductController extends Controller
     private function mergeEquipmentInventory(int $wrongProductId, int $correctProductId)
     {
         // Get all equipment records for the wrong product (Product A), grouped by company
-        $wrongProductEquipments = DB::table('equipments')
+        $wrongProductEquipments = DB::table('company_inventory')
             ->where('product_id', $wrongProductId)
             ->get()
             ->groupBy('company_id');
 
         // Get all companies that have equipment for the correct product (Product B)
-        $companiesWithCorrectProduct = DB::table('equipments')
+        $companiesWithCorrectProduct = DB::table('company_inventory')
             ->where('product_id', $correctProductId)
             ->select('company_id')
             ->distinct()
@@ -774,7 +774,7 @@ class ProductController extends Controller
 
                 if ($totalQuantityToMerge > 0) {
                     // Get the first Product B equipment record for this company
-                    $firstCorrectEquipment = DB::table('equipments')
+                    $firstCorrectEquipment = DB::table('company_inventory')
                         ->where('product_id', $correctProductId)
                         ->where('company_id', $companyId)
                         ->orderBy('id')
@@ -782,7 +782,7 @@ class ProductController extends Controller
 
                     if ($firstCorrectEquipment) {
                         // Add the merged quantity to the first Product B record
-                        DB::table('equipments')
+                        DB::table('company_inventory')
                             ->where('id', $firstCorrectEquipment->id)
                             ->increment('quantity', $totalQuantityToMerge);
                     }
@@ -790,14 +790,14 @@ class ProductController extends Controller
 
                 // Delete all Product A equipment records for this company
                 $equipmentIds = $equipmentRecords->pluck('id')->toArray();
-                DB::table('equipments')
+                DB::table('company_inventory')
                     ->whereIn('id', $equipmentIds)
                     ->delete();
             } else {
                 // Company only has Product A
                 // Update all Product A records' product_id to Product B
                 $equipmentIds = $equipmentRecords->pluck('id')->toArray();
-                DB::table('equipments')
+                DB::table('company_inventory')
                     ->whereIn('id', $equipmentIds)
                     ->update(['product_id' => $correctProductId]);
             }
@@ -805,7 +805,7 @@ class ProductController extends Controller
 
         // Final safety check: Delete any remaining Product A equipment records
         // This handles edge cases where records might not have been processed above
-        DB::table('equipments')
+        DB::table('company_inventory')
             ->where('product_id', $wrongProductId)
             ->delete();
     }
@@ -817,7 +817,7 @@ class ProductController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'product_ids' => 'required|array',
-            'product_ids.*' => 'exists:products,id'
+            'product_ids.*' => 'exists:inventory_master,id'
         ]);
 
         if ($validator->fails()) {

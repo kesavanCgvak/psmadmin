@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 class Equipment extends Model
 {
     use HasFactory;
-    protected $table = 'equipments';
+    protected $table = 'company_inventory';
 
     protected $fillable = [
         'user_id',

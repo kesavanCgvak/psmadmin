@@ -45,7 +45,7 @@ class RentalRequestController extends Controller
             'company_products' => 'required|array|min:1',
             'company_products.*.company_id' => 'required|integer|exists:companies,id',
             'company_products.*.products' => 'required|array|min:1',
-            'company_products.*.products.*.product_id' => 'required|integer|exists:products,id',
+            'company_products.*.products.*.product_id' => 'required|integer|exists:inventory_master,id',
             'company_products.*.products.*.requested_quantity' => 'required|integer|min:1',
             // Per-product similar flag (preferred)
             'company_products.*.products.*.is_similar' => 'nullable|boolean',
