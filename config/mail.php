@@ -149,4 +149,14 @@ return [
 
     'sales_inbox' => env('SALES_INBOX_EMAIL', 'contact@secondwarehouse.com'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Logo URL for emails
+    |--------------------------------------------------------------------------
+    | Use a full, publicly accessible URL (e.g. https://yourdomain.com/images/logo-white.png)
+    | so the logo loads in email clients. If not set, falls back to asset() which uses APP_URL;
+    | local/dev APP_URL will show a broken image when the email is opened elsewhere.
+    */
+    'logo_url' => env('EMAIL_LOGO_URL', null),
+
 ];
