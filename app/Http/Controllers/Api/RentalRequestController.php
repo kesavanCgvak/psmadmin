@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Tymon\JWTAuth\Facades\JWTAuth;
+use Carbon\Carbon;
 
 class RentalRequestController extends Controller
 {
@@ -240,10 +241,23 @@ class RentalRequestController extends Controller
                             $grandTotalFormatted = $currencySymbol . number_format((float) $grandTotal, 2);
                             $productsTableHtml = '<h3 style="color: #1a73e8;">Requested Equipment</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px; font-size: 14px;"><thead style="background-color: #f0f0f0; border-bottom: 2px solid #ddd;"><tr><th align="left">Equipment</th><th align="left">PSM Code</th><th align="left">Software Code</th><th align="left">Qty</th><th align="left">Similar OK?</th><th align="left">Price</th><th align="left">Total Price</th></tr></thead><tbody>' . $productsTableRows . '<tr style="border-top: 2px solid #ddd; background-color: #f9f9f9;"><td colspan="6" align="right" style="font-weight: bold; padding-right: 10px;">Grand Total:</td><td style="font-weight: bold;">' . $grandTotalFormatted . '</td></tr></tbody></table>';
 
+                            // Format rental dates for email – dates only (no time)
+                            try {
+                                $fromDateEmail = Carbon::parse($validated['from_date'])->format('d M Y');
+                            } catch (\Throwable $e) {
+                                $fromDateEmail = (string) $validated['from_date'];
+                            }
+
+                            try {
+                                $toDateEmail = Carbon::parse($validated['to_date'])->format('d M Y');
+                            } catch (\Throwable $e) {
+                                $toDateEmail = (string) $validated['to_date'];
+                            }
+
                             $mailContent = [
                                 'rental_name' => $validated['name'],
-                                'from_date' => $validated['from_date'],
-                                'to_date' => $validated['to_date'],
+                                'from_date' => $fromDateEmail,
+                                'to_date' => $toDateEmail,
                                 'delivery_address' => $validated['delivery_address'] ?? '',
                                 'provider_contact_name' => $providerContactName,
                                 'user_name' => $user->profile->full_name ?? $user->name ?? 'Unknown User',
@@ -259,8 +273,9 @@ class RentalRequestController extends Controller
                                 'similar_request_note' => $similarRequestNote,
                             ];
 
-                        \App\Helpers\EmailHelper::send('quoteRequest', $mailContent, function ($message) use ($company, $validated) {
-                            $message->to($company->getDefaultcontact->email, $validated['name'])
+                        \App\Helpers\EmailHelper::send('quoteRequest', $mailContent, function ($message) use ($company) {
+                            // Use provider's email only so the email client shows the actual address in the "To" field
+                            $message->to($company->getDefaultcontact->email)
                                 ->from(config('mail.from.address'), config('mail.from.name'));
                         });
                     }

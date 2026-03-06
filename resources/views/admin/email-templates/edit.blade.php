@@ -112,7 +112,7 @@
                                           id="body" 
                                           name="body" 
                                           rows="20"
-                                          required>{{ old('body', $emailTemplate->body) }}</textarea>
+                                          required>{{ old('body', $bodyForEdit ?? $emailTemplate->body) }}</textarea>
                             </div>
                             
                             <!-- HTML Editor (CodeMirror) -->
@@ -121,7 +121,7 @@
                                           id="bodyHtml" 
                                           name="" 
                                           rows="20"
-                                          required>{{ old('body', $emailTemplate->body) }}</textarea>
+                                          required>{{ old('body', $bodyForEdit ?? $emailTemplate->body) }}</textarea>
                             </div>
                             
                             @error('body')
