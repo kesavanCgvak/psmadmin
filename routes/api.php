@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\SupplyJobActionsController;
 use App\Http\Controllers\Api\SupplyJobController;
 use App\Http\Controllers\Api\UserProfileController;
 use App\Http\Controllers\Api\EquipmentController;
+use App\Http\Controllers\Api\IntegrationController;
 use App\Http\Controllers\Api\UserOfferController;
 use App\Http\Controllers\Api\JobNegotiationController;
 use App\Http\Controllers\Api\DateFormatController;
@@ -180,6 +181,11 @@ Route::middleware('jwt.verify')->prefix('import')->group(function () {
     Route::post('/sessions/{session}/cancel', [ImportController::class, 'cancel']); // Cancel session
 });
 
+
+Route::middleware(['jwt.verify'])->group(function () {
+    Route::post('/integrations/store', [IntegrationController::class, 'store']);
+    Route::get('/integrations/{integration_type}', [IntegrationController::class, 'show']);
+});
 
 Route::middleware(['jwt.verify'])->group(function () {
     // Equipment CRUD

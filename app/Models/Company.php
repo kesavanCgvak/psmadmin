@@ -261,4 +261,12 @@ class Company extends Model
         return \App\Models\Setting::getCompanyUserLimit();
     }
 
+    /**
+     * Get the company's integration configurations.
+     */
+    public function integrations()
+    {
+        return $this->hasMany(CompanyIntegration::class);
+    }
+
 }
