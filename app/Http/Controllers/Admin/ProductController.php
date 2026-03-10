@@ -7,6 +7,8 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\SubCategory;
 use App\Models\Brand;
+use App\Models\LinearUnit;
+use App\Models\WeightUnit;
 use App\Services\BulkDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -54,11 +56,16 @@ class ProductController extends Controller
     public function getProductsData(Request $request)
     {
         try {
-            $query = Product::select(['id', 'category_id', 'brand_id', 'sub_category_id', 'model', 'psm_code', 'is_verified', 'created_at'])
+            $query = Product::select([
+                'id', 'category_id', 'brand_id', 'sub_category_id', 'model', 'psm_code', 'is_verified', 'created_at',
+                'height', 'width', 'length', 'weight', 'linear_unit_id', 'weight_unit_id'
+            ])
                 ->with([
                     'category:id,name',
                     'subCategory:id,name',
-                    'brand:id,name'
+                    'brand:id,name',
+                    'linearUnit:id,code',
+                    'weightUnit:id,code'
                 ]);
 
             // Handle DataTables parameters
@@ -112,6 +119,25 @@ class ProductController extends Controller
             // Prepare data for DataTables
             $data = [];
             foreach ($products as $product) {
+                $dimensions = null;
+                if ($product->height !== null || $product->width !== null || $product->length !== null) {
+                    $h = $product->height ?? '—';
+                    $w = $product->width ?? '—';
+                    $l = $product->length ?? '—';
+                    $dimensions = "{$h} × {$w} × {$l}";
+                    if ($product->linearUnit) {
+                        $dimensions .= ' ' . $product->linearUnit->code;
+                    }
+                }
+
+                $weight = null;
+                if ($product->weight !== null) {
+                    $weight = (string) $product->weight;
+                    if ($product->weightUnit) {
+                        $weight .= ' ' . $product->weightUnit->code;
+                    }
+                }
+
                 $data[] = [
                     'checkbox' => '', // Placeholder for checkbox column (rendered client-side)
                     'id' => $product->id,
@@ -120,6 +146,8 @@ class ProductController extends Controller
                     'category' => $product->category ? $product->category->name : '—',
                     'sub_category' => $product->subCategory ? $product->subCategory->name : '—',
                     'psm_code' => $product->psm_code ?? '—',
+                    'dimensions' => $dimensions,
+                    'weight' => $weight,
                     'is_verified' => $product->is_verified ?? 0,
                     'created_at' => $product->created_at ? $product->created_at->format('M d, Y') : '—',
                     'actions' => $this->getActionButtons($product)
@@ -251,10 +279,13 @@ class ProductController extends Controller
             return Brand::select(['id', 'name'])->orderBy('name')->get();
         });
 
+        $linearUnits = LinearUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+        $weightUnits = WeightUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+
         // Generate the next PSM code for the form
         $nextPsmCode = $this->generateNextPsmCode();
 
-        return view('admin.products.products.create', compact('categories', 'subCategories', 'brands', 'nextPsmCode'));
+        return view('admin.products.products.create', compact('categories', 'subCategories', 'brands', 'linearUnits', 'weightUnits', 'nextPsmCode'));
     }
 
     /**
@@ -268,6 +299,16 @@ class ProductController extends Controller
             'brand_id' => 'nullable|exists:brands,id',
             'model' => 'required|string|max:255',
             'webpage_url' => 'nullable|url|max:2048',
+            'height' => 'nullable|numeric',
+            'width' => 'nullable|numeric',
+            'length' => 'nullable|numeric',
+            'weight' => 'nullable|numeric',
+            'linear_unit_id' => 'nullable|exists:linear_units,id',
+            'weight_unit_id' => 'nullable|exists:weight_units,id',
+            'country_of_origin' => 'nullable|string|max:100',
+            'iso_code_2' => 'nullable|string|max:2',
+            'iso_code_3' => 'nullable|string|max:3',
+            'hsn_code' => 'nullable|string|max:20',
         ]);
 
         if ($validator->fails()) {
@@ -299,7 +340,7 @@ class ProductController extends Controller
         // Generate automatic PSM Code
         $psmCode = $this->generateNextPsmCode();
 
-        $productData = $request->all();
+        $productData = $this->prepareProductData($request->all());
         $productData['psm_code'] = $psmCode;
 
         Product::create($productData);
@@ -318,7 +359,7 @@ class ProductController extends Controller
      */
     public function show(Product $product)
     {
-        $product->load(['category', 'subCategory', 'brand', 'equipments']);
+        $product->load(['category', 'subCategory', 'brand', 'equipments', 'linearUnit', 'weightUnit']);
         return view('admin.products.products.show', compact('product'));
     }
 
@@ -343,7 +384,10 @@ class ProductController extends Controller
             return Brand::select(['id', 'name'])->orderBy('name')->get();
         });
 
-        return view('admin.products.products.edit', compact('product', 'categories', 'subCategories', 'brands'));
+        $linearUnits = LinearUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+        $weightUnits = WeightUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+
+        return view('admin.products.products.edit', compact('product', 'categories', 'subCategories', 'brands', 'linearUnits', 'weightUnits'));
     }
 
     /**
@@ -356,8 +400,18 @@ class ProductController extends Controller
             'sub_category_id' => 'nullable|exists:sub_categories,id',
             'brand_id' => 'nullable|exists:brands,id',
             'model' => 'required|string|max:255',
-            'psm_code' => 'nullable|string|max:255|unique:products,psm_code,' . $product->id,
+            'psm_code' => 'nullable|string|max:255|unique:inventory_master,psm_code,' . $product->id,
             'webpage_url' => 'nullable|url|max:2048',
+            'height' => 'nullable|numeric',
+            'width' => 'nullable|numeric',
+            'length' => 'nullable|numeric',
+            'weight' => 'nullable|numeric',
+            'linear_unit_id' => 'nullable|exists:linear_units,id',
+            'weight_unit_id' => 'nullable|exists:weight_units,id',
+            'country_of_origin' => 'nullable|string|max:100',
+            'iso_code_2' => 'nullable|string|max:2',
+            'iso_code_3' => 'nullable|string|max:3',
+            'hsn_code' => 'nullable|string|max:20',
         ]);
 
         if ($validator->fails()) {
@@ -366,7 +420,7 @@ class ProductController extends Controller
                 ->withInput();
         }
 
-        $product->update($request->all());
+        $product->update($this->prepareProductData($request->all()));
 
         // Clear related caches when a product is updated
         Cache::forget('categories_list');
@@ -455,6 +509,26 @@ class ProductController extends Controller
 
         // ✅ NEW FORMAT ONLY (NO UNDERSCORE)
         return 'PSM' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Prepare product data for create/update - convert empty strings to null for optional fields.
+     */
+    protected function prepareProductData(array $data): array
+    {
+        $optionalFields = [
+            'height', 'width', 'length', 'weight',
+            'linear_unit_id', 'weight_unit_id',
+            'country_of_origin', 'iso_code_2', 'iso_code_3', 'hsn_code',
+        ];
+
+        foreach ($optionalFields as $field) {
+            if (isset($data[$field]) && $data[$field] === '') {
+                $data[$field] = null;
+            }
+        }
+
+        return $data;
     }
 
     /**

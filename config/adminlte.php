@@ -485,6 +485,23 @@ return [
             'icon_color' => 'warning',
         ],
         [
+            'text' => 'Measurement Units',
+            'icon' => 'fas fa-fw fa-ruler-combined',
+            'icon_color' => 'info',
+            'submenu' => [
+                [
+                    'text' => 'Linear Units',
+                    'route' => 'admin.linear-units.index',
+                    'icon' => 'fas fa-fw fa-ruler-horizontal',
+                ],
+                [
+                    'text' => 'Weight Units',
+                    'route' => 'admin.weight-units.index',
+                    'icon' => 'fas fa-fw fa-weight-hanging',
+                ],
+            ],
+        ],
+        [
             'text' => 'Subscriptions',
             'route' => 'admin.subscriptions.index',
             'icon' => 'fas fa-fw fa-receipt',

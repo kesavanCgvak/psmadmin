@@ -123,6 +123,184 @@
                     @enderror
                     <small class="form-text text-muted">Optional. Link to the manufacturer or product detail page.</small>
                 </div>
+
+                <hr>
+                <h5 class="mb-3">Dimensions & Weight</h5>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="height">Height</label>
+                            <input type="number"
+                                   class="form-control @error('height') is-invalid @enderror"
+                                   id="height"
+                                   name="height"
+                                   value="{{ old('height', $product->height) }}"
+                                   placeholder="0.00"
+                                   step="0.01"
+                                   min="0">
+                            @error('height')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="width">Width</label>
+                            <input type="number"
+                                   class="form-control @error('width') is-invalid @enderror"
+                                   id="width"
+                                   name="width"
+                                   value="{{ old('width', $product->width) }}"
+                                   placeholder="0.00"
+                                   step="0.01"
+                                   min="0">
+                            @error('width')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="length">Length</label>
+                            <input type="number"
+                                   class="form-control @error('length') is-invalid @enderror"
+                                   id="length"
+                                   name="length"
+                                   value="{{ old('length', $product->length) }}"
+                                   placeholder="0.00"
+                                   step="0.01"
+                                   min="0">
+                            @error('length')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="linear_unit_id">Linear Unit</label>
+                            <select class="form-control @error('linear_unit_id') is-invalid @enderror"
+                                    id="linear_unit_id"
+                                    name="linear_unit_id">
+                                <option value="">-- Select Unit --</option>
+                                @foreach($linearUnits as $unit)
+                                    <option value="{{ $unit->id }}" {{ old('linear_unit_id', $product->linear_unit_id) == $unit->id ? 'selected' : '' }}>
+                                        {{ $unit->name }} ({{ $unit->code }})
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('linear_unit_id')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="weight">Weight</label>
+                            <input type="number"
+                                   class="form-control @error('weight') is-invalid @enderror"
+                                   id="weight"
+                                   name="weight"
+                                   value="{{ old('weight', $product->weight) }}"
+                                   placeholder="0.00"
+                                   step="0.01"
+                                   min="0">
+                            @error('weight')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="weight_unit_id">Weight Unit</label>
+                            <select class="form-control @error('weight_unit_id') is-invalid @enderror"
+                                    id="weight_unit_id"
+                                    name="weight_unit_id">
+                                <option value="">-- Select Unit --</option>
+                                @foreach($weightUnits as $unit)
+                                    <option value="{{ $unit->id }}" {{ old('weight_unit_id', $product->weight_unit_id) == $unit->id ? 'selected' : '' }}>
+                                        {{ $unit->name }} ({{ $unit->code }})
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('weight_unit_id')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+
+                <hr>
+                <h5 class="mb-3">Additional Information</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="country_of_origin">Country of Origin</label>
+                            <input type="text"
+                                   class="form-control @error('country_of_origin') is-invalid @enderror"
+                                   id="country_of_origin"
+                                   name="country_of_origin"
+                                   value="{{ old('country_of_origin', $product->country_of_origin) }}"
+                                   placeholder="e.g., United States"
+                                   maxlength="100">
+                            @error('country_of_origin')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="iso_code_2">ISO Code 2</label>
+                            <input type="text"
+                                   class="form-control @error('iso_code_2') is-invalid @enderror"
+                                   id="iso_code_2"
+                                   name="iso_code_2"
+                                   value="{{ old('iso_code_2', $product->iso_code_2) }}"
+                                   placeholder="e.g., US"
+                                   maxlength="2"
+                                   style="text-transform: uppercase;">
+                            @error('iso_code_2')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label for="iso_code_3">ISO Code 3</label>
+                            <input type="text"
+                                   class="form-control @error('iso_code_3') is-invalid @enderror"
+                                   id="iso_code_3"
+                                   name="iso_code_3"
+                                   value="{{ old('iso_code_3', $product->iso_code_3) }}"
+                                   placeholder="e.g., USA"
+                                   maxlength="3"
+                                   style="text-transform: uppercase;">
+                            @error('iso_code_3')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="hsn_code">HSN Code</label>
+                            <input type="text"
+                                   class="form-control @error('hsn_code') is-invalid @enderror"
+                                   id="hsn_code"
+                                   name="hsn_code"
+                                   value="{{ old('hsn_code', $product->hsn_code) }}"
+                                   placeholder="e.g., 8429"
+                                   maxlength="20">
+                            @error('hsn_code')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="card-footer">

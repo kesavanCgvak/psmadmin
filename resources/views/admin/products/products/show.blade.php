@@ -68,6 +68,40 @@
                             <span class="badge badge-danger">{{ $product->equipments->count() }}</span>
                         </dd>
 
+                        @if($product->height !== null || $product->width !== null || $product->length !== null)
+                            <dt class="col-sm-4">Dimensions</dt>
+                            <dd class="col-sm-8">
+                                {{ $product->height ?? '-' }} × {{ $product->width ?? '-' }} × {{ $product->length ?? '-' }}
+                                @if($product->linearUnit)
+                                    <span class="badge badge-success">{{ $product->linearUnit->code }}</span>
+                                @endif
+                            </dd>
+                        @endif
+
+                        @if($product->weight !== null)
+                            <dt class="col-sm-4">Weight</dt>
+                            <dd class="col-sm-8">
+                                {{ $product->weight }}
+                                @if($product->weightUnit)
+                                    <span class="badge badge-success">{{ $product->weightUnit->code }}</span>
+                                @endif
+                            </dd>
+                        @endif
+
+                        @if($product->country_of_origin || $product->iso_code_2 || $product->iso_code_3 || $product->hsn_code)
+                            <dt class="col-sm-4">Country of Origin</dt>
+                            <dd class="col-sm-8">{{ $product->country_of_origin ?? '-' }}</dd>
+
+                            <dt class="col-sm-4">ISO Code 2</dt>
+                            <dd class="col-sm-8">{{ $product->iso_code_2 ?? '-' }}</dd>
+
+                            <dt class="col-sm-4">ISO Code 3</dt>
+                            <dd class="col-sm-8">{{ $product->iso_code_3 ?? '-' }}</dd>
+
+                            <dt class="col-sm-4">HSN Code</dt>
+                            <dd class="col-sm-8">{{ $product->hsn_code ?? '-' }}</dd>
+                        @endif
+
                         <dt class="col-sm-4">Created At</dt>
                         <dd class="col-sm-8">{{ $product->created_at?->format('M d, Y H:i:s') }}</dd>
 
@@ -119,6 +153,39 @@
                         <div class="callout callout-success">
                             <h5>PSM Code</h5>
                             <p><code style="font-size: 1.1em;">{{ $product->psm_code }}</code></p>
+                        </div>
+                    @endif
+
+                    @if($product->height !== null || $product->width !== null || $product->length !== null || $product->weight !== null)
+                        <div class="callout callout-info">
+                            <h5>Dimensions & Weight</h5>
+                            <p>
+                                @if($product->height !== null || $product->width !== null || $product->length !== null)
+                                    <strong>Dimensions:</strong> {{ $product->height ?? '-' }} × {{ $product->width ?? '-' }} × {{ $product->length ?? '-' }}
+                                    @if($product->linearUnit)
+                                        {{ $product->linearUnit->code }}
+                                    @endif
+                                    <br>
+                                @endif
+                                @if($product->weight !== null)
+                                    <strong>Weight:</strong> {{ $product->weight }}
+                                    @if($product->weightUnit)
+                                        {{ $product->weightUnit->code }}
+                                    @endif
+                                @endif
+                            </p>
+                        </div>
+                    @endif
+
+                    @if($product->country_of_origin || $product->iso_code_2 || $product->iso_code_3 || $product->hsn_code)
+                        <div class="callout callout-primary">
+                            <h5>Additional Information</h5>
+                            <p>
+                                <strong>Country of Origin:</strong> {{ $product->country_of_origin ?? '-' }}<br>
+                                <strong>ISO Code 2:</strong> {{ $product->iso_code_2 ?? '-' }}<br>
+                                <strong>ISO Code 3:</strong> {{ $product->iso_code_3 ?? '-' }}<br>
+                                <strong>HSN Code:</strong> {{ $product->hsn_code ?? '-' }}
+                            </p>
                         </div>
                     @endif
                 </div>

@@ -57,6 +57,7 @@
                         <th>Category</th>
                         <th>Sub-Category</th>
                         <th>PSM Code</th>
+                        <th>Dimensions & Weight</th>
                         <th>Verified Status</th>
                         <th>Created At</th>
                         <th>Actions</th>
@@ -176,6 +177,17 @@
                     },
                     { "data": "psm_code", "name": "psm_code" },
                     {
+                        "data": "dimensions",
+                        "name": "dimensions",
+                        "render": function(data, type, row) {
+                            var parts = [];
+                            if (row.dimensions) parts.push('<div><small class="text-muted">Dimensions:</small> ' + row.dimensions + '</div>');
+                            if (row.weight) parts.push('<div><small class="text-muted">Weight:</small> ' + row.weight + '</div>');
+                            if (parts.length === 0) return '<span class="text-muted">—</span>';
+                            return parts.join('');
+                        }
+                    },
+                    {
                         "data": "is_verified",
                         "name": "is_verified",
                         "render": function(data, type, row) {
@@ -195,10 +207,10 @@
                     }
                 ],
                 "columnDefs": [
-                    { "orderable": false, "targets": [0, 9] }, // Checkbox and Actions columns
-                    { "searchable": false, "targets": [0, 9] }, // Checkbox and Actions columns
+                    { "orderable": false, "targets": [0, 7, 10] }, // Checkbox, Dimensions & Weight, Actions
+                    { "searchable": false, "targets": [0, 7, 10] }, // Checkbox, Dimensions & Weight, Actions
                     { "responsivePriority": 1, "targets": 3 }, // Brand
-                    { "responsivePriority": 2, "targets": 9 }, // Actions
+                    { "responsivePriority": 2, "targets": 10 }, // Actions
                     { "responsivePriority": 3, "targets": [3, 4] } // Model and Category
                 ],
                 "order": [[1, "desc"]], // Sort by ID descending by default
