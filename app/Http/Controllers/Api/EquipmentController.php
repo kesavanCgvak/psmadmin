@@ -41,7 +41,7 @@ class EquipmentController extends Controller
         $validator = Validator::make($request->all(), [
             'product_id' => 'required|exists:inventory_master,id',
             'quantity' => 'required|integer|min:1',
-            'price' => 'required|numeric|min:0',
+            'rental_price' => 'required|numeric|min:0',
             'software_code' => 'nullable|string|max:255',
         ]);
 
@@ -81,7 +81,7 @@ class EquipmentController extends Controller
                 'company_id' => $user->company_id,
                 'product_id' => $request->product_id,
                 'quantity' => $request->quantity,
-                'price' => $request->price,
+                'rental_price' => $request->rental_price,
                 'software_code' => $request->software_code,
             ]);
 
@@ -163,7 +163,7 @@ class EquipmentController extends Controller
                     'webpage_url' => $product->webpage_url, // 🔗 product webpage URL
                     'software_code' => $equipment->software_code,
                     'quantity' => $equipment->quantity,
-                    'price' => $equipment->price,
+                    'price' => $equipment->rental_price,
                     'description' => $equipment->description,
                     'is_verified' => $product->is_verified,
                     'images' => $equipment->images->map(function ($img) {
@@ -210,7 +210,7 @@ class EquipmentController extends Controller
         if ($validator->fails())
             return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
 
-        if ($equipment->user_id !== $user->id) {
+        if ($equipment->company_id !== $user->company_id) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
@@ -224,19 +224,50 @@ class EquipmentController extends Controller
      */
     public function updatePrice(Request $request, Equipment $equipment)
     {
+        Log::debug('updatePrice: entry', [
+            'equipment_id' => $equipment->id,
+            'request_input' => $request->all(),
+        ]);
+
         $user = $this->getAuthenticatedUser();
-        if (!$user)
+        if (!$user) {
+            Log::debug('updatePrice: unauthorized', ['equipment_id' => $equipment->id]);
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
 
-        $validator = Validator::make($request->all(), ['price' => 'required|numeric|min:0']);
-        if ($validator->fails())
+        $validator = Validator::make($request->all(), ['rental_price' => 'required|numeric|min:0']);
+        if ($validator->fails()) {
+            Log::debug('updatePrice: validation failed', [
+                'equipment_id' => $equipment->id,
+                'errors' => $validator->errors()->toArray(),
+            ]);
             return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
 
-        if ($equipment->user_id !== $user->id) {
+        if ($equipment->company_id !== $user->company_id) {
+            Log::debug('updatePrice: forbidden', [
+                'equipment_id' => $equipment->id,
+                'equipment_company_id' => $equipment->company_id,
+                'auth_user_company_id' => $user->company_id,
+            ]);
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
-        $equipment->update(['price' => $request->price]);
+        $oldPrice = $equipment->rental_price;
+        $newPrice = $request->rental_price;
+
+        Log::debug('updatePrice: before update', [
+            'equipment_id' => $equipment->id,
+            'old_rental_price' => $oldPrice,
+            'new_rental_price' => $newPrice,
+        ]);
+
+        $equipment->update(['rental_price' => $newPrice]);
+
+        Log::debug('updatePrice: success', [
+            'equipment_id' => $equipment->id,
+            'rental_price' => $equipment->rental_price,
+        ]);
 
         return response()->json(['success' => true, 'message' => 'Price updated', 'data' => $equipment]);
     }
@@ -254,7 +285,7 @@ class EquipmentController extends Controller
         if ($validator->fails())
             return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
 
-        if ($equipment->user_id !== $user->id) {
+        if ($equipment->company_id !== $user->company_id) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
@@ -276,7 +307,7 @@ class EquipmentController extends Controller
         if ($validator->fails())
             return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
 
-        if ($equipment->user_id !== $user->id) {
+        if ($equipment->company_id !== $user->company_id) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
@@ -292,7 +323,7 @@ class EquipmentController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
         }
 
-        if ($equipment->user_id !== $user->id) {
+        if ($equipment->company_id !== $user->company_id) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
@@ -381,7 +412,7 @@ class EquipmentController extends Controller
             return response()->json(['success' => false, 'message' => 'Image not found'], 404);
         }
 
-        if ($image->equipment->user_id !== $user->id) {
+        if ($image->equipment->company_id !== $user->company_id) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
@@ -404,7 +435,7 @@ class EquipmentController extends Controller
         if (!$user)
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
 
-        if ($equipment->user_id !== $user->id) {
+        if ($equipment->company_id !== $user->company_id) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 

@@ -201,7 +201,7 @@
                             @foreach($product->equipments as $equipment)
                                 <li class="list-group-item">
                                     <strong>Qty: {{ $equipment->quantity }}</strong> -
-                                    Price: ${{ number_format($equipment->price, 2) }}
+                                    Rental Price: ${{ number_format($equipment->rental_price, 2) }}
                                     @if($equipment->company)
                                         <br><small class="text-muted">Company: {{ $equipment->company->name }}</small>
                                     @endif

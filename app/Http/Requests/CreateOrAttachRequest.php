@@ -30,7 +30,7 @@ class CreateOrAttachRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'psm_code' => ['nullable', 'string', 'max:255', 'unique:inventory_master,psm_code'],
             'quantity' => ['required', 'integer', 'min:1'],
-            'price' => ['required', 'numeric', 'min:0'],
+            'rental_price' => ['required', 'numeric', 'min:0'],
             'rental_software_code' => ['required', 'string', 'max:255'],
         ];
     }

@@ -233,19 +233,28 @@ class ProductController extends Controller
         }
 
 
+        Log::debug('createOrAttach: entry', [
+            'request_input' => $request->all(),
+            'user_id' => $user->id,
+            'company_id' => $user->company_id,
+        ]);
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'brand_id' => 'nullable|exists:brands,id',
             'category_id' => 'nullable|exists:categories,id',
             'sub_category_id' => 'nullable|exists:sub_categories,id',
             'quantity' => 'nullable|integer|min:1',
-            'price' => 'nullable|numeric|min:0',
+            // 'price' => 'nullable|numeric|min:0',
+            'rental_price' => 'nullable|numeric|min:0',
             'rental_software_code' => 'nullable|string|max:255',
             'webpage_url' => 'nullable|url|max:255',
+            'verified' => 'nullable|boolean',
         ]);
 
 
         if ($validator->fails()) {
+            Log::debug('createOrAttach: validation failed', ['errors' => $validator->errors()->toArray()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Validation error',
@@ -299,6 +308,15 @@ class ProductController extends Controller
             $productName = trim($validated['name']);
             $psmCode = $validated['psm_code'] ?? $this->generateNextPsmCode();
 
+            $rentalPrice = $validated['rental_price'] ?? null;
+
+            Log::debug('createOrAttach: creating product', [
+                'product_name' => $productName,
+                'psm_code' => $psmCode,
+                'rental_price' => $rentalPrice,
+                'quantity' => $validated['quantity'] ?? null,
+            ]);
+
             $product = Product::create([
                 'category_id' => $categoryId,
                 'sub_category_id' => $subCategoryId,
@@ -306,7 +324,7 @@ class ProductController extends Controller
                 'model' => $productName,
                 'psm_code' => $psmCode,
                 'webpage_url' => $validated['webpage_url'] ?? null,
-                'is_verified' => 0,
+                'is_verified' => isset($validated['verified']) ? (int) $validated['verified'] : 0,
             ]);
 
             /** ---------------------------------------------------------
@@ -319,9 +337,9 @@ class ProductController extends Controller
                     'product_id' => $product->id,
                 ],
                 [
-                    'quantity' => $validated['quantity'],
-                    'price' => $validated['price'],
-                    'software_code' => $validated['rental_software_code'],
+                    'quantity' => $validated['quantity'] ?? 1,
+                    'rental_price' => $rentalPrice,
+                    'software_code' => $validated['rental_software_code'] ?? null,
                 ]
             );
 
@@ -335,17 +353,27 @@ class ProductController extends Controller
                 ->notify(new NewProductCreated($product, $user));
 
 
+            Log::debug('createOrAttach: success', [
+                'product_id' => $product->id,
+                'product_model' => $product->model,
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'New product and equipment created successfully.',
                 'data' => [
                     'product' => $product,
-                    'is_verified' => 0,
+                    'is_verified' => $product->is_verified,
                 ],
             ], 201);
 
         } catch (\Throwable $e) {
             DB::rollBack();
+
+            Log::error('createOrAttach: failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
 
             return response()->json([
                 'success' => false,
@@ -529,7 +557,7 @@ class ProductController extends Controller
                 ],
                 [
                     'quantity' => $validated['quantity'],
-                    'price' => $validated['price'],
+                    'rental_price' => $validated['price'],
                     'software_code' => $validated['rental_software_code'],
                 ]
             );
@@ -645,7 +673,7 @@ class ProductController extends Controller
                         ],
                         [
                             'quantity' => $quantity,
-                            'price' => null,
+                            'rental_price' => null,
                             'software_code' => $softwareCode,
                         ]
                     );
@@ -682,7 +710,7 @@ class ProductController extends Controller
                         ],
                         [
                             'quantity' => $quantity,
-                            'price' => null,
+                            'rental_price' => null,
                             'software_code' => $softwareCode,
                         ]
                     );
@@ -983,7 +1011,7 @@ class ProductController extends Controller
                 'company_id' => $user->company_id, // assumes User has company_id field
                 'product_id' => $product->id,
                 'quantity' => $validated['quantity'],
-                'price' => $validated['price'],
+                'rental_price' => $validated['rental_price'],
                 'software_code' => $validated['rental_software_code'],
             ]);
 

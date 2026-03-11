@@ -776,7 +776,7 @@ class CompanyController extends Controller
                         CASE WHEN brands.name IS NOT NULL THEN ' - ' ELSE '' END,
                         inventory_master.model) as product_name"),
                     'inventory_master.psm_code',
-                    'company_inventory.price',
+                    'company_inventory.rental_price',
                     'company_inventory.software_code',
                     'currencies.id as currency_id',
                     'currencies.name as currency_name',
@@ -856,7 +856,7 @@ class CompanyController extends Controller
                             'product_name' => $item->product_name,
                             'requested_quantity' => (int) $requestedQty,
                             'available_quantity' => (int) $availableQty,
-                            'price' => number_format($item->price, 2, '.', ''),
+                            'price' => number_format($item->rental_price, 2, '.', ''),
                             'software_code' => $item->software_code,
                             'psm_code' => $item->psm_code,
                         ];
@@ -938,7 +938,7 @@ class CompanyController extends Controller
                     'companies.default_contact_id',
                     'company_inventory.product_id',
                     'inventory_master.model as product_name',
-                    'company_inventory.price',
+                    'company_inventory.rental_price',
                     'company_inventory.software_code',
                     DB::raw("(
                     6371 * acos(
@@ -975,7 +975,7 @@ class CompanyController extends Controller
                         return [
                             'product_id' => $item->product_id,
                             'product_name' => $item->product_name,
-                            'price' => number_format($item->price, 2, '.', ''),
+                            'price' => number_format($item->rental_price, 2, '.', ''),
                             'software_code' => $item->software_code,
                         ];
                     })->values(),

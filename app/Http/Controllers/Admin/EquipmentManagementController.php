@@ -43,7 +43,7 @@ class EquipmentManagementController extends Controller
             'user_id' => 'required|exists:users,id',
             'product_id' => 'required|exists:inventory_master,id',
             'quantity' => 'required|integer|min:1',
-            'price' => 'required|numeric|min:0',
+            'rental_price' => 'required|numeric|min:0',
             'software_code' => 'nullable|string|max:255',
             'description' => 'nullable|string',
         ]);
@@ -54,7 +54,7 @@ class EquipmentManagementController extends Controller
                 ->withInput();
         }
 
-        Equipment::create($request->all());
+        Equipment::create($request->only(['company_id', 'user_id', 'product_id', 'quantity', 'rental_price', 'software_code', 'description']));
 
         return redirect()->route('admin.equipment.index')
             ->with('success', 'Equipment created successfully.');
@@ -91,7 +91,7 @@ class EquipmentManagementController extends Controller
             'user_id' => 'required|exists:users,id',
             'product_id' => 'required|exists:inventory_master,id',
             'quantity' => 'required|integer|min:1',
-            'price' => 'required|numeric|min:0',
+            'rental_price' => 'required|numeric|min:0',
             'software_code' => 'nullable|string|max:255',
             'description' => 'nullable|string',
         ]);
@@ -102,7 +102,7 @@ class EquipmentManagementController extends Controller
                 ->withInput();
         }
 
-        $equipment->update($request->all());
+        $equipment->update($request->only(['company_id', 'user_id', 'product_id', 'quantity', 'rental_price', 'software_code', 'description']));
 
         return redirect()->route('admin.equipment.index')
             ->with('success', 'Equipment updated successfully.');

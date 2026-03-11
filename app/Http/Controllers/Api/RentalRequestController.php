@@ -143,7 +143,7 @@ class RentalRequestController extends Controller
                     foreach ($companyData['products'] as $product) {
                         $productId = $product['product_id'];
                         $equipment = $companyEquipment->get($productId);
-                        $pricePerUnit = $equipment?->price;
+                        $pricePerUnit = $equipment?->rental_price;
 
                         SupplyJobProduct::create([
                             'supply_job_id' => $supplyJob->id,
