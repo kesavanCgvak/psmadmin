@@ -257,6 +257,8 @@ Route::middleware(['jwt.verify'])->group(function () {
     Route::post('/supply-jobs/{id}/complete', [SupplyJobController::class, 'complete']);
     Route::post('/supply-jobs/{id}/rate', [SupplyJobController::class, 'rate']);
     Route::post('/supply-jobs/{id}/rate/skip', [SupplyJobController::class, 'rateSkip']);
+    Route::post('/supply-jobs/{id}/rate-renter', [SupplyJobController::class, 'rateRenter']);
+    Route::post('/supply-jobs/{id}/rate-renter/skip', [SupplyJobController::class, 'rateRenterSkip']);
     Route::post('/supply-jobs/{id}/rating-reply', [SupplyJobController::class, 'ratingReply']);
 });
 

@@ -12,6 +12,7 @@ use App\Models\Currency;
 use App\Models\SupplyJobProduct;
 use App\Models\JobRating;
 use App\Models\JobRatingReply;
+use App\Models\RenterRating;
 use App\Models\Company;
 use App\Models\CompanyRating;
 use App\Models\User;
@@ -62,6 +63,7 @@ class SupplyJobController extends Controller
                 'rentalJob.user.company:id,name',
                 'jobRating',
                 'ratingReply',
+                'renterRating',
                 'products:id,supply_job_id,product_id',
                 'products.product:id,model,brand_id',
                 'products.product.brand:id,name'
@@ -131,6 +133,16 @@ class SupplyJobController extends Controller
                         'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
                     ];
                 }
+                if ($job->renterRating && $job->renterRating->rated_at) {
+                    $rr = $job->renterRating;
+                    $row['renter_rating'] = [
+                        'rating' => (int) $rr->rating,
+                        'comment' => $rr->comment,
+                        'rated_at' => $rr->rated_at->toIso8601String(),
+                    ];
+                } else {
+                    $row['renter_rating'] = null;
+                }
                 return $row;
             })->values();
 
@@ -193,6 +205,7 @@ class SupplyJobController extends Controller
                 'rentalJob:id,name,from_date,to_date,delivery_address',
                 'jobRating',
                 'ratingReply',
+                'renterRating',
                 'products.product:id,model,brand_id',
                 'products.product.brand:id,name',
                 'offers:id,supply_job_id,version,total_price,status',
@@ -280,12 +293,38 @@ class SupplyJobController extends Controller
 
             $effectiveStatus = $this->effectiveSupplyJobStatus($supplyJob->status, $supplyJob->jobRating);
 
-            // Renter company's average rating (as rated by providers / others via company_ratings)
-            $renterCompanyId = $rentalJob->user->company_id ?? null;
+            // Renter company's average rating and count: only for THIS renter company (from this supply job's rental job)
+            $renterCompanyId = $rentalJob->user?->company_id ?? null;
             $renterCompanyRating = null;
+            $renterCompanyRatingCount = null;
             if ($renterCompanyId) {
-                $avg = CompanyRating::where('company_id', $renterCompanyId)->avg('rating');
-                $renterCompanyRating = $avg !== null ? round((float) $avg, 1) : null;
+                // Supply job IDs that belong to this renter company (rental job owner's company)
+                $supplyJobIdsForRenter = DB::table('supply_jobs')
+                    ->join('rental_jobs', 'supply_jobs.rental_job_id', '=', 'rental_jobs.id')
+                    ->whereIn('rental_jobs.user_id', function ($q) use ($renterCompanyId) {
+                        $q->select('id')->from('users')->where('company_id', $renterCompanyId);
+                    })
+                    ->pluck('supply_jobs.id');
+                $avgFromRenterRatings = null;
+                $countFromRenterRatings = 0;
+                if ($supplyJobIdsForRenter->isNotEmpty()) {
+                    $query = DB::table('renter_ratings')
+                        ->whereIn('supply_job_id', $supplyJobIdsForRenter)
+                        ->whereNotNull('rated_at')
+                        ->whereNotNull('rating');
+                    $avgFromRenterRatings = $query->avg('rating');
+                    $countFromRenterRatings = $query->count();
+                }
+                if ($avgFromRenterRatings !== null) {
+                    $renterCompanyRating = round((float) $avgFromRenterRatings, 1);
+                    $renterCompanyRatingCount = (int) $countFromRenterRatings;
+                } else {
+                    $avgFromCompanyRatings = CompanyRating::where('company_id', $renterCompanyId)->avg('rating');
+                    if ($avgFromCompanyRatings !== null) {
+                        $renterCompanyRating = round((float) $avgFromCompanyRatings, 1);
+                        $renterCompanyRatingCount = (int) CompanyRating::where('company_id', $renterCompanyId)->count();
+                    }
+                }
             }
 
             $data = [
@@ -294,6 +333,7 @@ class SupplyJobController extends Controller
                 'rental_job_id' => $supplyJob->rentalJob->id,
                 'renter_company_name' => optional($rentalJob->user->company)->name,
                 'renter_company_rating' => $renterCompanyRating,
+                'renter_company_rating_count' => $renterCompanyRatingCount,
                 'start_date' => $supplyJob->rentalJob->from_date,
                 'end_date' => $supplyJob->rentalJob->to_date,
                 'packing_date' => $supplyJob->packing_date,
@@ -340,6 +380,16 @@ class SupplyJobController extends Controller
                     'provider_reply' => $reply?->reply,
                     'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
                 ];
+            }
+            if ($supplyJob->renterRating && $supplyJob->renterRating->rated_at) {
+                $rr = $supplyJob->renterRating;
+                $data['renter_rating'] = [
+                    'rating' => (int) $rr->rating,
+                    'comment' => $rr->comment,
+                    'rated_at' => $rr->rated_at->toIso8601String(),
+                ];
+            } else {
+                $data['renter_rating'] = null;
             }
 
             return response()->json([
@@ -698,6 +748,112 @@ class SupplyJobController extends Controller
                 ['supply_job_id' => $supplyJob->id],
                 [
                     'rental_job_id' => $rentalJob->id,
+                    'rated_at' => null,
+                    'skipped_at' => now(),
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rating skipped.',
+                'data' => [],
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Supply job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to skip rating.'], 500);
+        }
+    }
+
+    /**
+     * Provider rates the renter for this supply job.
+     * Allowed when status is accepted, partially_accepted, completed_pending_rating, or rated.
+     * At most one provider→renter rating per supply job (idempotent update).
+     */
+    public function rateRenter(Request $request, int $id)
+    {
+        $user = Auth::user();
+
+        $validated = $request->validate([
+            'rating' => 'required|integer|min:1|max:5',
+            'comment' => 'nullable|string|max:2000',
+        ]);
+
+        $allowedStatuses = ['accepted', 'partially_accepted', 'completed_pending_rating', 'rated'];
+
+        try {
+            $supplyJob = SupplyJob::with('rentalJob')->findOrFail($id);
+
+            if ((int) $user->company_id !== (int) $supplyJob->provider_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Only the provider can rate the renter for this job.',
+                ], 403);
+            }
+
+            if (!in_array($supplyJob->status, $allowedStatuses)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This job is not in a state that allows rating the renter.',
+                ], 400);
+            }
+
+            RenterRating::updateOrCreate(
+                ['supply_job_id' => $supplyJob->id],
+                [
+                    'rating' => $validated['rating'],
+                    'comment' => $validated['comment'] ?? null,
+                    'rated_at' => now(),
+                    'skipped_at' => null,
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rating submitted successfully.',
+                'data' => [],
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Supply job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to submit rating.'], 500);
+        }
+    }
+
+    /**
+     * Provider skips rating the renter for this supply job.
+     * Same auth and status rules as rateRenter; records skipped_at so provider is not prompted again.
+     */
+    public function rateRenterSkip(Request $request, int $id)
+    {
+        $user = Auth::user();
+
+        $allowedStatuses = ['accepted', 'partially_accepted', 'completed_pending_rating', 'rated'];
+
+        try {
+            $supplyJob = SupplyJob::with('rentalJob')->findOrFail($id);
+
+            if ((int) $user->company_id !== (int) $supplyJob->provider_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Only the provider can skip rating the renter for this job.',
+                ], 403);
+            }
+
+            if (!in_array($supplyJob->status, $allowedStatuses)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This job is not in a state that allows rating the renter.',
+                ], 400);
+            }
+
+            RenterRating::updateOrCreate(
+                ['supply_job_id' => $supplyJob->id],
+                [
+                    'rating' => null,
+                    'comment' => null,
                     'rated_at' => null,
                     'skipped_at' => now(),
                 ]
