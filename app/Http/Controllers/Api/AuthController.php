@@ -795,7 +795,7 @@ class AuthController extends Controller
             SyncUserToHubSpot::dispatch($user->id);
 
             // Send registration success email after successful verification (password not included).
-            $this->sendRegistrationSuccessEmail($user);
+            // $this->sendRegistrationSuccessEmail($user);
 
             Log::info('User account verified successfully.', [
                 'user_id' => $user->id,
@@ -844,7 +844,7 @@ class AuthController extends Controller
         SyncUserToHubSpot::dispatch($user->id);
 
         // Send registration success email after successful verification (password not included).
-        $this->sendRegistrationSuccessEmail($user);
+        // $this->sendRegistrationSuccessEmail($user);
 
         return response()->json([
             'success' => true,
@@ -856,30 +856,30 @@ class AuthController extends Controller
      * Send registration success email (e.g. after email verification).
      * Password is not passed when sent after verification; template shows a reminder instead.
      */
-    private function sendRegistrationSuccessEmail(User $user): void
-    {
-        $user->load('profile');
-        $name = $user->profile->full_name ?? $user->username;
-        $email = $user->email;
+    // private function sendRegistrationSuccessEmail(User $user): void
+    // {
+    //     $user->load('profile');
+    //     $name = $user->profile->full_name ?? $user->username;
+    //     $email = $user->email;
 
-        try {
-            \App\Helpers\EmailHelper::send('registrationSuccess', [
-                'name' => $name,
-                'email' => $email,
-                'username' => $user->username,
-                'account_type' => ucfirst($user->account_type ?? 'user'),
-                'login_url' => rtrim(env('APP_FRONTEND_URL', config('app.url', '')), '/'),
-            ], function ($message) use ($email) {
-                $message->to($email);
-                $message->from(config('mail.from.address'), config('mail.from.name'));
-            });
-        } catch (\Exception $e) {
-            Log::error('Failed to send registration success email after verification', [
-                'user_id' => $user->id,
-                'user_email' => $email,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
+    //     try {
+    //         \App\Helpers\EmailHelper::send('registrationSuccess', [
+    //             'name' => $name,
+    //             'email' => $email,
+    //             'username' => $user->username,
+    //             'account_type' => ucfirst($user->account_type ?? 'user'),
+    //             'login_url' => rtrim(env('APP_FRONTEND_URL', config('app.url', '')), '/'),
+    //         ], function ($message) use ($email) {
+    //             $message->to($email);
+    //             $message->from(config('mail.from.address'), config('mail.from.name'));
+    //         });
+    //     } catch (\Exception $e) {
+    //         Log::error('Failed to send registration success email after verification', [
+    //             'user_id' => $user->id,
+    //             'user_email' => $email,
+    //             'error' => $e->getMessage(),
+    //         ]);
+    //     }
+    // }
 
 }

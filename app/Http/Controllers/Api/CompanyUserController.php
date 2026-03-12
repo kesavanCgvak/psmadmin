@@ -101,17 +101,17 @@ class CompanyUserController extends Controller
                 });
 
                 // Send user credentials email to USER - ALL THE TIME (regardless of verification status)
-                \App\Helpers\EmailHelper::send('registrationSuccess', [
-                    'name' => $request->name,
-                    'email' => $request->email,
-                    'username' => $request->username,
-                    'password' => $request->password,
-                    'account_type' => ucfirst($authUser->accountType),
-                    'login_url' => env('APP_URL'),
-                ], function ($message) use ($request) {
-                    $message->to($request->email);
-                    $message->from(config('mail.from.address'), config('mail.from.name'));
-                });
+                // \App\Helpers\EmailHelper::send('registrationSuccess', [
+                //     'name' => $request->name,
+                //     'email' => $request->email,
+                //     'username' => $request->username,
+                //     'password' => $request->password,
+                //     'account_type' => ucfirst($authUser->accountType),
+                //     'login_url' => env('APP_URL'),
+                // ], function ($message) use ($request) {
+                //     $message->to($request->email);
+                //     $message->from(config('mail.from.address'), config('mail.from.name'));
+                // });
 
                 $company = Company::find($request->company_id);
                 $companyName = $company ? $company->name : null;
