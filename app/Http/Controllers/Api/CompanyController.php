@@ -825,15 +825,59 @@ class CompanyController extends Controller
                 return response()->json(['message' => 'No companies found matching your filters.'], 200);
             }
 
+            // ✅ Company IDs for rating lookups
+            $companyIds = $results->pluck('company_id')->unique()->values();
+
+            // ✅ Average rating and count per company: job_ratings (renter→provider) then company_ratings fallback
+            $jobRatingsData = DB::table('job_ratings')
+                ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
+                ->whereIn('supply_jobs.provider_id', $companyIds)
+                ->whereNotNull('job_ratings.rated_at')
+                ->groupBy('supply_jobs.provider_id')
+                ->select(
+                    'supply_jobs.provider_id',
+                    DB::raw('AVG(job_ratings.rating) as avg_rating'),
+                    DB::raw('COUNT(job_ratings.id) as rating_count')
+                )
+                ->get()
+                ->keyBy('provider_id');
+            $jobRatingsAvg = $jobRatingsData->pluck('avg_rating', 'provider_id')->toArray();
+            $jobRatingsCount = $jobRatingsData->pluck('rating_count', 'provider_id')->toArray();
+
+            $companyRatingsData = DB::table('company_ratings')
+                ->whereIn('company_id', $companyIds)
+                ->groupBy('company_id')
+                ->select(
+                    'company_id',
+                    DB::raw('AVG(rating) as avg_rating'),
+                    DB::raw('COUNT(id) as rating_count')
+                )
+                ->get()
+                ->keyBy('company_id');
+            $companyRatingsAvg = $companyRatingsData->pluck('avg_rating', 'company_id')->toArray();
+            $companyRatingsCount = $companyRatingsData->pluck('rating_count', 'company_id')->toArray();
+
             // ✅ Group results by company
-            $companies = $results->groupBy('company_id')->map(function ($items) use ($requestedQuantities) {
+            $companies = $results->groupBy('company_id')->map(function ($items) use ($requestedQuantities, $jobRatingsAvg, $jobRatingsCount, $companyRatingsAvg, $companyRatingsCount) {
                 $first = $items->first();
+                $cid = $first->company_id;
+                $avgRating = 0;
+                $ratingCount = 0;
+                if (isset($jobRatingsAvg[$cid])) {
+                    $avgRating = round((float) $jobRatingsAvg[$cid], 1);
+                    $ratingCount = (int) ($jobRatingsCount[$cid] ?? 0);
+                } elseif (isset($companyRatingsAvg[$cid])) {
+                    $avgRating = round((float) $companyRatingsAvg[$cid], 1);
+                    $ratingCount = (int) ($companyRatingsCount[$cid] ?? 0);
+                }
 
                 return [
-                    'id' => $first->company_id,
+                    'id' => $cid,
                     'name' => $first->company_name,
                     'company_logo' => $first->company_logo,
                     'rating' => $first->company_rating,
+                    'average_rating' => $avgRating,
+                    'rating_count' => $ratingCount,
                     'rental_software_code' => $first->rental_software_code,
                     'distance' => round($first->distance, 2),
                     'location' => [ // 🆕 Added location block

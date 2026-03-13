@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\EmailTemplate;
+use App\Services\EmailTemplateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
@@ -21,10 +22,14 @@ class EmailTemplateController extends Controller
 
     /**
      * Show the form for editing the specified email template.
+     * Body is run through placeholder replacement so {{ asset('images/logo-white.png') }} etc.
+     * display correctly in the visual editor (no broken image request).
      */
     public function edit(EmailTemplate $emailTemplate)
     {
-        return view('admin.email-templates.edit', compact('emailTemplate'));
+        $emailService = new EmailTemplateService();
+        $bodyForEdit = $emailService->replacePlaceholdersInContent($emailTemplate->body);
+        return view('admin.email-templates.edit', compact('emailTemplate', 'bodyForEdit'));
     }
 
     /**
@@ -101,7 +106,33 @@ class EmailTemplateController extends Controller
     public function preview(EmailTemplate $emailTemplate)
     {
         // Generate sample data based on template variables
-        $sampleData = $this->generateSampleData($emailTemplate->variables ?? []);
+        $variables = $emailTemplate->variables ?? [];
+
+        // Ensure key variables exist for specific templates even if variables list is outdated
+        if ($emailTemplate->name === 'new-admin-user') {
+            $variables = array_unique(array_merge($variables, [
+                'heading',
+                'greeting_name',
+                'body_message',
+                'role_line',
+                'adminPanelUrl',
+                'user_email',
+                'role_display',
+                'capabilities_section',
+                'current_year',
+            ]));
+        } elseif ($emailTemplate->name === 'jobAutoCancelled') {
+            // jobAutoCancelled template expects these, even if DB variables list is older
+            $variables = array_unique(array_merge($variables, [
+                'receiver_contact_name',
+                'rental_job_name',
+                'fulfilled_quantity',
+                'date',
+                'current_year',
+            ]));
+        }
+
+        $sampleData = $this->generateSampleData($variables);
         
         // Replace variables in subject and body (same variants as EmailTemplateService)
         $subject = $emailTemplate->subject;
@@ -121,6 +152,11 @@ class EmailTemplateController extends Controller
                 $body = str_replace($placeholder, $replacement, $body);
             }
         }
+
+        // Replace env/config/asset placeholders (e.g. {{ asset('images/logo-white.png') }}) so preview doesn't request them as URLs
+        $emailService = new EmailTemplateService();
+        $subject = $emailService->replacePlaceholdersInContent($subject);
+        $body = $emailService->replacePlaceholdersInContent($body);
 
         return view('admin.email-templates.preview', [
             'subject' => $subject,
@@ -168,10 +204,15 @@ class EmailTemplateController extends Controller
                 $sampleData[$varName] = 'https://example.com/action';
             } elseif (stripos($varName, 'current_year') !== false) {
                 $sampleData[$varName] = (string) date('Y');
+            } elseif (stripos($varName, 'from_date') !== false || stripos($varName, 'to_date') !== false) {
+                // Rental dates in quoteRequest emails should show date only
+                $sampleData[$varName] = date('d M Y');
             } elseif (stripos($varName, 'date') !== false) {
-                $sampleData[$varName] = date('M d, Y');
+                // Other generic date fields (e.g. jobNegotiationCancelled "date") include time
+                $sampleData[$varName] = date('d M Y, h:i A');
             } elseif (stripos($varName, 'amount') !== false || stripos($varName, 'price') !== false) {
-                $sampleData[$varName] = '$1,000.00';
+                // Amounts are numeric; currency symbol comes from currency_symbol
+                $sampleData[$varName] = '1,000.00';
             } elseif (stripos($varName, 'currency_symbol') !== false) {
                 $sampleData[$varName] = '$';
             } elseif (stripos($varName, 'provider_contact_name') !== false) {
@@ -183,8 +224,25 @@ class EmailTemplateController extends Controller
             } elseif (stripos($varName, 'products_count') !== false) {
                 $sampleData[$varName] = '3';
             } elseif (stripos($varName, 'products_table_html') !== false) {
-                // Match quoteRequest actual structure: Requested Equipment with Equipment, PSM Code, Software Code, Qty, Similar OK?, Price, Total Price
-                $sampleData[$varName] = '<h3 style="color: #1a73e8;">Requested Equipment</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px; font-size: 14px;"><thead style="background-color: #f0f0f0; border-bottom: 2px solid #ddd;"><tr><th align="left">Equipment</th><th align="left">PSM Code</th><th align="left">Software Code</th><th align="left">Qty</th><th align="left">Similar OK?</th><th align="left">Price</th><th align="left">Total Price</th></tr></thead><tbody><tr style="border-bottom: 1px solid #eee;"><td>Sharpy Wash 330</td><td>PSM08137</td><td>TC7827</td><td>1</td><td>Yes</td><td>$119.00</td><td>$119.00</td></tr><tr style="border-top: 2px solid #ddd; background-color: #f9f9f9;"><td colspan="6" align="right" style="font-weight: bold; padding-right: 10px;">Grand Total:</td><td style="font-weight: bold;">$119.00</td></tr></tbody></table>';
+                // For imported_products: show Imported Products table
+                // For quoteRequest: this still looks reasonable as a generic equipment table
+                $sampleData[$varName] =
+                    '<h3 style="margin-top: 25px; color: #1a73e8;">Imported Products (3)</h3>'
+                    . '<table width="100%" cellpadding="8" cellspacing="0" style="border: 1px solid #ccc; border-radius: 6px; margin-top: 10px; font-size: 14px;">'
+                    . '<thead style="background-color: #e8eef8;">'
+                    . '<tr>'
+                    . '<th align="left">Model</th>'
+                    . '<th align="left">Brand</th>'
+                    . '<th align="left">Category</th>'
+                    . '<th align="left">PSM Code</th>'
+                    . '<th align="left">Rental Software Code</th>'
+                    . '</tr>'
+                    . '</thead>'
+                    . '<tbody>'
+                    . '<tr><td>Sharpy Wash 330</td><td>Clay Paky</td><td>Moving Lights</td><td>PSM08137</td><td>TC7827</td></tr>'
+                    . '<tr><td>VL3500 Spot</td><td>Vari-Lite</td><td>Moving Lights</td><td>PSM09210</td><td>VL3500</td></tr>'
+                    . '<tr><td>GrandMA3 Full Size</td><td>MA Lighting</td><td>Lighting Console</td><td>PSM10001</td><td>GMA3FS</td></tr>'
+                    . '</tbody></table>';
             } elseif (stripos($varName, 'from_date') !== false || stripos($varName, 'to_date') !== false) {
                 $sampleData[$varName] = date('M d, Y');
             } elseif (stripos($varName, 'delivery_address') !== false) {
@@ -217,7 +275,27 @@ class EmailTemplateController extends Controller
                 $sampleData[$varName] = '<p style="margin-top: 15px; padding: 12px; background-color: #e8f4fd; border-left: 4px solid #1a73e8; font-size: 14px; line-height: 1.5;"><strong>Note:</strong> The requester is also open to similar or equivalent products. Please contact the requester if you can offer suitable alternatives.</p>';
             } elseif (stripos($varName, 'products_section') !== false && stripos($varName, 'products_table') === false) {
                 // Sample for jobNegotiationCancelled / jobPartialFulfilled (Product Details table)
-                $sampleData[$varName] = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse;"><thead><tr style="background:#e8f0fe;"><th style="border-bottom:1px solid #ccc;">PSM Code</th><th style="border-bottom:1px solid #ccc;">Model</th><th style="border-bottom:1px solid #ccc;">Software Code</th><th style="border-bottom:1px solid #ccc;">Requested Qty</th><th style="border-bottom:1px solid #ccc;">Fulfilled</th><th style="border-bottom:1px solid #ccc;">Remaining</th></tr></thead><tbody><tr><td>PSM-001</td><td>Canon EOS R5</td><td>SW-001</td><td>10</td><td>6</td><td>4</td></tr></tbody></table>';
+                // Match the actual runtime structure in JobNegotiationController (Qty / Price / Total)
+                $sampleData[$varName] = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3>'
+                    . '<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">'
+                    . '<thead><tr style="background:#e8f0fe;">'
+                    . '<th style="border-bottom:1px solid #ccc;">PSM Code</th>'
+                    . '<th style="border-bottom:1px solid #ccc;">Model</th>'
+                    . '<th style="border-bottom:1px solid #ccc;">Software Code</th>'
+                    . '<th style="border-bottom:1px solid #ccc;">Qty</th>'
+                    . '<th style="border-bottom:1px solid #ccc;">Price</th>'
+                    . '<th style="border-bottom:1px solid #ccc;">Total</th>'
+                    . '</tr></thead>'
+                    . '<tbody>'
+                    . '<tr>'
+                    . '<td>PSM19563</td>'
+                    . '<td>AMORAN</td>'
+                    . '<td>PSM00022</td>'
+                    . '<td>10</td>'
+                    . '<td>$40.00</td>'
+                    . '<td>$400.00</td>'
+                    . '</tr>'
+                    . '</tbody></table>';
             } elseif (stripos($varName, 'reason') !== false) {
                 $sampleData[$varName] = 'No longer needed.';
             } elseif (stripos($varName, 'total_price') !== false && stripos($varName, 'product') === false) {

@@ -96,5 +96,11 @@ class SupplyJob extends Model
         return $this->hasMany(SupplyJobRatingReminder::class, 'supply_job_id');
     }
 
+    /** Provider's rating of the renter for this supply job (one per supply job). */
+    public function renterRating()
+    {
+        return $this->hasOne(RenterRating::class, 'supply_job_id');
+    }
+
 }
 

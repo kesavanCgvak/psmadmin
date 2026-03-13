@@ -135,6 +135,7 @@ class CompanyManagementController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255|unique:companies,name,' . $company->id,
+            'account_type' => 'required|in:user,provider',
             'description' => 'nullable|string',
             'region_id' => 'nullable|exists:regions,id',
             'country_id' => 'nullable|exists:countries,id',
@@ -160,7 +161,13 @@ class CompanyManagementController extends Controller
                 ->withInput();
         }
 
+        $oldAccountType = $company->account_type;
         $company->update($request->all());
+
+        // Sync users.account_type when company account_type changes
+        if ($request->has('account_type') && $oldAccountType !== $company->account_type) {
+            User::where('company_id', $company->id)->update(['account_type' => $company->account_type]);
+        }
 
         // Preserve filter parameters from the request if they exist
         $filterParams = $request->only(['country', 'city', 'state', 'region', 'search', 'page']);
