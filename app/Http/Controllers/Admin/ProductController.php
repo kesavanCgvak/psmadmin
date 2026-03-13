@@ -58,7 +58,7 @@ class ProductController extends Controller
         try {
             $query = Product::select([
                 'id', 'category_id', 'brand_id', 'sub_category_id', 'model', 'psm_code', 'is_verified', 'created_at',
-                'height', 'width', 'length', 'weight', 'linear_unit_id', 'weight_unit_id'
+                'height', 'width', 'length', 'weight', 'linear_unit_id', 'weight_unit_id', 'replacement_price'
             ])
                 ->with([
                     'category:id,name',
@@ -78,9 +78,16 @@ class ProductController extends Controller
             $orderColumn = (is_array($order) && isset($order[0]['column'])) ? $order[0]['column'] : 0;
             $orderDir = (is_array($order) && isset($order[0]['dir'])) ? $order[0]['dir'] : 'desc';
 
-            // Column mapping for ordering
-            $columns = ['id', 'brand_id', 'model', 'category_id', 'sub_category_id', 'psm_code', 'is_verified', 'created_at'];
-            $orderColumnName = $columns[$orderColumn] ?? 'created_at';
+            // Column mapping for ordering (DataTables column index => database column)
+            // Columns: 0=checkbox, 1=id, 2=brand, 3=model, 4=category, 5=sub_category, 6=psm_code, 7=replacement_price, 8=dimensions, 9=is_verified, 10=created_at, 11=actions
+            $sortColumnMap = [
+                0 => null, 1 => 'id', 2 => 'brand_id', 3 => 'model', 4 => 'category_id', 5 => 'sub_category_id',
+                6 => 'psm_code', 7 => 'replacement_price', 8 => null, 9 => 'is_verified', 10 => 'created_at', 11 => null,
+            ];
+            $orderColumnName = $sortColumnMap[$orderColumn] ?? 'created_at';
+            if ($orderColumnName === null) {
+                $orderColumnName = 'created_at';
+            }
 
             // Apply unverified filter if requested
             if ($request->has('unverified_only') && $request->get('unverified_only') == '1') {
@@ -110,8 +117,8 @@ class ProductController extends Controller
             // Get filtered count
             $filteredRecords = $query->count();
 
-            // Apply ordering and pagination
-            $products = $query->orderBy($orderColumnName, $orderDir)
+            // Apply ordering and pagination (use table-qualified column for clarity)
+            $products = $query->orderBy('inventory_master.' . $orderColumnName, $orderDir)
                 ->skip($start)
                 ->take($length)
                 ->get();
@@ -146,6 +153,7 @@ class ProductController extends Controller
                     'category' => $product->category ? $product->category->name : '—',
                     'sub_category' => $product->subCategory ? $product->subCategory->name : '—',
                     'psm_code' => $product->psm_code ?? '—',
+                    'replacement_price' => $product->replacement_price !== null ? number_format($product->replacement_price, 2) : '—',
                     'dimensions' => $dimensions,
                     'weight' => $weight,
                     'is_verified' => $product->is_verified ?? 0,
@@ -305,6 +313,7 @@ class ProductController extends Controller
             'weight' => 'nullable|numeric',
             'linear_unit_id' => 'nullable|exists:linear_units,id',
             'weight_unit_id' => 'nullable|exists:weight_units,id',
+            'replacement_price' => 'nullable|numeric',
             'country_of_origin' => 'nullable|string|max:100',
             'iso_code_2' => 'nullable|string|max:2',
             'iso_code_3' => 'nullable|string|max:3',
@@ -408,6 +417,7 @@ class ProductController extends Controller
             'weight' => 'nullable|numeric',
             'linear_unit_id' => 'nullable|exists:linear_units,id',
             'weight_unit_id' => 'nullable|exists:weight_units,id',
+            'replacement_price' => 'nullable|numeric',
             'country_of_origin' => 'nullable|string|max:100',
             'iso_code_2' => 'nullable|string|max:2',
             'iso_code_3' => 'nullable|string|max:3',
@@ -519,6 +529,7 @@ class ProductController extends Controller
         $optionalFields = [
             'height', 'width', 'length', 'weight',
             'linear_unit_id', 'weight_unit_id',
+            'replacement_price',
             'country_of_origin', 'iso_code_2', 'iso_code_3', 'hsn_code',
         ];
 

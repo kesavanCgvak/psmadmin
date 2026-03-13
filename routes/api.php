@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\SupplyJobActionsController;
 use App\Http\Controllers\Api\SupplyJobController;
 use App\Http\Controllers\Api\UserProfileController;
 use App\Http\Controllers\Api\EquipmentController;
+use App\Http\Controllers\Api\FlexInventoryController;
 use App\Http\Controllers\Api\IntegrationController;
 use App\Http\Controllers\Api\UserOfferController;
 use App\Http\Controllers\Api\JobNegotiationController;
@@ -185,6 +186,12 @@ Route::middleware('jwt.verify')->prefix('import')->group(function () {
 Route::middleware(['jwt.verify'])->group(function () {
     Route::post('/integrations/store', [IntegrationController::class, 'store']);
     Route::get('/integrations/{integration_type}', [IntegrationController::class, 'show']);
+});
+
+// Flex Rental Solutions inventory import (company-specific credentials)
+Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
+    Route::get('/search', [FlexInventoryController::class, 'search']);
+    Route::post('/import', [FlexInventoryController::class, 'import']);
 });
 
 Route::middleware(['jwt.verify'])->group(function () {

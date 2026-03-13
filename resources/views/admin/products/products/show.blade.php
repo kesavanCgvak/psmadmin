@@ -88,6 +88,9 @@
                             </dd>
                         @endif
 
+                        <dt class="col-sm-4">Replacement Price</dt>
+                        <dd class="col-sm-8">{{ $product->replacement_price !== null ? number_format($product->replacement_price, 2) : '—' }}</dd>
+
                         @if($product->country_of_origin || $product->iso_code_2 || $product->iso_code_3 || $product->hsn_code)
                             <dt class="col-sm-4">Country of Origin</dt>
                             <dd class="col-sm-8">{{ $product->country_of_origin ?? '-' }}</dd>

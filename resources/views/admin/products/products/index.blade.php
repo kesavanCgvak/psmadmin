@@ -57,6 +57,7 @@
                         <th>Category</th>
                         <th>Sub-Category</th>
                         <th>PSM Code</th>
+                        <th>Replacement Price</th>
                         <th>Dimensions & Weight</th>
                         <th>Verified Status</th>
                         <th>Created At</th>
@@ -177,6 +178,10 @@
                     },
                     { "data": "psm_code", "name": "psm_code" },
                     {
+                        "data": "replacement_price",
+                        "name": "replacement_price"
+                    },
+                    {
                         "data": "dimensions",
                         "name": "dimensions",
                         "render": function(data, type, row) {
@@ -207,10 +212,10 @@
                     }
                 ],
                 "columnDefs": [
-                    { "orderable": false, "targets": [0, 7, 10] }, // Checkbox, Dimensions & Weight, Actions
-                    { "searchable": false, "targets": [0, 7, 10] }, // Checkbox, Dimensions & Weight, Actions
-                    { "responsivePriority": 1, "targets": 3 }, // Brand
-                    { "responsivePriority": 2, "targets": 10 }, // Actions
+                    { "orderable": false, "targets": [0, 8, 11] }, // Checkbox, Dimensions & Weight, Actions
+                    { "searchable": false, "targets": [0, 8, 11] }, // Checkbox, Dimensions & Weight, Actions
+                    { "responsivePriority": 1, "targets": 3 }, // Model
+                    { "responsivePriority": 2, "targets": 11 }, // Actions
                     { "responsivePriority": 3, "targets": [3, 4] } // Model and Category
                 ],
                 "order": [[1, "desc"]], // Sort by ID descending by default

@@ -13,10 +13,11 @@ class Equipment extends Model
         'user_id',
         'product_id',
         'quantity',
-        'price',
+        'rental_price',
         'description',
         'software_code',
-        'company_id'
+        'company_id',
+        'flex_resource_id',
     ];
 
     public function user()

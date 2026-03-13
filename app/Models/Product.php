@@ -27,6 +27,8 @@ class Product extends Model
         'weight',
         'linear_unit_id',
         'weight_unit_id',
+        'replacement_price',
+        'source',
         'country_of_origin',
         'iso_code_2',
         'iso_code_3',

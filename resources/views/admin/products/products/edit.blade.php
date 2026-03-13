@@ -196,7 +196,23 @@
                 </div>
 
                 <div class="row">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label for="replacement_price">Replacement Price</label>
+                            <input type="number"
+                                   class="form-control @error('replacement_price') is-invalid @enderror"
+                                   id="replacement_price"
+                                   name="replacement_price"
+                                   value="{{ old('replacement_price', $product->replacement_price) }}"
+                                   placeholder="0.00"
+                                   step="0.01"
+                                   min="0">
+                            @error('replacement_price')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="col-md-4">
                         <div class="form-group">
                             <label for="weight">Weight</label>
                             <input type="number"
@@ -212,7 +228,7 @@
                             @enderror
                         </div>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <div class="form-group">
                             <label for="weight_unit_id">Weight Unit</label>
                             <select class="form-control @error('weight_unit_id') is-invalid @enderror"
