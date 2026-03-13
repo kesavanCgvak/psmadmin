@@ -110,7 +110,7 @@ class FlexInventoryController extends Controller
             $details = FlexService::getInventoryDetails($companyId, $flexId);
             $name = $details['name'] ?? $request->input('name', '');
             $sku = $details['sku'] ?? null;
-            $softwareCode = $sku ?? (string) $flexId;
+            $softwareCode = $sku ?? null; // Store SKU as software_code for reference, if available
 
             // Step 2: Check if product exists in inventory_master (by normalized model)
             $normalized = ProductNormalizer::normalizeCode($name);
