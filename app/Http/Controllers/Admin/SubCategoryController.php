@@ -239,7 +239,7 @@ class SubCategoryController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'product_ids' => 'required|array|min:1',
-            'product_ids.*' => 'required|exists:products,id',
+            'product_ids.*' => 'required|exists:inventory_master,id',
             'target_subcategory_id' => 'required|exists:sub_categories,id',
         ]);
 

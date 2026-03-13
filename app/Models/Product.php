@@ -9,6 +9,8 @@ class Product extends Model
 {
     use HasFactory;
 
+    protected $table = 'inventory_master';
+
     protected $fillable = [
         'category_id',
         'sub_category_id',

@@ -17,8 +17,12 @@ class EmailTemplateService
      */
     public function getTemplate(string $templateName, array $data = []): ?array
     {
-        // Ensure every template has current_year for footer (so no need to pass from every sender)
-        $data = array_merge(['current_year' => (string) date('Y')], $data);
+        // Ensure every template has current_year and logo_url (so no need to pass from every sender)
+        $logoUrl = config('mail.logo_url') ?? (rtrim(config('app.url'), '/') . '/images/logo-white.png');
+        $data = array_merge([
+            'current_year' => (string) date('Y'),
+            'logo_url' => $logoUrl,
+        ], $data);
 
         // Check if template exists in database (regardless of active status)
         $templateInDb = EmailTemplate::where('name', $templateName)->first();
@@ -72,6 +76,18 @@ class EmailTemplateService
     }
 
     /**
+     * Replace env/config/asset placeholders in content (for admin preview or any raw DB body).
+     * Use this when rendering template body outside getTemplate() so {{ asset('...') }} etc. become real URLs.
+     *
+     * @param string $content Template content (e.g. subject or body from database)
+     * @return string Content with placeholders replaced
+     */
+    public function replacePlaceholdersInContent(string $content): string
+    {
+        return $this->replaceEnvAndConfigPlaceholders($content);
+    }
+
+    /**
      * Replace variables in template content.
      *
      * @param string $content Template content
@@ -117,6 +133,7 @@ class EmailTemplateService
     {
         $appFrontendUrl = rtrim(env('APP_FRONTEND_URL', config('app.url', '')), '/');
         $appUrl = rtrim(config('app.url', env('APP_URL', '')), '/');
+        $logoUrl = config('mail.logo_url') ?? ($appUrl . '/images/logo-white.png');
 
         $replacements = [
             // env('APP_FRONTEND_URL') - various quote/spacing forms
@@ -134,6 +151,11 @@ class EmailTemplateService
             // date('Y') - current year in footers
             "{{ date('Y') }}"                 => (string) date('Y'),
             "{{ date(\'Y\') }}"               => (string) date('Y'),
+            // asset('images/logo-white.png') - DB templates store this as text; replace with actual logo URL
+            "{{ asset('images/logo-white.png') }}"   => $logoUrl,
+            '{{ asset(\'images/logo-white.png\') }}' => $logoUrl,
+            "{{asset('images/logo-white.png')}}"    => $logoUrl,
+            '{{asset(\'images/logo-white.png\')}}'  => $logoUrl,
         ];
 
         foreach ($replacements as $placeholder => $value) {
@@ -143,6 +165,9 @@ class EmailTemplateService
         // {{ date('Y') }} - match any spacing/quote variant so it never shows literally in DB templates
         $currentYear = (string) date('Y');
         $content = preg_replace('/\{\{\s*date\s*\(\s*[\'"]Y[\'"]\s*\)\s*\}\}/', $currentYear, $content);
+
+        // {{ asset('images/logo-white.png') }} - any spacing/quote variant in DB templates
+        $content = preg_replace('/\{\{\s*asset\s*\(\s*[\'"]images\/logo-white\.png[\'"]\s*\)\s*\}\}/', $logoUrl, $content);
 
         // {{ $current_year }} - ensure footer always shows actual year (fallback if not in $data)
         $content = str_replace('{{ $current_year }}', $currentYear, $content);

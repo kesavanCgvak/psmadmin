@@ -41,7 +41,7 @@ class EquipmentManagementController extends Controller
         $validator = Validator::make($request->all(), [
             'company_id' => 'required|exists:companies,id',
             'user_id' => 'required|exists:users,id',
-            'product_id' => 'required|exists:products,id',
+            'product_id' => 'required|exists:inventory_master,id',
             'quantity' => 'required|integer|min:1',
             'price' => 'required|numeric|min:0',
             'software_code' => 'nullable|string|max:255',
@@ -89,7 +89,7 @@ class EquipmentManagementController extends Controller
         $validator = Validator::make($request->all(), [
             'company_id' => 'required|exists:companies,id',
             'user_id' => 'required|exists:users,id',
-            'product_id' => 'required|exists:products,id',
+            'product_id' => 'required|exists:inventory_master,id',
             'quantity' => 'required|integer|min:1',
             'price' => 'required|numeric|min:0',
             'software_code' => 'nullable|string|max:255',

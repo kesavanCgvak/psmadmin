@@ -101,17 +101,17 @@ class CompanyUserController extends Controller
                 });
 
                 // Send user credentials email to USER - ALL THE TIME (regardless of verification status)
-                \App\Helpers\EmailHelper::send('registrationSuccess', [
-                    'name' => $request->name,
-                    'email' => $request->email,
-                    'username' => $request->username,
-                    'password' => $request->password,
-                    'account_type' => ucfirst($authUser->accountType),
-                    'login_url' => env('APP_URL'),
-                ], function ($message) use ($request) {
-                    $message->to($request->email);
-                    $message->from(config('mail.from.address'), config('mail.from.name'));
-                });
+                // \App\Helpers\EmailHelper::send('registrationSuccess', [
+                //     'name' => $request->name,
+                //     'email' => $request->email,
+                //     'username' => $request->username,
+                //     'password' => $request->password,
+                //     'account_type' => ucfirst($authUser->accountType),
+                //     'login_url' => env('APP_URL'),
+                // ], function ($message) use ($request) {
+                //     $message->to($request->email);
+                //     $message->from(config('mail.from.address'), config('mail.from.name'));
+                // });
 
                 $company = Company::find($request->company_id);
                 $companyName = $company ? $company->name : null;
@@ -119,8 +119,12 @@ class CompanyUserController extends Controller
                     'company_name' => $companyName,
                     'account_type' => $authUser->accountType,
                     'username' => $request->username,
-                    'mobile' => $request->mobile,
-                    'email' => $request->email
+                    'mobile' => $request->mobile ?? '',
+                    'email' => $request->email,
+                    'region_name' => $company ? (optional($company->getregion)->name ?? 'N/A') : 'N/A',
+                    'country_name' => $company ? (optional($company->getcountry)->name ?? 'N/A') : 'N/A',
+                    'state_name' => $company ? (optional($company->getState)->name ?? 'N/A') : 'N/A',
+                    'city_name' => $company ? (optional($company->getcity)->name ?? 'N/A') : 'N/A',
                 ], function ($message) use ($data) {
                     $message->to(config('mail.to.addresses'));
                     $message->from(config('mail.from.address'), config('mail.from.name'));

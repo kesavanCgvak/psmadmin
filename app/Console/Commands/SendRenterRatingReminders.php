@@ -35,7 +35,7 @@ class SendRenterRatingReminders extends Command
             ->get();
 
         foreach ($jobs as $supplyJob) {
-            // Skip if renter already rated this supply job
+            // Skip only if renter already submitted a rating (rated_at). If they skipped (skipped_at only), still send reminders so they can rate later.
             if ($supplyJob->jobRating && $supplyJob->jobRating->rated_at) {
                 continue;
             }

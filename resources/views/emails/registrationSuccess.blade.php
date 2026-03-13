@@ -43,7 +43,7 @@
         <!-- Header with Logo -->
         <tr style="background-color: #726d6c;">
             <td style="text-align: center; padding: 20px;">
-                <img src="{{ asset('images/logo-white.png') }}" alt="prosubmarket.com"
+                <img src="{{ config('mail.logo_url') ?? asset('images/logo-white.png') }}" alt="prosubmarket.com"
                     style="max-width: 200px; height: auto; display: block; margin: 0 auto;">
             </td>
         </tr>
@@ -66,7 +66,7 @@
                                 <li><strong>Name:</strong> {{ $name }}</li>
                                 <li><strong>Email:</strong> {{ $email }}</li>
                                 <li><strong>Username:</strong> {{ $username }}</li>
-                                <li><strong>Password:</strong> {{ $password }}</li>
+                                <li><strong>Password:</strong> {{ $password ?? 'Use the password you set during registration.' }}</li>
                                 <li><strong>Account Type:</strong> {{ $account_type }}</li>
                             </ul>
                             <p style="color: #d9534f; font-size: 14px; font-weight: bold;">

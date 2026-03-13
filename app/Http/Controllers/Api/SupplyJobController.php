@@ -12,7 +12,9 @@ use App\Models\Currency;
 use App\Models\SupplyJobProduct;
 use App\Models\JobRating;
 use App\Models\JobRatingReply;
+use App\Models\RenterRating;
 use App\Models\Company;
+use App\Models\CompanyRating;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -61,6 +63,7 @@ class SupplyJobController extends Controller
                 'rentalJob.user.company:id,name',
                 'jobRating',
                 'ratingReply',
+                'renterRating',
                 'products:id,supply_job_id,product_id',
                 'products.product:id,model,brand_id',
                 'products.product.brand:id,name'
@@ -98,13 +101,14 @@ class SupplyJobController extends Controller
 
             //Transform data (works for both cases)
             $data = $collection->map(function (SupplyJob $job) {
+                $effectiveStatus = $this->effectiveSupplyJobStatus($job->status, $job->jobRating);
                 $row = [
                     'id' => $job->id,
                     'name' => $job->rentalJob?->name ?? '',
                     'rental_job_id' => $job->rentalJob?->id,
                     'start_date' => $job->rentalJob?->from_date,
                     'end_date' => $job->rentalJob?->to_date,
-                    'status' => $job->status,
+                    'status' => $effectiveStatus,
                     'products' => $job->products->map(function ($sp) {
                         $brand = $sp->product?->brand?->name ?? '';
                         $model = $sp->product?->model ?? '';
@@ -118,7 +122,7 @@ class SupplyJobController extends Controller
                 if ($job->rentalJob?->user?->company) {
                     $row['renter_company_name'] = $job->rentalJob->user->company->name;
                 }
-                if ($job->status === 'rated' && $job->jobRating?->rated_at) {
+                if ($effectiveStatus === 'rated' && $job->jobRating?->rated_at) {
                     $jr = $job->jobRating;
                     $reply = $job->ratingReply;
                     $row['job_rating'] = [
@@ -128,6 +132,16 @@ class SupplyJobController extends Controller
                         'provider_reply' => $reply?->reply,
                         'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
                     ];
+                }
+                if ($job->renterRating && $job->renterRating->rated_at) {
+                    $rr = $job->renterRating;
+                    $row['renter_rating'] = [
+                        'rating' => (int) $rr->rating,
+                        'comment' => $rr->comment,
+                        'rated_at' => $rr->rated_at->toIso8601String(),
+                    ];
+                } else {
+                    $row['renter_rating'] = null;
                 }
                 return $row;
             })->values();
@@ -191,6 +205,7 @@ class SupplyJobController extends Controller
                 'rentalJob:id,name,from_date,to_date,delivery_address',
                 'jobRating',
                 'ratingReply',
+                'renterRating',
                 'products.product:id,model,brand_id',
                 'products.product.brand:id,name',
                 'offers:id,supply_job_id,version,total_price,status',
@@ -276,11 +291,49 @@ class SupplyJobController extends Controller
             }
 
 
+            $effectiveStatus = $this->effectiveSupplyJobStatus($supplyJob->status, $supplyJob->jobRating);
+
+            // Renter company's average rating and count: only for THIS renter company (from this supply job's rental job)
+            $renterCompanyId = $rentalJob->user?->company_id ?? null;
+            $renterCompanyRating = null;
+            $renterCompanyRatingCount = null;
+            if ($renterCompanyId) {
+                // Supply job IDs that belong to this renter company (rental job owner's company)
+                $supplyJobIdsForRenter = DB::table('supply_jobs')
+                    ->join('rental_jobs', 'supply_jobs.rental_job_id', '=', 'rental_jobs.id')
+                    ->whereIn('rental_jobs.user_id', function ($q) use ($renterCompanyId) {
+                        $q->select('id')->from('users')->where('company_id', $renterCompanyId);
+                    })
+                    ->pluck('supply_jobs.id');
+                $avgFromRenterRatings = null;
+                $countFromRenterRatings = 0;
+                if ($supplyJobIdsForRenter->isNotEmpty()) {
+                    $query = DB::table('renter_ratings')
+                        ->whereIn('supply_job_id', $supplyJobIdsForRenter)
+                        ->whereNotNull('rated_at')
+                        ->whereNotNull('rating');
+                    $avgFromRenterRatings = $query->avg('rating');
+                    $countFromRenterRatings = $query->count();
+                }
+                if ($avgFromRenterRatings !== null) {
+                    $renterCompanyRating = round((float) $avgFromRenterRatings, 1);
+                    $renterCompanyRatingCount = (int) $countFromRenterRatings;
+                } else {
+                    $avgFromCompanyRatings = CompanyRating::where('company_id', $renterCompanyId)->avg('rating');
+                    if ($avgFromCompanyRatings !== null) {
+                        $renterCompanyRating = round((float) $avgFromCompanyRatings, 1);
+                        $renterCompanyRatingCount = (int) CompanyRating::where('company_id', $renterCompanyId)->count();
+                    }
+                }
+            }
+
             $data = [
                 'id' => $supplyJob->id,
                 'name' => $supplyJob->rentalJob->name,
                 'rental_job_id' => $supplyJob->rentalJob->id,
                 'renter_company_name' => optional($rentalJob->user->company)->name,
+                'renter_company_rating' => $renterCompanyRating,
+                'renter_company_rating_count' => $renterCompanyRatingCount,
                 'start_date' => $supplyJob->rentalJob->from_date,
                 'end_date' => $supplyJob->rentalJob->to_date,
                 'packing_date' => $supplyJob->packing_date,
@@ -288,7 +341,7 @@ class SupplyJobController extends Controller
                 'return_date' => $supplyJob->return_date,
                 'unpacking_date' => $supplyJob->unpacking_date,
                 'delivery_address' => $supplyJob->rentalJob->delivery_address,
-                'status' => $supplyJob->status,
+                'status' => $effectiveStatus,
                 'company' => [
                     'id' => $company->id,
                     'name' => $company->name,
@@ -317,7 +370,7 @@ class SupplyJobController extends Controller
                 ],
             ];
 
-            if ($supplyJob->status === 'rated' && $supplyJob->jobRating?->rated_at) {
+            if ($effectiveStatus === 'rated' && $supplyJob->jobRating?->rated_at) {
                 $jobRating = $supplyJob->jobRating;
                 $reply = $supplyJob->ratingReply;
                 $data['job_rating'] = [
@@ -327,6 +380,16 @@ class SupplyJobController extends Controller
                     'provider_reply' => $reply?->reply,
                     'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
                 ];
+            }
+            if ($supplyJob->renterRating && $supplyJob->renterRating->rated_at) {
+                $rr = $supplyJob->renterRating;
+                $data['renter_rating'] = [
+                    'rating' => (int) $rr->rating,
+                    'comment' => $rr->comment,
+                    'rated_at' => $rr->rated_at->toIso8601String(),
+                ];
+            } else {
+                $data['renter_rating'] = null;
             }
 
             return response()->json([
@@ -515,12 +578,12 @@ class SupplyJobController extends Controller
 
                 if ($supplyJob->rentalJob) {
                     $rentalJob = $supplyJob->rentalJob;
-                    // Rental job = completed_pending_rating only when ALL accepted providers have marked completed
-                    $anyStillPending = SupplyJob::where('rental_job_id', $rentalJob->id)
-                        ->whereIn('status', ['accepted', 'partially_accepted'])
+                    // Rental = completed_pending_rating only when ALL suppliers have completed. Any in pending/negotiating/accepted/partially_accepted → stay partially_accepted.
+                    $anyNotCompleted = SupplyJob::where('rental_job_id', $rentalJob->id)
+                        ->whereIn('status', ['pending', 'negotiating', 'accepted', 'partially_accepted'])
                         ->exists();
                     $rentalJob->update([
-                        'status' => $anyStillPending ? 'partially_accepted' : 'completed_pending_rating',
+                        'status' => $anyNotCompleted ? 'partially_accepted' : 'completed_pending_rating',
                     ]);
                 }
             });
@@ -603,10 +666,12 @@ class SupplyJobController extends Controller
                 ], 403);
             }
 
-            if ($rentalJob->status !== 'completed_pending_rating') {
+            // Allow rating as soon as this supplier's job is completed (per-supplier rating).
+            // Also allow rating after skip: renter can change their mind and submit a rating later (reminders encourage this).
+            if ($supplyJob->status !== 'completed_pending_rating') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Job must be in completed (pending rating) status to submit a rating.',
+                    'message' => 'This provider has not been marked as completed yet, or has already been rated.',
                 ], 400);
             }
 
@@ -622,10 +687,14 @@ class SupplyJobController extends Controller
                     ]
                 );
                 $supplyJob->update(['status' => 'rated']);
-                $pendingCount = SupplyJob::where('rental_job_id', $rentalJob->id)
+                $pendingRatingCount = SupplyJob::where('rental_job_id', $rentalJob->id)
                     ->where('status', 'completed_pending_rating')
                     ->count();
-                if ($pendingCount === 0) {
+                // Only set rental to "rated" when ALL suppliers have completed AND all have been rated/skipped (no supplier still pending/negotiating/accepted/partially_accepted or completed_pending_rating)
+                $allSuppliersDone = ! SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->whereIn('status', ['pending', 'negotiating', 'accepted', 'partially_accepted', 'completed_pending_rating'])
+                    ->exists();
+                if ($pendingRatingCount === 0 && $rentalJob->status === 'completed_pending_rating' && $allSuppliersDone) {
                     $rentalJob->update(['status' => 'rated']);
                 }
             });
@@ -665,29 +734,130 @@ class SupplyJobController extends Controller
                 ], 403);
             }
 
-            if ($rentalJob->status !== 'completed_pending_rating') {
+            // Allow skip as soon as this supplier's job is completed (per-supplier rating/skip)
+            if ($supplyJob->status !== 'completed_pending_rating') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Job must be in completed (pending rating) status to skip rating.',
+                    'message' => 'This provider has not been marked as completed yet, or has already been rated.',
                 ], 400);
             }
 
-            DB::transaction(function () use ($supplyJob, $rentalJob) {
-                JobRating::updateOrCreate(
-                    ['supply_job_id' => $supplyJob->id],
-                    [
-                        'rental_job_id' => $rentalJob->id,
-                        'skipped_at' => now(),
-                    ]
-                );
-                $supplyJob->update(['status' => 'rated']);
-                $pendingCount = SupplyJob::where('rental_job_id', $rentalJob->id)
-                    ->where('status', 'completed_pending_rating')
-                    ->count();
-                if ($pendingCount === 0) {
-                    $rentalJob->update(['status' => 'rated']);
-                }
-            });
+            // Record skip only; do not change supply job or rental job status (stay completed_pending_rating / partially_accepted).
+            // Skip can be done multiple times; reminders will still be sent per schedule so the renter can rate later.
+            JobRating::updateOrCreate(
+                ['supply_job_id' => $supplyJob->id],
+                [
+                    'rental_job_id' => $rentalJob->id,
+                    'rated_at' => null,
+                    'skipped_at' => now(),
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rating skipped.',
+                'data' => [],
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Supply job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to skip rating.'], 500);
+        }
+    }
+
+    /**
+     * Provider rates the renter for this supply job.
+     * Allowed when status is accepted, partially_accepted, completed_pending_rating, or rated.
+     * At most one provider→renter rating per supply job (idempotent update).
+     */
+    public function rateRenter(Request $request, int $id)
+    {
+        $user = Auth::user();
+
+        $validated = $request->validate([
+            'rating' => 'required|integer|min:1|max:5',
+            'comment' => 'nullable|string|max:2000',
+        ]);
+
+        $allowedStatuses = ['accepted', 'partially_accepted', 'completed_pending_rating', 'rated'];
+
+        try {
+            $supplyJob = SupplyJob::with('rentalJob')->findOrFail($id);
+
+            if ((int) $user->company_id !== (int) $supplyJob->provider_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Only the provider can rate the renter for this job.',
+                ], 403);
+            }
+
+            if (!in_array($supplyJob->status, $allowedStatuses)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This job is not in a state that allows rating the renter.',
+                ], 400);
+            }
+
+            RenterRating::updateOrCreate(
+                ['supply_job_id' => $supplyJob->id],
+                [
+                    'rating' => $validated['rating'],
+                    'comment' => $validated['comment'] ?? null,
+                    'rated_at' => now(),
+                    'skipped_at' => null,
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rating submitted successfully.',
+                'data' => [],
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Supply job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to submit rating.'], 500);
+        }
+    }
+
+    /**
+     * Provider skips rating the renter for this supply job.
+     * Same auth and status rules as rateRenter; records skipped_at so provider is not prompted again.
+     */
+    public function rateRenterSkip(Request $request, int $id)
+    {
+        $user = Auth::user();
+
+        $allowedStatuses = ['accepted', 'partially_accepted', 'completed_pending_rating', 'rated'];
+
+        try {
+            $supplyJob = SupplyJob::with('rentalJob')->findOrFail($id);
+
+            if ((int) $user->company_id !== (int) $supplyJob->provider_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Only the provider can skip rating the renter for this job.',
+                ], 403);
+            }
+
+            if (!in_array($supplyJob->status, $allowedStatuses)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This job is not in a state that allows rating the renter.',
+                ], 400);
+            }
+
+            RenterRating::updateOrCreate(
+                ['supply_job_id' => $supplyJob->id],
+                [
+                    'rating' => null,
+                    'comment' => null,
+                    'rated_at' => null,
+                    'skipped_at' => now(),
+                ]
+            );
 
             return response()->json([
                 'success' => true,
@@ -776,4 +946,22 @@ class SupplyJobController extends Controller
         }
     }
 
+    /**
+     * Return effective supply job status for display.
+     * "rated" is only shown when the renter has actually submitted a rating or skipped (job_rating has rated_at or skipped_at).
+     * Fixes inconsistency where status could be "rated" in DB but no rating was given.
+     */
+    private function effectiveSupplyJobStatus(string $status, ?JobRating $jobRating): string
+    {
+        if ($status !== 'rated') {
+            return $status;
+        }
+        if (!$jobRating) {
+            return 'completed_pending_rating';
+        }
+        if ($jobRating->rated_at || $jobRating->skipped_at) {
+            return 'rated';
+        }
+        return 'completed_pending_rating';
+    }
 }

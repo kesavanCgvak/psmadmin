@@ -717,7 +717,7 @@ class CompanyController extends Controller
             // ✅ Validate request
             $validated = $request->validate([
                 'products' => 'required|array|min:1',
-                'products.*.product_id' => 'required|integer|exists:products,id',
+                'products.*.product_id' => 'required|integer|exists:inventory_master,id',
                 'products.*.quantity' => 'required|numeric|min:1',
                 'city_id' => 'required|integer|exists:cities,id',
                 'country' => 'nullable|integer|exists:countries,id',
@@ -748,12 +748,12 @@ class CompanyController extends Controller
             // ✅ Main query with joins + geolocation (exclude admin-blocked companies)
             $query = Company::with(['defaultContactProfile'])
                 ->whereNull('blocked_by_admin_at')
-                ->join('equipments', function ($join) use ($productIds) {
-                    $join->on('companies.id', '=', 'equipments.company_id')
-                        ->whereIn('equipments.product_id', $productIds);
+                ->join('company_inventory', function ($join) use ($productIds) {
+                    $join->on('companies.id', '=', 'company_inventory.company_id')
+                        ->whereIn('company_inventory.product_id', $productIds);
                 })
-                ->join('products', 'products.id', '=', 'equipments.product_id')
-                ->leftJoin('brands', 'brands.id', '=', 'products.brand_id')
+                ->join('inventory_master', 'inventory_master.id', '=', 'company_inventory.product_id')
+                ->leftJoin('brands', 'brands.id', '=', 'inventory_master.brand_id')
                 ->join('currencies', 'currencies.id', '=', 'companies.currency_id')
                 ->leftJoin('rental_softwares', 'rental_softwares.id', '=', 'companies.rental_software_id')
                 // 🆕 Join city, state, and country tables for geolocation details
@@ -769,15 +769,15 @@ class CompanyController extends Controller
                     'companies.rating as company_rating',
                     'companies.default_contact_id',
                     'companies.city_id',
-                    'equipments.product_id',
-                    'equipments.quantity',
-                    // 'products.model as product_name',
+                    'company_inventory.product_id',
+                    'company_inventory.quantity',
+                    // 'inventory_master.model as product_name',
                     DB::raw("CONCAT(COALESCE(brands.name, ''),
                         CASE WHEN brands.name IS NOT NULL THEN ' - ' ELSE '' END,
-                        products.model) as product_name"),
-                    'products.psm_code',
-                    'equipments.price',
-                    'equipments.software_code',
+                        inventory_master.model) as product_name"),
+                    'inventory_master.psm_code',
+                    'company_inventory.price',
+                    'company_inventory.software_code',
                     'currencies.id as currency_id',
                     'currencies.name as currency_name',
                     'currencies.code as currency_code',
@@ -825,15 +825,59 @@ class CompanyController extends Controller
                 return response()->json(['message' => 'No companies found matching your filters.'], 200);
             }
 
+            // ✅ Company IDs for rating lookups
+            $companyIds = $results->pluck('company_id')->unique()->values();
+
+            // ✅ Average rating and count per company: job_ratings (renter→provider) then company_ratings fallback
+            $jobRatingsData = DB::table('job_ratings')
+                ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
+                ->whereIn('supply_jobs.provider_id', $companyIds)
+                ->whereNotNull('job_ratings.rated_at')
+                ->groupBy('supply_jobs.provider_id')
+                ->select(
+                    'supply_jobs.provider_id',
+                    DB::raw('AVG(job_ratings.rating) as avg_rating'),
+                    DB::raw('COUNT(job_ratings.id) as rating_count')
+                )
+                ->get()
+                ->keyBy('provider_id');
+            $jobRatingsAvg = $jobRatingsData->pluck('avg_rating', 'provider_id')->toArray();
+            $jobRatingsCount = $jobRatingsData->pluck('rating_count', 'provider_id')->toArray();
+
+            $companyRatingsData = DB::table('company_ratings')
+                ->whereIn('company_id', $companyIds)
+                ->groupBy('company_id')
+                ->select(
+                    'company_id',
+                    DB::raw('AVG(rating) as avg_rating'),
+                    DB::raw('COUNT(id) as rating_count')
+                )
+                ->get()
+                ->keyBy('company_id');
+            $companyRatingsAvg = $companyRatingsData->pluck('avg_rating', 'company_id')->toArray();
+            $companyRatingsCount = $companyRatingsData->pluck('rating_count', 'company_id')->toArray();
+
             // ✅ Group results by company
-            $companies = $results->groupBy('company_id')->map(function ($items) use ($requestedQuantities) {
+            $companies = $results->groupBy('company_id')->map(function ($items) use ($requestedQuantities, $jobRatingsAvg, $jobRatingsCount, $companyRatingsAvg, $companyRatingsCount) {
                 $first = $items->first();
+                $cid = $first->company_id;
+                $avgRating = 0;
+                $ratingCount = 0;
+                if (isset($jobRatingsAvg[$cid])) {
+                    $avgRating = round((float) $jobRatingsAvg[$cid], 1);
+                    $ratingCount = (int) ($jobRatingsCount[$cid] ?? 0);
+                } elseif (isset($companyRatingsAvg[$cid])) {
+                    $avgRating = round((float) $companyRatingsAvg[$cid], 1);
+                    $ratingCount = (int) ($companyRatingsCount[$cid] ?? 0);
+                }
 
                 return [
-                    'id' => $first->company_id,
+                    'id' => $cid,
                     'name' => $first->company_name,
                     'company_logo' => $first->company_logo,
                     'rating' => $first->company_rating,
+                    'average_rating' => $avgRating,
+                    'rating_count' => $ratingCount,
                     'rental_software_code' => $first->rental_software_code,
                     'distance' => round($first->distance, 2),
                     'location' => [ // 🆕 Added location block
@@ -924,11 +968,11 @@ class CompanyController extends Controller
             $query = Company::where('hide_from_gear_finder', 0)
                 ->whereNull('blocked_by_admin_at')
                 ->with(['defaultContactProfile'])
-                ->join('equipments', function ($join) use ($productIds) {
-                    $join->on('companies.id', '=', 'equipments.company_id')
-                        ->whereIn('equipments.product_id', $productIds);
+                ->join('company_inventory', function ($join) use ($productIds) {
+                    $join->on('companies.id', '=', 'company_inventory.company_id')
+                        ->whereIn('company_inventory.product_id', $productIds);
                 })
-                ->join('products', 'products.id', '=', 'equipments.product_id')
+                ->join('inventory_master', 'inventory_master.id', '=', 'company_inventory.product_id')
                 ->select(
                     'companies.id as company_id',
                     'companies.name as company_name',
@@ -936,10 +980,10 @@ class CompanyController extends Controller
                     'companies.longitude as company_lng',
                     'companies.rating as company_rating',
                     'companies.default_contact_id',
-                    'equipments.product_id',
-                    'products.model as product_name',
-                    'equipments.price',
-                    'equipments.software_code',
+                    'company_inventory.product_id',
+                    'inventory_master.model as product_name',
+                    'company_inventory.price',
+                    'company_inventory.software_code',
                     DB::raw("(
                     6371 * acos(
                         cos(radians($city_lat))

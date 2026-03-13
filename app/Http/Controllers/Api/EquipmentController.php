@@ -39,7 +39,7 @@ class EquipmentController extends Controller
         // 🔹 Validation
         // -------------------------------
         $validator = Validator::make($request->all(), [
-            'product_id' => 'required|exists:products,id',
+            'product_id' => 'required|exists:inventory_master,id',
             'quantity' => 'required|integer|min:1',
             'price' => 'required|numeric|min:0',
             'software_code' => 'nullable|string|max:255',

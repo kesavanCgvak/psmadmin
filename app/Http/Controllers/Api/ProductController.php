@@ -60,7 +60,7 @@ class ProductController extends Controller
         // Split into keywords for fallback search
         $keywords = array_filter(explode(' ', $searchTerm));
 
-        $products = DB::table('products as p')
+        $products = DB::table('inventory_master as p')
             ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
             ->leftJoin('categories as c', 'p.category_id', '=', 'c.id')
             ->leftJoin('sub_categories as sc', 'p.sub_category_id', '=', 'sc.id')
@@ -171,7 +171,7 @@ class ProductController extends Controller
 
         $search = '%' . $request->query('search') . '%';
 
-        $products = DB::table('products as p')
+        $products = DB::table('inventory_master as p')
             ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
             ->leftJoin('categories as c', 'p.category_id', '=', 'c.id')
             ->leftJoin('sub_categories as sc', 'p.sub_category_id', '=', 'sc.id')
@@ -372,10 +372,11 @@ class ProductController extends Controller
     private function tablesReferencingProduct()
     {
         return [
-            'equipments' => 'product_id',
+            'company_inventory' => 'product_id',
             'rental_job_products' => 'product_id',
             'supply_job_products' => 'product_id',
-            // Add more tables if required
+            'import_session_items' => 'selected_product_id',
+            'import_session_matches' => 'product_id',
         ];
     }
 
