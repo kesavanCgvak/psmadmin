@@ -16,7 +16,6 @@ use App\Models\User;
 use App\Models\CompanyRating;
 use App\Models\CompanyBlock;
 use App\Models\CompanyProviderBlock;
-use App\Models\JobRating;
 
 
 
@@ -717,7 +716,7 @@ class CompanyController extends Controller
             // ✅ Validate request
             $validated = $request->validate([
                 'products' => 'required|array|min:1',
-                'products.*.product_id' => 'required|integer|exists:inventory_master,id',
+                'products.*.product_id' => 'required|integer|exists:products,id',
                 'products.*.quantity' => 'required|numeric|min:1',
                 'city_id' => 'required|integer|exists:cities,id',
                 'country' => 'nullable|integer|exists:countries,id',
@@ -745,15 +744,14 @@ class CompanyController extends Controller
                 ->pluck('company_id')
                 ->toArray();
 
-            // ✅ Main query with joins + geolocation (exclude admin-blocked companies)
+            // ✅ Main query with joins + geolocation
             $query = Company::with(['defaultContactProfile'])
-                ->whereNull('blocked_by_admin_at')
-                ->join('company_inventory', function ($join) use ($productIds) {
-                    $join->on('companies.id', '=', 'company_inventory.company_id')
-                        ->whereIn('company_inventory.product_id', $productIds);
+                ->join('equipments', function ($join) use ($productIds) {
+                    $join->on('companies.id', '=', 'equipments.company_id')
+                        ->whereIn('equipments.product_id', $productIds);
                 })
-                ->join('inventory_master', 'inventory_master.id', '=', 'company_inventory.product_id')
-                ->leftJoin('brands', 'brands.id', '=', 'inventory_master.brand_id')
+                ->join('products', 'products.id', '=', 'equipments.product_id')
+                ->leftJoin('brands', 'brands.id', '=', 'products.brand_id')
                 ->join('currencies', 'currencies.id', '=', 'companies.currency_id')
                 ->leftJoin('rental_softwares', 'rental_softwares.id', '=', 'companies.rental_software_id')
                 // 🆕 Join city, state, and country tables for geolocation details
@@ -769,15 +767,15 @@ class CompanyController extends Controller
                     'companies.rating as company_rating',
                     'companies.default_contact_id',
                     'companies.city_id',
-                    'company_inventory.product_id',
-                    'company_inventory.quantity',
-                    // 'inventory_master.model as product_name',
+                    'equipments.product_id',
+                    'equipments.quantity',
+                    // 'products.model as product_name',
                     DB::raw("CONCAT(COALESCE(brands.name, ''),
                         CASE WHEN brands.name IS NOT NULL THEN ' - ' ELSE '' END,
-                        inventory_master.model) as product_name"),
-                    'inventory_master.psm_code',
-                    'company_inventory.rental_price',
-                    'company_inventory.software_code',
+                        products.model) as product_name"),
+                    'products.psm_code',
+                    'equipments.price',
+                    'equipments.software_code',
                     'currencies.id as currency_id',
                     'currencies.name as currency_name',
                     'currencies.code as currency_code',
@@ -816,7 +814,24 @@ class CompanyController extends Controller
             }
 
             // ✅ Distance or same-city fallback
-            $query->havingRaw('distance <= ? OR companies.city_id = ?', [$radius, $validated['city_id']])
+            // Note: city_id must be in WHERE (not HAVING) - MySQL disallows non-grouping fields in HAVING
+            $query->where(function ($q) use ($radius, $cityLat, $cityLng, $validated) {
+                $q->whereRaw('(
+                    COALESCE(
+                        6371 * acos(
+                            LEAST(
+                                1.0,
+                                cos(radians(?))
+                                * cos(radians(companies.latitude))
+                                * cos(radians(companies.longitude) - radians(?))
+                                + sin(radians(?))
+                                * sin(radians(companies.latitude))
+                            )
+                        ), 0
+                    )
+                ) <= ?', [$cityLat, $cityLng, $cityLat, $radius])
+                ->orWhere('companies.city_id', $validated['city_id']);
+            })
                 ->orderBy('distance');
 
             $results = $query->get();
@@ -825,59 +840,15 @@ class CompanyController extends Controller
                 return response()->json(['message' => 'No companies found matching your filters.'], 200);
             }
 
-            // ✅ Company IDs for rating lookups
-            $companyIds = $results->pluck('company_id')->unique()->values();
-
-            // ✅ Average rating and count per company: job_ratings (renter→provider) then company_ratings fallback
-            $jobRatingsData = DB::table('job_ratings')
-                ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
-                ->whereIn('supply_jobs.provider_id', $companyIds)
-                ->whereNotNull('job_ratings.rated_at')
-                ->groupBy('supply_jobs.provider_id')
-                ->select(
-                    'supply_jobs.provider_id',
-                    DB::raw('AVG(job_ratings.rating) as avg_rating'),
-                    DB::raw('COUNT(job_ratings.id) as rating_count')
-                )
-                ->get()
-                ->keyBy('provider_id');
-            $jobRatingsAvg = $jobRatingsData->pluck('avg_rating', 'provider_id')->toArray();
-            $jobRatingsCount = $jobRatingsData->pluck('rating_count', 'provider_id')->toArray();
-
-            $companyRatingsData = DB::table('company_ratings')
-                ->whereIn('company_id', $companyIds)
-                ->groupBy('company_id')
-                ->select(
-                    'company_id',
-                    DB::raw('AVG(rating) as avg_rating'),
-                    DB::raw('COUNT(id) as rating_count')
-                )
-                ->get()
-                ->keyBy('company_id');
-            $companyRatingsAvg = $companyRatingsData->pluck('avg_rating', 'company_id')->toArray();
-            $companyRatingsCount = $companyRatingsData->pluck('rating_count', 'company_id')->toArray();
-
             // ✅ Group results by company
-            $companies = $results->groupBy('company_id')->map(function ($items) use ($requestedQuantities, $jobRatingsAvg, $jobRatingsCount, $companyRatingsAvg, $companyRatingsCount) {
+            $companies = $results->groupBy('company_id')->map(function ($items) use ($requestedQuantities) {
                 $first = $items->first();
-                $cid = $first->company_id;
-                $avgRating = 0;
-                $ratingCount = 0;
-                if (isset($jobRatingsAvg[$cid])) {
-                    $avgRating = round((float) $jobRatingsAvg[$cid], 1);
-                    $ratingCount = (int) ($jobRatingsCount[$cid] ?? 0);
-                } elseif (isset($companyRatingsAvg[$cid])) {
-                    $avgRating = round((float) $companyRatingsAvg[$cid], 1);
-                    $ratingCount = (int) ($companyRatingsCount[$cid] ?? 0);
-                }
 
                 return [
-                    'id' => $cid,
+                    'id' => $first->company_id,
                     'name' => $first->company_name,
                     'company_logo' => $first->company_logo,
                     'rating' => $first->company_rating,
-                    'average_rating' => $avgRating,
-                    'rating_count' => $ratingCount,
                     'rental_software_code' => $first->rental_software_code,
                     'distance' => round($first->distance, 2),
                     'location' => [ // 🆕 Added location block
@@ -900,7 +871,7 @@ class CompanyController extends Controller
                             'product_name' => $item->product_name,
                             'requested_quantity' => (int) $requestedQty,
                             'available_quantity' => (int) $availableQty,
-                            'price' => number_format($item->rental_price, 2, '.', ''),
+                            'price' => number_format($item->price, 2, '.', ''),
                             'software_code' => $item->software_code,
                             'psm_code' => $item->psm_code,
                         ];
@@ -964,15 +935,14 @@ class CompanyController extends Controller
             // Support multiple product IDs
             $productIds = explode(',', $request->product_id);
 
-            // Main query with SQL-based distance calculation (exclude admin-blocked companies)
+            // Main query with SQL-based distance calculation
             $query = Company::where('hide_from_gear_finder', 0)
-                ->whereNull('blocked_by_admin_at')
                 ->with(['defaultContactProfile'])
-                ->join('company_inventory', function ($join) use ($productIds) {
-                    $join->on('companies.id', '=', 'company_inventory.company_id')
-                        ->whereIn('company_inventory.product_id', $productIds);
+                ->join('equipments', function ($join) use ($productIds) {
+                    $join->on('companies.id', '=', 'equipments.company_id')
+                        ->whereIn('equipments.product_id', $productIds);
                 })
-                ->join('inventory_master', 'inventory_master.id', '=', 'company_inventory.product_id')
+                ->join('products', 'products.id', '=', 'equipments.product_id')
                 ->select(
                     'companies.id as company_id',
                     'companies.name as company_name',
@@ -980,10 +950,10 @@ class CompanyController extends Controller
                     'companies.longitude as company_lng',
                     'companies.rating as company_rating',
                     'companies.default_contact_id',
-                    'company_inventory.product_id',
-                    'inventory_master.model as product_name',
-                    'company_inventory.rental_price',
-                    'company_inventory.software_code',
+                    'equipments.product_id',
+                    'products.model as product_name',
+                    'equipments.price',
+                    'equipments.software_code',
                     DB::raw("(
                     6371 * acos(
                         cos(radians($city_lat))
@@ -1019,7 +989,7 @@ class CompanyController extends Controller
                         return [
                             'product_id' => $item->product_id,
                             'product_name' => $item->product_name,
-                            'price' => number_format($item->rental_price, 2, '.', ''),
+                            'price' => number_format($item->price, 2, '.', ''),
                             'software_code' => $item->software_code,
                         ];
                     })->values(),
@@ -1078,83 +1048,14 @@ class CompanyController extends Controller
                 ], 401);
             }
 
-            // 2️⃣ Get all companies except user's company (exclude admin-blocked)
+            // 2️⃣ Get all companies except user's company
             $companies = Company::with(['country', 'state', 'city'])
+                ->withAvg('ratings', 'rating')
                 ->where('id', '!=', $user->company_id)
-                ->whereNull('blocked_by_admin_at')
                 ->get();
 
             // 3️⃣ Fetch all ratings for these companies (single query)
             $companyIds = $companies->pluck('id');
-
-            // Calculate average ratings and counts from job_ratings (new rating system)
-            // Join job_ratings -> supply_jobs -> companies where provider_id = company.id
-            $jobRatingsData = DB::table('job_ratings')
-                ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
-                ->whereIn('supply_jobs.provider_id', $companyIds)
-                ->whereNotNull('job_ratings.rated_at')
-                ->groupBy('supply_jobs.provider_id')
-                ->select(
-                    'supply_jobs.provider_id',
-                    DB::raw('AVG(job_ratings.rating) as avg_rating'),
-                    DB::raw('COUNT(job_ratings.id) as rating_count')
-                )
-                ->get()
-                ->keyBy('provider_id');
-
-            $jobRatingsAvg = $jobRatingsData->pluck('avg_rating', 'provider_id')->toArray();
-            $jobRatingsCount = $jobRatingsData->pluck('rating_count', 'provider_id')->toArray();
-
-            // Star breakdown from job_ratings (new system): count per provider_id and rating 1–5
-            $jobBreakdownRows = DB::table('job_ratings')
-                ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
-                ->whereIn('supply_jobs.provider_id', $companyIds)
-                ->whereNotNull('job_ratings.rated_at')
-                ->whereBetween('job_ratings.rating', [1, 5])
-                ->groupBy('supply_jobs.provider_id', 'job_ratings.rating')
-                ->select('supply_jobs.provider_id', 'job_ratings.rating', DB::raw('COUNT(job_ratings.id) as cnt'))
-                ->get();
-
-            $jobRatingsBreakdown = [];
-            foreach ($jobBreakdownRows as $row) {
-                $id = $row->provider_id;
-                if (!isset($jobRatingsBreakdown[$id])) {
-                    $jobRatingsBreakdown[$id] = ['1' => 0, '2' => 0, '3' => 0, '4' => 0, '5' => 0];
-                }
-                $jobRatingsBreakdown[$id][(string) $row->rating] = (int) $row->cnt;
-            }
-
-            // Calculate average ratings and counts from company_ratings (old manual rating system) as fallback
-            $companyRatingsData = DB::table('company_ratings')
-                ->whereIn('company_id', $companyIds)
-                ->groupBy('company_id')
-                ->select(
-                    'company_id',
-                    DB::raw('AVG(rating) as avg_rating'),
-                    DB::raw('COUNT(id) as rating_count')
-                )
-                ->get()
-                ->keyBy('company_id');
-
-            $companyRatingsAvg = $companyRatingsData->pluck('avg_rating', 'company_id')->toArray();
-            $companyRatingsCount = $companyRatingsData->pluck('rating_count', 'company_id')->toArray();
-
-            // Star breakdown from company_ratings (old system)
-            $companyBreakdownRows = DB::table('company_ratings')
-                ->whereIn('company_id', $companyIds)
-                ->whereBetween('rating', [1, 5])
-                ->groupBy('company_id', 'rating')
-                ->select('company_id', 'rating', DB::raw('COUNT(id) as cnt'))
-                ->get();
-
-            $companyRatingsBreakdown = [];
-            foreach ($companyBreakdownRows as $row) {
-                $id = $row->company_id;
-                if (!isset($companyRatingsBreakdown[$id])) {
-                    $companyRatingsBreakdown[$id] = ['1' => 0, '2' => 0, '3' => 0, '4' => 0, '5' => 0];
-                }
-                $companyRatingsBreakdown[$id][(string) $row->rating] = (int) $row->cnt;
-            }
 
             $userRatings = CompanyRating::whereIn('company_id', $companyIds)
                 ->where('user_id', $user->id)
@@ -1167,33 +1068,15 @@ class CompanyController extends Controller
                 ->toArray();
 
             // 5️⃣ Final response map (no queries inside)
-            $formatted = $companies->map(function ($company) use (
-                $jobRatingsAvg,
-                $jobRatingsCount,
-                $jobRatingsBreakdown,
-                $companyRatingsAvg,
-                $companyRatingsCount,
-                $companyRatingsBreakdown,
-                $userRatings,
-                $blockedCompanies
-            ) {
-                // Calculate average rating and count: prioritize job_ratings (new system) if available
-                $avgRating = 0;
-                $ratingCount = 0;
-                $ratingBreakdown = null;
-
-                if (isset($jobRatingsAvg[$company->id])) {
-                    $avgRating = $jobRatingsAvg[$company->id];
-                    $ratingCount = (int) ($jobRatingsCount[$company->id] ?? 0);
-                    $ratingBreakdown = $ratingCount > 0
-                        ? ($jobRatingsBreakdown[$company->id] ?? ['1' => 0, '2' => 0, '3' => 0, '4' => 0, '5' => 0])
-                        : null;
-                } elseif (isset($companyRatingsAvg[$company->id])) {
-                    $avgRating = $companyRatingsAvg[$company->id];
-                    $ratingCount = (int) ($companyRatingsCount[$company->id] ?? 0);
-                    $ratingBreakdown = $ratingCount > 0
-                        ? ($companyRatingsBreakdown[$company->id] ?? ['1' => 0, '2' => 0, '3' => 0, '4' => 0, '5' => 0])
-                        : null;
+            $formatted = $companies->map(function ($company) use ($userRatings, $blockedCompanies) {
+                // Calculate average rating: use company_ratings average if available, otherwise fall back to companies.rating
+                $avgRating = null;
+                if ($company->ratings_avg_rating !== null) {
+                    // Company has ratings in company_ratings table, use the average
+                    $avgRating = $company->ratings_avg_rating;
+                } else {
+                    // No ratings in company_ratings table, fall back to default rating from companies.rating
+                    $avgRating = $company->rating ?? 0;
                 }
 
                 return [
@@ -1206,11 +1089,8 @@ class CompanyController extends Controller
                     'state' => $company->state?->name ?? null,
                     'country' => $company->country?->name ?? null,
 
-                    // Ratings: average, count, and star breakdown for popup (progress bars)
+                    // Ratings: use company_ratings average if available, otherwise fall back to companies.rating
                     'average_rating' => round($avgRating, 1),
-                    'rating_count' => (int) $ratingCount,
-                    'rating_breakdown' => $ratingBreakdown,
-
                     'user_rating' => $userRatings[$company->id] ?? null,
 
                     // Block status
@@ -1292,141 +1172,6 @@ class CompanyController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Unable to update rating'
-            ], 500);
-        }
-    }
-
-    /**
-     * Get customer reviews for a company.
-     * Returns individual ratings with comments from job_ratings (new system) and company_ratings (old system).
-     */
-    public function getCompanyReviews($companyId)
-    {
-        try {
-            // Authenticate user
-            if (!$user = JWTAuth::parseToken()->authenticate()) {
-                Log::warning('Unauthorized access attempt in getCompanyReviews()');
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized user'
-                ], 401);
-            }
-
-            // Verify company exists
-            $company = Company::find($companyId);
-            if (!$company) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Company not found'
-                ], 404);
-            }
-
-            $reviews = [];
-
-            // 1️⃣ Get reviews from job_ratings (new system) - ratings from completed jobs
-            $jobRatings = DB::table('job_ratings')
-                ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
-                ->join('rental_jobs', 'job_ratings.rental_job_id', '=', 'rental_jobs.id')
-                ->join('users', 'rental_jobs.user_id', '=', 'users.id')
-                ->leftJoin('companies', 'users.company_id', '=', 'companies.id')
-                ->where('supply_jobs.provider_id', $companyId)
-                ->whereNotNull('job_ratings.rated_at')
-                ->whereNotNull('job_ratings.rating')
-                ->select(
-                    'job_ratings.id',
-                    'job_ratings.rating',
-                    'job_ratings.comment',
-                    'job_ratings.rated_at',
-                    'rental_jobs.name as job_name',
-                    'users.name as renter_name',
-                    'companies.name as renter_company_name',
-                    DB::raw("'job' as source")
-                )
-                ->orderBy('job_ratings.rated_at', 'desc')
-                ->get();
-
-            foreach ($jobRatings as $rating) {
-                $reviews[] = [
-                    'id' => $rating->id,
-                    'rating' => (int) $rating->rating,
-                    'comment' => $rating->comment,
-                    'rated_at' => $rating->rated_at ? date('c', strtotime($rating->rated_at)) : null,
-                    'renter_name' => $rating->renter_name,
-                    'renter_company_name' => $rating->renter_company_name,
-                    'job_name' => $rating->job_name,
-                    'source' => 'job',
-                ];
-            }
-
-            // 2️⃣ Get reviews from company_ratings (old manual rating system) as fallback
-            $companyRatings = DB::table('company_ratings')
-                ->join('users', 'company_ratings.user_id', '=', 'users.id')
-                ->leftJoin('companies', 'users.company_id', '=', 'companies.id')
-                ->where('company_ratings.company_id', $companyId)
-                ->select(
-                    'company_ratings.id',
-                    'company_ratings.rating',
-                    DB::raw('NULL as comment'),
-                    'company_ratings.created_at as rated_at',
-                    DB::raw('NULL as job_name'),
-                    'users.name as renter_name',
-                    'companies.name as renter_company_name',
-                    DB::raw("'manual' as source")
-                )
-                ->orderBy('company_ratings.created_at', 'desc')
-                ->get();
-
-            foreach ($companyRatings as $rating) {
-                // Only add if not already covered by job_ratings (avoid duplicates)
-                // Since company_ratings is old system, we'll include them but mark as manual
-                $reviews[] = [
-                    'id' => $rating->id,
-                    'rating' => (int) $rating->rating,
-                    'comment' => null,
-                    'rated_at' => $rating->rated_at ? date('c', strtotime($rating->rated_at)) : null,
-                    'renter_name' => $rating->renter_name,
-                    'renter_company_name' => $rating->renter_company_name,
-                    'job_name' => null,
-                    'source' => 'manual',
-                ];
-            }
-
-            // Sort all reviews by rated_at descending (most recent first)
-            usort($reviews, function ($a, $b) {
-                $timeA = $a['rated_at'] ? strtotime($a['rated_at']) : 0;
-                $timeB = $b['rated_at'] ? strtotime($b['rated_at']) : 0;
-                return $timeB - $timeA;
-            });
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'company_id' => (int) $companyId,
-                    'company_name' => $company->name,
-                    'reviews' => $reviews,
-                    'total_reviews' => count($reviews),
-                ]
-            ], 200);
-
-        } catch (\Tymon\JWTAuth\Exceptions\TokenInvalidException $e) {
-            Log::error('Invalid token in getCompanyReviews()', ['error' => $e->getMessage()]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid authentication token'
-            ], 401);
-
-        } catch (\Tymon\JWTAuth\Exceptions\TokenExpiredException $e) {
-            Log::error('Expired token in getCompanyReviews()', ['error' => $e->getMessage()]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Token has expired'
-            ], 401);
-
-        } catch (\Exception $e) {
-            Log::error('Error fetching company reviews', ['error' => $e->getMessage(), 'company_id' => $companyId]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Unable to fetch reviews. Please try again later.'
             ], 500);
         }
     }
