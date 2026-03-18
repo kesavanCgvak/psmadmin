@@ -39,7 +39,7 @@ class ValidationException extends Exception
     /**
      * The path the client should be redirected to.
      *
-     * @var string|null
+     * @var string
      */
     public $redirectTo;
 

@@ -11,7 +11,6 @@ use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\ConnectionResolverInterface as Resolver;
 use Illuminate\Database\Events\MigrationEnded;
 use Illuminate\Database\Events\MigrationsEnded;
-use Illuminate\Database\Events\MigrationSkipped;
 use Illuminate\Database\Events\MigrationsStarted;
 use Illuminate\Database\Events\MigrationStarted;
 use Illuminate\Database\Events\NoPendingMigrations;
@@ -55,7 +54,7 @@ class Migrator
     /**
      * The custom connection resolver callback.
      *
-     * @var (\Closure(\Illuminate\Database\ConnectionResolverInterface, ?string): \Illuminate\Database\Connection)|null
+     * @var \Closure|null
      */
     protected static $connectionResolverCallback;
 
@@ -246,8 +245,6 @@ class Migrator
             : true;
 
         if (! $shouldRunMigration) {
-            $this->fireMigrationEvent(new MigrationSkipped($name));
-
             $this->write(Task::class, $name, fn () => MigrationResult::Skipped->value);
         } else {
             $this->write(Task::class, $name, fn () => $this->runMigration($migration, 'up'));
@@ -290,7 +287,7 @@ class Migrator
      * Get the migrations for a rollback operation.
      *
      * @param  array<string, mixed>  $options
-     * @return array{id: int, migration: string, batch: int}[]
+     * @return array
      */
     protected function getMigrationsForRollback(array $options)
     {
@@ -655,10 +652,8 @@ class Migrator
     /**
      * Execute the given callback using the given connection as the default connection.
      *
-     * @template TReturn
-     *
      * @param  string  $name
-     * @param  (callable(): TReturn)  $callback
+     * @param  callable  $callback
      * @return mixed
      */
     public function usingConnection($name, callable $callback)
@@ -713,7 +708,7 @@ class Migrator
     /**
      * Set a connection resolver callback.
      *
-     * @param  \Closure(\Illuminate\Database\ConnectionResolverInterface, ?string): \Illuminate\Database\Connection  $callback
+     * @param  \Closure  $callback
      * @return void
      */
     public static function resolveConnectionsUsing(Closure $callback)

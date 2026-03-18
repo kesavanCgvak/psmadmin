@@ -13,19 +13,19 @@ use Illuminate\Contracts\Container\CircularDependencyException;
 use Illuminate\Contracts\Container\Container as ContainerContract;
 use Illuminate\Contracts\Container\ContextualAttribute;
 use Illuminate\Contracts\Container\SelfBuilding;
-use Illuminate\Support\Traits\ReflectsClosures;
+use Illuminate\Support\Collection;
 use LogicException;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionFunction;
+use ReflectionIntersectionType;
 use ReflectionParameter;
+use ReflectionUnionType;
 use TypeError;
 
 class Container implements ArrayAccess, ContainerContract
 {
-    use ReflectsClosures;
-
     /**
      * The current globally available container (if any).
      *
@@ -221,6 +221,8 @@ class Container implements ArrayAccess, ContainerContract
     /**
      * Define a contextual binding based on an attribute.
      *
+     * @param  string  $attribute
+     * @param  \Closure  $handler
      * @return void
      */
     public function whenHasAttribute(string $attribute, Closure $handler)
@@ -243,6 +245,8 @@ class Container implements ArrayAccess, ContainerContract
 
     /**
      * {@inheritdoc}
+     *
+     * @return bool
      */
     public function has(string $id): bool
     {
@@ -565,9 +569,39 @@ class Container implements ArrayAccess, ContainerContract
     }
 
     /**
+     * Get the class names / types of the return type of the given Closure.
+     *
+     * @param  \Closure  $closure
+     * @return list<class-string>
+     *
+     * @throws \ReflectionException
+     */
+    protected function closureReturnTypes(Closure $closure)
+    {
+        $reflection = new ReflectionFunction($closure);
+
+        if ($reflection->getReturnType() === null ||
+            $reflection->getReturnType() instanceof ReflectionIntersectionType) {
+            return [];
+        }
+
+        $types = $reflection->getReturnType() instanceof ReflectionUnionType
+            ? $reflection->getReturnType()->getTypes()
+            : [$reflection->getReturnType()];
+
+        return (new Collection($types))
+            ->reject(fn ($type) => $type->isBuiltin())
+            ->reject(fn ($type) => in_array($type->getName(), ['static', 'self']))
+            ->map(fn ($type) => $type->getName())
+            ->values()
+            ->all();
+    }
+
+    /**
      * "Extend" an abstract type in the container.
      *
      * @param  string  $abstract
+     * @param  \Closure  $closure
      * @return void
      *
      * @throws \InvalidArgumentException
@@ -706,6 +740,7 @@ class Container implements ArrayAccess, ContainerContract
      * Bind a new callback to an abstract's rebind event.
      *
      * @param  string  $abstract
+     * @param  \Closure  $callback
      * @return mixed
      */
     public function rebinding($abstract, Closure $callback)
@@ -765,6 +800,8 @@ class Container implements ArrayAccess, ContainerContract
     /**
      * Wrap the given closure such that its dependencies will be injected when executed.
      *
+     * @param  \Closure  $callback
+     * @param  array  $parameters
      * @return \Closure
      */
     public function wrap(Closure $callback, array $parameters = [])
@@ -840,6 +877,7 @@ class Container implements ArrayAccess, ContainerContract
      * @template TClass of object
      *
      * @param  string|class-string<TClass>|callable  $abstract
+     * @param  array  $parameters
      * @return ($abstract is class-string<TClass> ? TClass : mixed)
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
@@ -855,6 +893,7 @@ class Container implements ArrayAccess, ContainerContract
      * @template TClass of object
      *
      * @param  string|class-string<TClass>  $abstract
+     * @param  array  $parameters
      * @return ($abstract is class-string<TClass> ? TClass : mixed)
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
@@ -1160,12 +1199,16 @@ class Container implements ArrayAccess, ContainerContract
         // new instance of this class, injecting the created dependencies in.
         try {
             $instances = $this->resolveDependencies($dependencies);
-        } finally {
+        } catch (BindingResolutionException $e) {
             array_pop($this->buildStack);
+
+            throw $e;
         }
 
+        array_pop($this->buildStack);
+
         $this->fireAfterResolvingAttributeCallbacks(
-            $reflector->getAttributes(), $instance = new $concrete(...$instances)
+            $reflector->getAttributes(), $instance = $reflector->newInstanceArgs($instances)
         );
 
         return $instance;
@@ -1174,9 +1217,7 @@ class Container implements ArrayAccess, ContainerContract
     /**
      * Instantiate a concrete instance of the given self building type.
      *
-     * @template TClass of object
-     *
-     * @param  object{'newInstance': \Closure(static, array): TClass|class-string<TClass>}  $concrete
+     * @param  \Closure(static, array): TClass|class-string<TClass>  $concrete
      * @param  \ReflectionClass  $reflector
      * @return TClass
      *
@@ -1232,9 +1273,9 @@ class Container implements ArrayAccess, ContainerContract
             // If the class is null, it means the dependency is a string or some other
             // primitive type which we can not resolve since it is not a class and
             // we will just bomb out with an error since we have no-where to go.
-            $result ??= is_null($className = Util::getParameterClassName($dependency))
+            $result ??= is_null(Util::getParameterClassName($dependency))
                 ? $this->resolvePrimitive($dependency)
-                : $this->resolveClass($dependency, $className);
+                : $this->resolveClass($dependency);
 
             $this->fireAfterResolvingAttributeCallbacks($dependency->getAttributes(), $result);
 
@@ -1285,6 +1326,7 @@ class Container implements ArrayAccess, ContainerContract
     /**
      * Resolve a non-class hinted primitive dependency.
      *
+     * @param  \ReflectionParameter  $parameter
      * @return mixed
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
@@ -1313,13 +1355,14 @@ class Container implements ArrayAccess, ContainerContract
     /**
      * Resolve a class based dependency from the container.
      *
+     * @param  \ReflectionParameter  $parameter
      * @return mixed
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
-    protected function resolveClass(ReflectionParameter $parameter, ?string $className = null)
+    protected function resolveClass(ReflectionParameter $parameter)
     {
-        $className ??= Util::getParameterClassName($parameter);
+        $className = Util::getParameterClassName($parameter);
 
         // First we will check if a default value has been defined for the parameter.
         // If it has, and no explicit binding exists, we should return it to avoid
@@ -1353,6 +1396,7 @@ class Container implements ArrayAccess, ContainerContract
     /**
      * Resolve a class based variadic dependency from the container.
      *
+     * @param  \ReflectionParameter  $parameter
      * @return mixed
      */
     protected function resolveVariadicClass(ReflectionParameter $parameter)
@@ -1371,6 +1415,7 @@ class Container implements ArrayAccess, ContainerContract
     /**
      * Resolve a dependency based on an attribute.
      *
+     * @param  \ReflectionAttribute  $attribute
      * @return mixed
      */
     public function resolveFromAttribute(ReflectionAttribute $attribute)
@@ -1414,6 +1459,7 @@ class Container implements ArrayAccess, ContainerContract
     /**
      * Throw an exception for an unresolvable primitive.
      *
+     * @param  \ReflectionParameter  $parameter
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
@@ -1429,6 +1475,7 @@ class Container implements ArrayAccess, ContainerContract
      * Register a new before resolving callback for all types.
      *
      * @param  \Closure|string  $abstract
+     * @param  \Closure|null  $callback
      * @return void
      */
     public function beforeResolving($abstract, ?Closure $callback = null)
@@ -1448,6 +1495,7 @@ class Container implements ArrayAccess, ContainerContract
      * Register a new resolving callback.
      *
      * @param  \Closure|string  $abstract
+     * @param  \Closure|null  $callback
      * @return void
      */
     public function resolving($abstract, ?Closure $callback = null)
@@ -1467,6 +1515,7 @@ class Container implements ArrayAccess, ContainerContract
      * Register a new after resolving callback for all types.
      *
      * @param  \Closure|string  $abstract
+     * @param  \Closure|null  $callback
      * @return void
      */
     public function afterResolving($abstract, ?Closure $callback = null)
@@ -1485,6 +1534,8 @@ class Container implements ArrayAccess, ContainerContract
     /**
      * Register a new after resolving attribute callback for all types.
      *
+     * @param  string  $attribute
+     * @param  \Closure  $callback
      * @return void
      */
     public function afterResolvingAttribute(string $attribute, \Closure $callback)
@@ -1515,6 +1566,7 @@ class Container implements ArrayAccess, ContainerContract
      *
      * @param  string  $abstract
      * @param  array  $parameters
+     * @param  array  $callbacks
      * @return void
      */
     protected function fireBeforeCallbackArray($abstract, $parameters, array $callbacks)
@@ -1591,6 +1643,7 @@ class Container implements ArrayAccess, ContainerContract
      *
      * @param  string  $abstract
      * @param  object  $object
+     * @param  array  $callbacksPerType
      * @return array
      */
     protected function getCallbacksForType($abstract, $object, array $callbacksPerType)
@@ -1610,6 +1663,7 @@ class Container implements ArrayAccess, ContainerContract
      * Fire an array of callbacks with an object.
      *
      * @param  mixed  $object
+     * @param  array  $callbacks
      * @return void
      */
     protected function fireCallbackArray($object, array $callbacks)
@@ -1714,13 +1768,7 @@ class Container implements ArrayAccess, ContainerContract
     public function forgetScopedInstances()
     {
         foreach ($this->scopedInstances as $scoped) {
-            if ($scoped instanceof Closure) {
-                foreach ($this->closureReturnTypes($scoped) as $type) {
-                    unset($this->instances[$type]);
-                }
-            } else {
-                unset($this->instances[$scoped]);
-            }
+            unset($this->instances[$scoped]);
         }
     }
 
@@ -1778,6 +1826,7 @@ class Container implements ArrayAccess, ContainerContract
     /**
      * Set the shared instance of the container.
      *
+     * @param  \Illuminate\Contracts\Container\Container|null  $container
      * @return \Illuminate\Contracts\Container\Container|static
      */
     public static function setInstance(?ContainerContract $container = null)
@@ -1789,6 +1838,7 @@ class Container implements ArrayAccess, ContainerContract
      * Determine if a given offset exists.
      *
      * @param  string  $key
+     * @return bool
      */
     public function offsetExists($key): bool
     {
@@ -1799,6 +1849,7 @@ class Container implements ArrayAccess, ContainerContract
      * Get the value at a given offset.
      *
      * @param  string  $key
+     * @return mixed
      */
     public function offsetGet($key): mixed
     {
@@ -1810,6 +1861,7 @@ class Container implements ArrayAccess, ContainerContract
      *
      * @param  string  $key
      * @param  mixed  $value
+     * @return void
      */
     public function offsetSet($key, $value): void
     {
@@ -1820,6 +1872,7 @@ class Container implements ArrayAccess, ContainerContract
      * Unset the value at a given offset.
      *
      * @param  string  $key
+     * @return void
      */
     public function offsetUnset($key): void
     {

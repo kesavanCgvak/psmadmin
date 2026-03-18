@@ -3,7 +3,7 @@
 /*
  * This file is part of Psy Shell.
  *
- * (c) 2012-2026 Justin Hileman
+ * (c) 2012-2023 Justin Hileman
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -11,7 +11,7 @@
 
 namespace Psy\Command;
 
-use Psy\Output\ShellOutputAdapter;
+use Psy\Output\ShellOutput;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -26,7 +26,7 @@ class BufferCommand extends Command
     /**
      * {@inheritdoc}
      */
-    protected function configure(): void
+    protected function configure()
     {
         $this
             ->setName('buffer')
@@ -52,14 +52,13 @@ HELP
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $shell = $this->getShell();
-        $shellOutput = $this->shellOutput($output);
 
         $buf = $shell->getCodeBuffer();
         if ($input->getOption('clear')) {
             $shell->resetCodeBuffer();
-            $shellOutput->writeln($this->formatLines($buf, 'urgent'), ShellOutputAdapter::NUMBER_LINES);
+            $output->writeln($this->formatLines($buf, 'urgent'), ShellOutput::NUMBER_LINES);
         } else {
-            $shellOutput->writeln($this->formatLines($buf), ShellOutputAdapter::NUMBER_LINES);
+            $output->writeln($this->formatLines($buf), ShellOutput::NUMBER_LINES);
         }
 
         return 0;
@@ -77,6 +76,8 @@ HELP
     {
         $template = \sprintf('<%s>%%s</%s>', $type, $type);
 
-        return \array_map(fn ($line) => \sprintf($template, $line), $lines);
+        return \array_map(function ($line) use ($template) {
+            return \sprintf($template, $line);
+        }, $lines);
     }
 }

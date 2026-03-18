@@ -3,9 +3,9 @@
 namespace Stripe\Util;
 
 /**
- * @phpstan-type RequestOptionsArray array{api_key?: string, idempotency_key?: string, stripe_account?: string, stripe_context?: string|\Stripe\StripeContext, stripe_version?: string, api_base?: string, max_network_retries?: int, headers?: Array }
+ * @phpstan-type RequestOptionsArray array{api_key?: string, idempotency_key?: string, stripe_account?: string, stripe_context?: string|\Stripe\StripeContext, stripe_version?: string, api_base?: string, max_network_retries?: int }
  *
- * @psalm-type RequestOptionsArray = array{api_key?: string, idempotency_key?: string, stripe_account?: string, stripe_context?: string|\Stripe\StripeContext, stripe_version?: string, api_base?: string, max_network_retries?: int, headers?: Array }
+ * @psalm-type RequestOptionsArray = array{api_key?: string, idempotency_key?: string, stripe_account?: string, stripe_context?: string|\Stripe\StripeContext, stripe_version?: string, api_base?: string, max_network_retries?: int }
  */
 class RequestOptions
 {
@@ -173,10 +173,6 @@ class RequestOptions
             if (\array_key_exists('api_base', $options)) {
                 $base = $options['api_base'];
                 unset($options['api_base']);
-            }
-            if (\array_key_exists('headers', $options)) {
-                $headers = \array_merge($headers, $options['headers']);
-                unset($options['headers']);
             }
 
             if ($strict && !empty($options)) {

@@ -303,12 +303,6 @@ class ApplicationBuilder
             }
         });
 
-        $this->app->afterResolving(ConsoleKernel::class, function () use ($callback) {
-            if (! is_null($callback)) {
-                $callback(new Middleware);
-            }
-        });
-
         return $this;
     }
 
@@ -369,7 +363,7 @@ class ApplicationBuilder
     /**
      * Register and configure the application's exception handler.
      *
-     * @param  callable(\Illuminate\Foundation\Configuration\Exceptions)|null  $using
+     * @param  callable|null  $using
      * @return $this
      */
     public function withExceptions(?callable $using = null)
@@ -379,12 +373,12 @@ class ApplicationBuilder
             \Illuminate\Foundation\Exceptions\Handler::class
         );
 
-        if ($using !== null) {
-            $this->app->afterResolving(
-                \Illuminate\Foundation\Exceptions\Handler::class,
-                fn ($handler) => $using(new Exceptions($handler)),
-            );
-        }
+        $using ??= fn () => true;
+
+        $this->app->afterResolving(
+            \Illuminate\Foundation\Exceptions\Handler::class,
+            fn ($handler) => $using(new Exceptions($handler)),
+        );
 
         return $this;
     }

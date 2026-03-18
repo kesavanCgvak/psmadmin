@@ -29,7 +29,7 @@ class ViewCacheCommand extends Command
     /**
      * Execute the console command.
      *
-     * @return void
+     * @return mixed
      */
     public function handle()
     {
@@ -101,12 +101,8 @@ class ViewCacheCommand extends Command
     {
         $finder = $this->laravel['view']->getFinder();
 
-        $paths = (new Collection($finder->getPaths()))->merge(
+        return (new Collection($finder->getPaths()))->merge(
             (new Collection($finder->getHints()))->flatten()
-        )->unique();
-
-        return $paths->reject(fn ($path) => $paths->contains(function ($existing) use ($path) {
-            return $existing !== $path && str_starts_with(realpath($path) ?: $path, realpath($existing) ?: $existing);
-        }))->values();
+        );
     }
 }

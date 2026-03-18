@@ -55,14 +55,20 @@ use Symfony\Component\Process\PhpExecutableFinder;
  */
 final class ProcessFactory
 {
+    private InputInterface $input;
+
+    public function __construct(InputInterface $input)
+    {
+        $this->input = $input;
+    }
+
     public function create(
         LoopInterface $loop,
-        InputInterface $input,
         RunnerConfig $runnerConfig,
         ProcessIdentifier $identifier,
         int $serverPort
     ): Process {
-        $commandArgs = $this->getCommandArgs($serverPort, $identifier, $input, $runnerConfig);
+        $commandArgs = $this->getCommandArgs($serverPort, $identifier, $runnerConfig);
 
         return new Process(
             implode(' ', $commandArgs),
@@ -76,7 +82,7 @@ final class ProcessFactory
      *
      * @return list<string>
      */
-    public function getCommandArgs(int $serverPort, ProcessIdentifier $identifier, InputInterface $input, RunnerConfig $runnerConfig): array
+    public function getCommandArgs(int $serverPort, ProcessIdentifier $identifier, RunnerConfig $runnerConfig): array
     {
         $phpBinary = (new PhpExecutableFinder)->find(false);
 
@@ -87,29 +93,29 @@ final class ProcessFactory
         $mainScript = $_SERVER['argv'][0];
 
         $commandArgs = [
-            ProcessUtils::escapeArgument($phpBinary),
-            ProcessUtils::escapeArgument($mainScript),
+            escapeshellarg($phpBinary),
+            escapeshellarg($mainScript),
             'worker',
             '--port',
             (string) $serverPort,
             '--identifier',
-            ProcessUtils::escapeArgument($identifier->toString()),
+            escapeshellarg($identifier->toString()),
         ];
 
         if ($runnerConfig->isDryRun()) {
             $commandArgs[] = '--dry-run';
         }
 
-        if (filter_var($input->getOption('diff'), FILTER_VALIDATE_BOOLEAN)) {
+        if (filter_var($this->input->getOption('diff'), FILTER_VALIDATE_BOOLEAN)) {
             $commandArgs[] = '--diff';
         }
 
-        if (filter_var($input->getOption('stop-on-violation'), FILTER_VALIDATE_BOOLEAN)) {
+        if (filter_var($this->input->getOption('stop-on-violation'), FILTER_VALIDATE_BOOLEAN)) {
             $commandArgs[] = '--stop-on-violation';
         }
 
         foreach (['allow-risky', 'config', 'rules', 'using-cache', 'cache-file'] as $option) {
-            $optionValue = $input->getOption($option);
+            $optionValue = $this->input->getOption($option);
 
             if ($optionValue !== null) {
                 $commandArgs[] = "--{$option}";

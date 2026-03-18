@@ -23,7 +23,7 @@ class ResourceCollection extends JsonResource implements Countable, IteratorAggr
     /**
      * The mapped collection instance.
      *
-     * @var \Illuminate\Support\Collection|null
+     * @var \Illuminate\Support\Collection
      */
     public $collection;
 
@@ -96,13 +96,8 @@ class ResourceCollection extends JsonResource implements Countable, IteratorAggr
      * @param  \Illuminate\Http\Request  $request
      * @return array|\Illuminate\Contracts\Support\Arrayable|\JsonSerializable
      */
-    #[\Override]
     public function toArray(Request $request)
     {
-        if ($this->collection->first() instanceof JsonResource) {
-            return $this->collection->map->resolve($request)->all();
-        }
-
         return $this->collection->map->toArray($request)->all();
     }
 

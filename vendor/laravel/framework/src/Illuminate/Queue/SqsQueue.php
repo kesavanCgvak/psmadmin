@@ -163,7 +163,7 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
             $queue,
             null,
             function ($payload, $queue) use ($job) {
-                return $this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue, $payload));
+                return $this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue));
             }
         );
     }
@@ -200,7 +200,10 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
             $queue,
             $delay,
             function ($payload, $queue, $delay) use ($job) {
-                return $this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue, $payload, $delay));
+                return $this->pushRaw($payload, $queue, [
+                    'DelaySeconds' => $this->secondsUntil($delay),
+                    ...$this->getQueueableOptions($job, $queue),
+                ]);
             }
         );
     }
@@ -210,61 +213,27 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
      *
      * @param  mixed  $job
      * @param  string|null  $queue
-     * @param  string  $payload
-     * @param  \DateTimeInterface|\DateInterval|int|null  $delay
-     * @return array{DelaySeconds?: int, MessageGroupId?: string, MessageDeduplicationId?: string}
+     * @return array{MessageGroupId?: string, MessageDeduplicationId?: string}
      */
-    public function getQueueableOptions($job, $queue, $payload, $delay = null): array
+    protected function getQueueableOptions($job, $queue): array
     {
-        // Make sure we have a queue name to properly determine if it's a FIFO queue...
-        $queue ??= $this->default;
-
-        $isObject = is_object($job);
-        $isFifo = str_ends_with((string) $queue, '.fifo');
-
-        $options = [];
-
-        // DelaySeconds cannot be used with FIFO queues. AWS will return an error...
-        if (! empty($delay) && ! $isFifo) {
-            $options['DelaySeconds'] = $this->secondsUntil($delay);
+        if (! is_object($job) || ! str_ends_with((string) $queue, '.fifo')) {
+            return [];
         }
 
-        // If the job is a string job on a standard queue, there are no more options...
-        if (! $isObject && ! $isFifo) {
-            return $options;
-        }
+        $transformToString = fn ($value) => strval($value);
 
-        $transformToString = fn ($value) => (string) $value;
+        $messageGroupId = transform($job->messageGroup ?? null, $transformToString);
 
-        // The message group ID is required for FIFO queues and is optional for
-        // standard queues. Job objects contain a group ID. With string jobs
-        // sent to FIFO queues, assign these to the same message group ID.
-        $messageGroupId = null;
+        $messageDeduplicationId = match (true) {
+            method_exists($job, 'deduplicationId') => transform($job->deduplicationId(), $transformToString),
+            default => (string) Str::orderedUuid(),
+        };
 
-        if ($isObject) {
-            $messageGroupId = transform($job->messageGroup ?? (method_exists($job, 'messageGroup') ? $job->messageGroup() : null), $transformToString);
-        } elseif ($isFifo) {
-            $messageGroupId = transform($queue, $transformToString);
-        }
-
-        $options['MessageGroupId'] = $messageGroupId;
-
-        // The message deduplication ID is only valid for FIFO queues. Every job
-        // without the method will be considered unique. To use content-based
-        // deduplication enable it in AWS and have the method return empty.
-        $messageDeduplicationId = null;
-
-        if ($isFifo) {
-            $messageDeduplicationId = match (true) {
-                $isObject && isset($job->deduplicator) && is_callable($job->deduplicator) => transform(call_user_func($job->deduplicator, $payload, $queue), $transformToString),
-                $isObject && method_exists($job, 'deduplicationId') => transform($job->deduplicationId($payload, $queue), $transformToString),
-                default => (string) Str::orderedUuid(),
-            };
-        }
-
-        $options['MessageDeduplicationId'] = $messageDeduplicationId;
-
-        return array_filter($options);
+        return array_filter([
+            'MessageGroupId' => $messageGroupId,
+            'MessageDeduplicationId' => $messageDeduplicationId,
+        ]);
     }
 
     /**

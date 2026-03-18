@@ -20,11 +20,6 @@ class StringType extends Type
     protected ?string $pattern = null;
 
     /**
-     * The format of the string.
-     */
-    protected ?string $format = null;
-
-    /**
      * Set the minimum length (inclusive).
      */
     public function min(int $value): static
@@ -50,18 +45,6 @@ class StringType extends Type
     public function pattern(string $value): static
     {
         $this->pattern = $value;
-
-        return $this;
-    }
-
-    /**
-     * Set the format of the string.
-     *
-     * {@link https://json-schema.org/understanding-json-schema/reference/type#built-in-formats}
-     */
-    public function format(string $value): static
-    {
-        $this->format = $value;
 
         return $this;
     }

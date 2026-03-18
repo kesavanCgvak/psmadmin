@@ -187,7 +187,7 @@ class PruneCommand extends Command
      * @param  string  $model
      * @return bool
      */
-    protected function isPrunable(string $model)
+    private function isPrunable(string $model)
     {
         return class_exists($model)
             && is_a($model, Model::class, true)

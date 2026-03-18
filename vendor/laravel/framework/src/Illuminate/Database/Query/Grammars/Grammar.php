@@ -328,18 +328,6 @@ class Grammar extends BaseGrammar
     }
 
     /**
-     * Compile a "where null safe equals" clause.
-     *
-     * @param  \Illuminate\Database\Query\Builder  $query
-     * @param  array  $where
-     * @return string
-     */
-    protected function whereNullSafeEquals(Builder $query, $where)
-    {
-        return $this->wrap($where['column']).' is not distinct from '.$this->parameter($where['value']);
-    }
-
-    /**
      * Compile a "where in" clause.
      *
      * @param  \Illuminate\Database\Query\Builder  $query
@@ -999,36 +987,9 @@ class Grammar extends BaseGrammar
      */
     protected function compileOrdersToArray(Builder $query, $orders)
     {
-        return array_map(function ($order) use ($query) {
-            if (isset($order['sql']) && $order['sql'] instanceof Expression) {
-                return $order['sql']->getValue($query->getGrammar());
-            }
-
-            if (isset($order['type']) && $order['type'] === 'InOrderOf') {
-                return $this->compileInOrderOf($order);
-            }
-
+        return array_map(function ($order) {
             return $order['sql'] ?? $this->wrap($order['column']).' '.$order['direction'];
         }, $orders);
-    }
-
-    /**
-     * Compile an "in order of" clause.
-     *
-     * @param  array  $order
-     * @return string
-     */
-    protected function compileInOrderOf($order)
-    {
-        $column = $this->wrap($order['column']);
-
-        $cases = [];
-
-        foreach (array_values($order['values']) as $index => $value) {
-            $cases[] = 'when '.$column.' = '.$this->parameter($value).' then '.$index;
-        }
-
-        return 'case '.implode(' ', $cases).' else '.count($order['values']).' end';
     }
 
     /**

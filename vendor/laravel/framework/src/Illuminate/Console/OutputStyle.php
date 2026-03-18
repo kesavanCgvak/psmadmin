@@ -128,7 +128,7 @@ class OutputStyle extends SymfonyStyle implements NewLineAware
     /*
      * Count the number of trailing new lines in a string.
      *
-     * @param  string|iterable<string>  $messages
+     * @param  string|iterable  $messages
      * @return int
      */
     protected function trailingNewLineCount($messages)

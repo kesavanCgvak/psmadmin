@@ -102,7 +102,7 @@ class MailFake implements Factory, Fake, Mailer, MailQueue
      * @param  int  $times
      * @return void
      */
-    public function assertSentTimes($mailable, $times = 1)
+    protected function assertSentTimes($mailable, $times = 1)
     {
         $count = $this->sent($mailable)->count();
 

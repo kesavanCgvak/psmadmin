@@ -223,18 +223,6 @@ class Stringable implements JsonSerializable, ArrayAccess, BaseStringable
     }
 
     /**
-     * Determine if a given string doesn't contain a given substring.
-     *
-     * @param  string|iterable<string>  $needles
-     * @param  bool  $ignoreCase
-     * @return bool
-     */
-    public function doesntContain($needles, $ignoreCase = false)
-    {
-        return Str::doesntContain($this->value, $needles, $ignoreCase);
-    }
-
-    /**
      * Convert the case of a string.
      *
      * @param  int  $mode
@@ -249,12 +237,12 @@ class Stringable implements JsonSerializable, ArrayAccess, BaseStringable
     /**
      * Replace consecutive instances of a given character with a single character.
      *
-     * @param  array<string>|string  $characters
+     * @param  string  $character
      * @return static
      */
-    public function deduplicate(array|string $characters = ' ')
+    public function deduplicate(string $character = ' ')
     {
-        return new static(Str::deduplicate($this->value, $characters));
+        return new static(Str::deduplicate($this->value, $character));
     }
 
     /**
@@ -892,16 +880,6 @@ class Stringable implements JsonSerializable, ArrayAccess, BaseStringable
     }
 
     /**
-     * Convert the given string to only its initials.
-     *
-     * @return static
-     */
-    public function initials()
-    {
-        return new static(Str::initials($this->value));
-    }
-
-    /**
      * Convert the given string to APA-style title case.
      *
      * @return static
@@ -1067,7 +1045,7 @@ class Stringable implements JsonSerializable, ArrayAccess, BaseStringable
     /**
      * Trim the string of the given characters.
      *
-     * @param  string|null  $characters
+     * @param  string  $characters
      * @return static
      */
     public function trim($characters = null)
@@ -1078,7 +1056,7 @@ class Stringable implements JsonSerializable, ArrayAccess, BaseStringable
     /**
      * Left trim the string of the given characters.
      *
-     * @param  string|null  $characters
+     * @param  string  $characters
      * @return static
      */
     public function ltrim($characters = null)
@@ -1089,7 +1067,7 @@ class Stringable implements JsonSerializable, ArrayAccess, BaseStringable
     /**
      * Right trim the string of the given characters.
      *
-     * @param  string|null  $characters
+     * @param  string  $characters
      * @return static
      */
     public function rtrim($characters = null)
@@ -1115,17 +1093,6 @@ class Stringable implements JsonSerializable, ArrayAccess, BaseStringable
     public function ucfirst()
     {
         return new static(Str::ucfirst($this->value));
-    }
-
-    /**
-     * Capitalize the first character of each word in a string.
-     *
-     * @param  string  $separators
-     * @return static
-     */
-    public function ucwords($separators = " \t\r\n\f\v")
-    {
-        return new static(Str::ucwords($this->value, $separators));
     }
 
     /**
@@ -1503,7 +1470,7 @@ class Stringable implements JsonSerializable, ArrayAccess, BaseStringable
      */
     public function toFloat()
     {
-        return (float) $this->value;
+        return floatval($this->value);
     }
 
     /**

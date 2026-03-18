@@ -234,12 +234,6 @@ trait ManagesTransactions
         $this->transactions = max(0, $this->transactions - 1);
 
         if ($this->causedByConcurrencyError($e) && $currentAttempt < $maxAttempts) {
-            $pdo = $this->getPdo();
-
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-
             return;
         }
 
@@ -355,23 +349,6 @@ trait ManagesTransactions
     {
         if ($this->transactionsManager) {
             return $this->transactionsManager->addCallback($callback);
-        }
-
-        throw new RuntimeException('Transactions Manager has not been set.');
-    }
-
-    /**
-     * Execute the callback after a transaction rolls back.
-     *
-     * @param  callable  $callback
-     * @return void
-     *
-     * @throws \RuntimeException
-     */
-    public function afterRollBack($callback)
-    {
-        if ($this->transactionsManager) {
-            return $this->transactionsManager->addCallbackForRollback($callback);
         }
 
         throw new RuntimeException('Transactions Manager has not been set.');

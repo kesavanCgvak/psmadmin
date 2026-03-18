@@ -42,16 +42,6 @@ class Pool
     }
 
     /**
-     * Add a request to the pool with a numeric index.
-     *
-     * @return \Illuminate\Http\Client\PendingRequest|\GuzzleHttp\Promise\Promise
-     */
-    public function newRequest()
-    {
-        return $this->pool[] = $this->asyncRequest();
-    }
-
-    /**
      * Add a request to the pool with a key.
      *
      * @param  string  $key
@@ -83,7 +73,7 @@ class Pool
     }
 
     /**
-     * Add a request to the pool with a numeric index and forward the method call to the request.
+     * Add a request to the pool with a numeric index.
      *
      * @param  string  $method
      * @param  array  $parameters
@@ -91,6 +81,6 @@ class Pool
      */
     public function __call($method, $parameters)
     {
-        return $this->newRequest()->{$method}(...$parameters);
+        return $this->pool[] = $this->asyncRequest()->$method(...$parameters);
     }
 }

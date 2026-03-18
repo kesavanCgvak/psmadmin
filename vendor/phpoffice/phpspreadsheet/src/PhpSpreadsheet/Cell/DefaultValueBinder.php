@@ -4,12 +4,11 @@ namespace PhpOffice\PhpSpreadsheet\Cell;
 
 use Composer\Pcre\Preg;
 use DateTimeInterface;
-use PhpOffice\PhpSpreadsheet\Calculation\CalculationParserOnly;
+use PhpOffice\PhpSpreadsheet\Calculation\Calculation;
 use PhpOffice\PhpSpreadsheet\Calculation\Exception as CalculationException;
 use PhpOffice\PhpSpreadsheet\Exception as SpreadsheetException;
 use PhpOffice\PhpSpreadsheet\RichText\RichText;
 use PhpOffice\PhpSpreadsheet\Shared\StringHelper;
-use PhpOffice\PhpSpreadsheet\Worksheet\BaseDrawing;
 use Stringable;
 
 class DefaultValueBinder implements IValueBinder
@@ -34,11 +33,6 @@ class DefaultValueBinder implements IValueBinder
             $value = $value->format('Y-m-d H:i:s');
         } elseif ($value instanceof Stringable) {
             $value = (string) $value;
-        } elseif ($value instanceof BaseDrawing) {
-            $value->setCoordinates($cell->getCoordinate());
-            $value->setResizeProportional(false);
-            $value->setInCell(true);
-            $value->setWorksheet($cell->getWorksheet(), true);
         } else {
             throw new SpreadsheetException('Unable to bind unstringable ' . gettype($value));
         }
@@ -74,9 +68,6 @@ class DefaultValueBinder implements IValueBinder
         if ($value instanceof RichText) {
             return DataType::TYPE_INLINE;
         }
-        if ($value instanceof BaseDrawing) {
-            return DataType::TYPE_DRAWING_IN_CELL;
-        }
         if ($value instanceof Stringable) {
             $value = (string) $value;
         }
@@ -86,7 +77,8 @@ class DefaultValueBinder implements IValueBinder
             throw new SpreadsheetException("unusable type $gettype");
         }
         if (strlen($value) > 1 && $value[0] === '=') {
-            $calculation = CalculationParserOnly::getParserInstance();
+            $calculation = new Calculation();
+            $calculation->disableBranchPruning();
 
             try {
                 if (empty($calculation->parseFormula($value))) {
@@ -115,7 +107,7 @@ class DefaultValueBinder implements IValueBinder
                     return DataType::TYPE_STRING;
                 }
             }
-            if (!is_numeric($value) || !is_finite((float) $value)) {
+            if (!is_numeric($value)) {
                 return DataType::TYPE_STRING;
             }
 

@@ -4,7 +4,6 @@ namespace Illuminate\Validation\Concerns;
 
 use Closure;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Number;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\File\File;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -85,7 +84,7 @@ trait FormatsMessages
         $inlineEntry = $this->getFromLocalArray($attribute, Str::snake($rule));
 
         return is_array($inlineEntry) && in_array($rule, $this->sizeRules)
-            ? ($inlineEntry[$this->getAttributeType($attribute)] ?? null)
+            ? $inlineEntry[$this->getAttributeType($attribute)]
             : $inlineEntry;
     }
 
@@ -102,14 +101,6 @@ trait FormatsMessages
         $source = $source ?: $this->customMessages;
 
         $keys = ["{$attribute}.{$lowerRule}", $lowerRule, $attribute];
-
-        if ($this->getAttributeType($attribute) !== 'file') {
-            $shortRule = "{$attribute}.".Str::snake(class_basename($lowerRule));
-
-            if (! in_array($shortRule, $keys)) {
-                $keys[] = $shortRule;
-            }
-        }
 
         // First we will check for a custom message for an attribute specific rule
         // message for the fields, then we will check for a general custom line
@@ -255,7 +246,6 @@ trait FormatsMessages
         $message = $this->replaceInputPlaceholder($message, $attribute);
         $message = $this->replaceIndexPlaceholder($message, $attribute);
         $message = $this->replacePositionPlaceholder($message, $attribute);
-        $message = $this->replaceOrdinalPositionPlaceholder($message, $attribute);
 
         if (isset($this->replacers[Str::snake($rule)])) {
             return $this->callReplacer($message, $attribute, Str::snake($rule), $parameters, $this);
@@ -394,24 +384,6 @@ trait FormatsMessages
     }
 
     /**
-     * Replace the :ordinal-position placeholder in the given message.
-     *
-     * @param  string  $message
-     * @param  string  $attribute
-     * @return string
-     */
-    protected function replaceOrdinalPositionPlaceholder($message, $attribute)
-    {
-        if (! extension_loaded('intl')) {
-            return $message;
-        }
-
-        return $this->replaceIndexOrPositionPlaceholder(
-            $message, $attribute, 'ordinal-position', fn ($segment) => Number::ordinal($segment + 1)
-        );
-    }
-
-    /**
      * Replace the :index or :position placeholder in the given message.
      *
      * @param  string  $message
@@ -422,11 +394,6 @@ trait FormatsMessages
      */
     protected function replaceIndexOrPositionPlaceholder($message, $attribute, $placeholder, ?Closure $modifier = null)
     {
-        if (! str_contains(strtolower($message), ':'.$placeholder) &&
-            ! str_contains(strtolower($message), '-'.$placeholder)) {
-            return $message;
-        }
-
         $segments = explode('.', $attribute);
 
         $modifier ??= fn ($value) => $value;
@@ -483,10 +450,6 @@ trait FormatsMessages
      */
     protected function replaceInputPlaceholder($message, $attribute)
     {
-        if (! str_contains($message, ':input')) {
-            return $message;
-        }
-
         $actualValue = $this->getValue($attribute);
 
         if (is_scalar($actualValue) || is_null($actualValue)) {

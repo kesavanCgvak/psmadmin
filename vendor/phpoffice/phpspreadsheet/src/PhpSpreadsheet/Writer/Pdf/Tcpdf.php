@@ -8,10 +8,6 @@ use PhpOffice\PhpSpreadsheet\Writer\Pdf;
 
 class Tcpdf extends Pdf
 {
-    protected bool $writeHeader = false;
-
-    protected bool $writeFooter = false;
-
     /**
      * Create a new PDF Writer instance.
      *
@@ -70,8 +66,8 @@ class Tcpdf extends Pdf
         $pdf->SetMargins($printMargins->getLeft() * 72, $printMargins->getTop() * 72, $printMargins->getRight() * 72);
         $pdf->SetAutoPageBreak(true, $printMargins->getBottom() * 72);
 
-        $pdf->setPrintHeader($this->writeHeader);
-        $pdf->setPrintFooter($this->writeFooter);
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
 
         $pdf->AddPage();
 

@@ -110,11 +110,7 @@ class CallQueuedClosure implements ShouldQueue
      */
     public function displayName()
     {
-        $closure = $this->closure instanceof SerializableClosure
-                    ? $this->closure->getClosure()
-                    : $this->closure;
-
-        $reflection = new ReflectionFunction($closure);
+        $reflection = new ReflectionFunction($this->closure->getClosure());
 
         $prefix = is_null($this->name) ? '' : "{$this->name} - ";
 

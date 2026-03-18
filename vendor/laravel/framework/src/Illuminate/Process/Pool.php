@@ -62,8 +62,6 @@ class Pool
      *
      * @param  callable|null  $output
      * @return \Illuminate\Process\InvokedProcessPool
-     *
-     * @throws \InvalidArgumentException
      */
     public function start(?callable $output = null)
     {

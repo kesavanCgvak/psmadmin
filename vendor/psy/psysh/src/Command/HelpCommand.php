@@ -3,7 +3,7 @@
 /*
  * This file is part of Psy Shell.
  *
- * (c) 2012-2026 Justin Hileman
+ * (c) 2012-2023 Justin Hileman
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -11,7 +11,7 @@
 
 namespace Psy\Command;
 
-use Symfony\Component\Console\Exception\CommandNotFoundException;
+use Psy\Output\ShellOutput;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -28,7 +28,7 @@ class HelpCommand extends Command
     /**
      * {@inheritdoc}
      */
-    protected function configure(): void
+    protected function configure()
     {
         $this
             ->setName('help')
@@ -57,29 +57,13 @@ class HelpCommand extends Command
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $shellOutput = $this->shellOutput($output);
-
         if ($this->command !== null) {
             // help for an individual command
-            $shellOutput->page($this->command->asText());
+            $output->page($this->command->asText());
             $this->command = null;
         } elseif ($name = $input->getArgument('command_name')) {
             // help for an individual command
-            try {
-                $cmd = $this->getApplication()->get($name);
-            } catch (CommandNotFoundException $e) {
-                $this->getShell()->writeException($e);
-                $output->writeln('');
-                $output->writeln(\sprintf(
-                    '<aside>To read PHP documentation, use <return>doc %s</return></aside>',
-                    $name
-                ));
-                $output->writeln('');
-
-                return 1;
-            }
-
-            $shellOutput->page($cmd->asText());
+            $output->page($this->getApplication()->get($name)->asText());
         } else {
             // list available commands
             $commands = $this->getApplication()->all();
@@ -104,11 +88,15 @@ class HelpCommand extends Command
                 ]);
             }
 
-            $shellOutput->startPaging();
+            if ($output instanceof ShellOutput) {
+                $output->startPaging();
+            }
 
             $table->render();
 
-            $shellOutput->stopPaging();
+            if ($output instanceof ShellOutput) {
+                $output->stopPaging();
+            }
         }
 
         return 0;

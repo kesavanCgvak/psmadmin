@@ -190,7 +190,7 @@ class VendorPublishCommand extends Command
      * Publishes the assets for a tag.
      *
      * @param  string  $tag
-     * @return void
+     * @return mixed
      */
     protected function publishTag($tag)
     {
@@ -357,7 +357,7 @@ class VendorPublishCommand extends Command
             $path = realpath($path);
 
             if ($from === $path && preg_match('/\d{4}_(\d{2})_(\d{2})_(\d{6})_/', $to)) {
-                $this->publishedAt = $this->publishedAt->addSecond();
+                $this->publishedAt->addSecond();
 
                 return preg_replace(
                     '/\d{4}_(\d{2})_(\d{2})_(\d{6})_/',

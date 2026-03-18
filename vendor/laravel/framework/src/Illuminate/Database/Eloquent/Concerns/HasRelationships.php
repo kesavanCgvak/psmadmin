@@ -491,7 +491,7 @@ trait HasRelationships
      */
     protected function guessBelongsToRelation()
     {
-        [, , $caller] = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
+        [$one, $two, $caller] = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
 
         return $caller['function'];
     }
@@ -912,7 +912,7 @@ trait HasRelationships
             );
         });
 
-        return $caller['function'] ?? null;
+        return ! is_null($caller) ? $caller['function'] : null;
     }
 
     /**
@@ -1148,23 +1148,6 @@ trait HasRelationships
         $model = clone $this;
 
         return $model->unsetRelations();
-    }
-
-    /**
-     * Duplicate the instance and unset the given loaded relations.
-     *
-     * @param  array|string  $relations
-     * @return $this
-     */
-    public function withoutRelation($relations)
-    {
-        $model = clone $this;
-
-        foreach ((array) $relations as $relation) {
-            $model->unsetRelation($relation);
-        }
-
-        return $model;
     }
 
     /**

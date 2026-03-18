@@ -153,7 +153,7 @@ class Fluent implements Arrayable, ArrayAccess, IteratorAggregate, Jsonable, Jso
     /**
      * Get data from the fluent instance.
      *
-     * @param  string|null  $key
+     * @param  string  $key
      * @param  mixed  $default
      * @return mixed
      */

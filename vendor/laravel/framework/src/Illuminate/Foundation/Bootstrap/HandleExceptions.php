@@ -132,21 +132,21 @@ class HandleExceptions
      */
     protected function ensureDeprecationLoggerIsConfigured()
     {
-        $config = static::$app['config'];
+        with(static::$app['config'], function ($config) {
+            if ($config->get('logging.channels.deprecations')) {
+                return;
+            }
 
-        if ($config->get('logging.channels.deprecations')) {
-            return;
-        }
+            $this->ensureNullLogDriverIsConfigured();
 
-        $this->ensureNullLogDriverIsConfigured();
+            if (is_array($options = $config->get('logging.deprecations'))) {
+                $driver = $options['channel'] ?? 'null';
+            } else {
+                $driver = $options ?? 'null';
+            }
 
-        if (is_array($options = $config->get('logging.deprecations'))) {
-            $driver = $options['channel'] ?? 'null';
-        } else {
-            $driver = $options ?? 'null';
-        }
-
-        $config->set('logging.channels.deprecations', $config->get("logging.channels.{$driver}"));
+            $config->set('logging.channels.deprecations', $config->get("logging.channels.{$driver}"));
+        });
     }
 
     /**
@@ -156,16 +156,16 @@ class HandleExceptions
      */
     protected function ensureNullLogDriverIsConfigured()
     {
-        $config = static::$app['config'];
+        with(static::$app['config'], function ($config) {
+            if ($config->get('logging.channels.null')) {
+                return;
+            }
 
-        if ($config->get('logging.channels.null')) {
-            return;
-        }
-
-        $config->set('logging.channels.null', [
-            'driver' => 'monolog',
-            'handler' => NullHandler::class,
-        ]);
+            $config->set('logging.channels.null', [
+                'driver' => 'monolog',
+                'handler' => NullHandler::class,
+            ]);
+        });
     }
 
     /**

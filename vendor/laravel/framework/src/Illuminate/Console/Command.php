@@ -73,14 +73,14 @@ class Command extends SymfonyCommand
     /**
      * The default exit code for isolated commands.
      *
-     * @var self::SUCCESS|self::FAILURE|self::INVALID
+     * @var int
      */
     protected $isolatedExitCode = self::SUCCESS;
 
     /**
      * The console command name aliases.
      *
-     * @var string[]
+     * @var array
      */
     protected $aliases;
 

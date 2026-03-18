@@ -9,14 +9,14 @@ class ChainedBatchTruthTest
     /**
      * The underlying truth test.
      *
-     * @var \Closure(\Illuminate\Bus\PendingBatch): bool
+     * @var \Closure
      */
     protected $callback;
 
     /**
      * Create a new truth test instance.
      *
-     * @param  \Closure(\Illuminate\Bus\PendingBatch): bool  $callback
+     * @param  \Closure  $callback
      */
     public function __construct(Closure $callback)
     {

@@ -225,22 +225,22 @@ trait InteractsWithDatabase
      */
     public function expectsDatabaseQueryCount($expected, $connection = null)
     {
-        $connectionInstance = $this->getConnection($connection);
+        with($this->getConnection($connection), function ($connectionInstance) use ($expected, $connection) {
+            $actual = 0;
 
-        $actual = 0;
+            $connectionInstance->listen(function (QueryExecuted $event) use (&$actual, $connectionInstance, $connection) {
+                if (is_null($connection) || $connectionInstance === $event->connection) {
+                    $actual++;
+                }
+            });
 
-        $connectionInstance->listen(function (QueryExecuted $event) use (&$actual, $connectionInstance, $connection) {
-            if (is_null($connection) || $connectionInstance === $event->connection) {
-                $actual++;
-            }
-        });
-
-        $this->beforeApplicationDestroyed(function () use (&$actual, $expected, $connectionInstance) {
-            $this->assertSame(
-                $expected,
-                $actual,
-                "Expected {$expected} database queries on the [{$connectionInstance->getName()}] connection. {$actual} occurred."
-            );
+            $this->beforeApplicationDestroyed(function () use (&$actual, $expected, $connectionInstance) {
+                $this->assertSame(
+                    $expected,
+                    $actual,
+                    "Expected {$expected} database queries on the [{$connectionInstance->getName()}] connection. {$actual} occurred."
+                );
+            });
         });
 
         return $this;
@@ -285,7 +285,7 @@ trait InteractsWithDatabase
      * Get the database connection.
      *
      * @param  string|null  $connection
-     * @param  \Illuminate\Database\Eloquent\Model|class-string<\Illuminate\Database\Eloquent\Model>|string|null  $table
+     * @param  \Illuminate\Database\Eloquent\Model|class-string<\Illuminate\Database\Eloquent\Model>|string  $table
      * @return \Illuminate\Database\Connection
      */
     protected function getConnection($connection = null, $table = null)

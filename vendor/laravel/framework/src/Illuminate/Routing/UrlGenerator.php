@@ -383,8 +383,6 @@ class UrlGenerator implements UrlGeneratorContract
      *
      * @param  mixed  $parameters
      * @return void
-     *
-     * @throws \InvalidArgumentException
      */
     protected function ensureSignedRouteParametersAreNotReserved($parameters)
     {
@@ -839,7 +837,7 @@ class UrlGenerator implements UrlGeneratorContract
         $this->cachedRoot = null;
         $this->cachedScheme = null;
 
-        tap($this->routeGenerator?->defaultParameters ?: [], function ($defaults) {
+        tap(optional($this->routeGenerator)->defaultParameters ?: [], function ($defaults) {
             $this->routeGenerator = null;
 
             if (! empty($defaults)) {

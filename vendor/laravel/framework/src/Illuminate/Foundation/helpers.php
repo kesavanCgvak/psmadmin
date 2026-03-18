@@ -560,9 +560,9 @@ if (! function_exists('logger')) {
      * Log a debug message to the logs.
      *
      * @param  string|null  $message
-     * @return ($message is null ? \Psr\Log\LoggerInterface : null)
+     * @return ($message is null ? \Illuminate\Log\LogManager : null)
      */
-    function logger($message = null, array $context = []): ?LoggerInterface
+    function logger($message = null, array $context = []): ?LogManager
     {
         if (is_null($message)) {
             return app('log');
@@ -617,6 +617,7 @@ if (! function_exists('now')) {
      * Create a new Carbon instance for the current time.
      *
      * @param  \DateTimeZone|\UnitEnum|string|null  $tz
+     * @return \Illuminate\Support\Carbon
      */
     function now($tz = null): CarbonInterface
     {
@@ -1089,7 +1090,7 @@ if (! function_exists('view')) {
      * @param  array  $mergeData
      * @return ($view is null ? \Illuminate\Contracts\View\Factory : \Illuminate\Contracts\View\View)
      */
-    function view($view = null, $data = [], $mergeData = []): ViewFactory|ViewContract
+    function view($view = null, $data = [], $mergeData = []): ViewContract|ViewFactory
     {
         $factory = app(ViewFactory::class);
 

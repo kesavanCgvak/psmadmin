@@ -370,10 +370,7 @@ class MailManager implements FactoryContract
         return $factory->create(new Dsn(
             'postmark+api',
             'default',
-            $config['token']
-                ?? $config['key']
-                ?? $this->app['config']->get('services.postmark.token')
-                ?? $this->app['config']->get('services.postmark.key'),
+            $config['token'] ?? $this->app['config']->get('services.postmark.token'),
             null,
             null,
             $options
@@ -410,8 +407,6 @@ class MailManager implements FactoryContract
      * @param  array  $config
      * @param  class-string<TClass>  $class
      * @return TClass
-     *
-     * @throws \InvalidArgumentException
      */
     protected function createRoundrobinTransportOfClass(array $config, string $class)
     {
@@ -432,7 +427,7 @@ class MailManager implements FactoryContract
                 : $this->createSymfonyTransport($config);
         }
 
-        return new $class($transports, $config['retry_after'] ?? 60, $this->app->make(LoggerInterface::class));
+        return new $class($transports, $config['retry_after'] ?? 60);
     }
 
     /**

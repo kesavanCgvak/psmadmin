@@ -191,7 +191,7 @@ class Factory
      */
     public function setTTL($ttl)
     {
-        $this->ttl = (int) $ttl;
+        $this->ttl = $ttl;
 
         return $this;
     }
@@ -214,18 +214,8 @@ class Factory
      */
     public function setLeeway($leeway)
     {
-        $this->leeway = (int) $leeway;
+        $this->leeway = $leeway;
 
         return $this;
-    }
-
-    /**
-     * Get the leeway in seconds.
-     *
-     * @return int
-     */
-    public function getLeeway()
-    {
-        return $this->leeway;
     }
 }

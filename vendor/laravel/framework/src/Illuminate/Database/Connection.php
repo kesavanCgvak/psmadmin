@@ -50,13 +50,6 @@ class Connection implements ConnectionInterface
     protected $readPdo;
 
     /**
-     * The database connection configuration options for reading.
-     *
-     * @var array
-     */
-    protected $readPdoConfig = [];
-
-    /**
      * The name of the connected database.
      *
      * @var string
@@ -209,13 +202,6 @@ class Connection implements ConnectionInterface
      * @var \Closure[]
      */
     protected static $resolvers = [];
-
-    /**
-     * The last retrieved PDO read / write type.
-     *
-     * @var null|'read'|'write'
-     */
-    protected $latestPdoTypeRetrieved = null;
 
     /**
      * Create a new database connection instance.
@@ -660,16 +646,14 @@ class Connection implements ConnectionInterface
         return $this->withFreshQueryLog(function () use ($callback) {
             $this->pretending = true;
 
-            try {
-                // Basically to make the database connection "pretend", we will just return
-                // the default values for all the query methods, then we will return an
-                // array of queries that were "executed" within the Closure callback.
-                $callback($this);
+            // Basically to make the database connection "pretend", we will just return
+            // the default values for all the query methods, then we will return an
+            // array of queries that were "executed" within the Closure callback.
+            $callback($this);
 
-                return $this->queryLog;
-            } finally {
-                $this->pretending = false;
-            }
+            $this->pretending = false;
+
+            return $this->queryLog;
         });
     }
 
@@ -831,17 +815,14 @@ class Connection implements ConnectionInterface
         // message to include the bindings with SQL, which will make this exception a
         // lot more helpful to the developer instead of just the database's errors.
         catch (Exception $e) {
-            $exceptionType = $this->isUniqueConstraintError($e)
-                ? UniqueConstraintViolationException::class
-                : QueryException::class;
+            if ($this->isUniqueConstraintError($e)) {
+                throw new UniqueConstraintViolationException(
+                    $this->getName(), $query, $this->prepareBindings($bindings), $e
+                );
+            }
 
-            throw new $exceptionType(
-                $this->getNameWithReadWriteType(),
-                $query,
-                $this->prepareBindings($bindings),
-                $e,
-                $this->getConnectionDetails(),
-                $this->latestReadWriteTypeUsed(),
+            throw new QueryException(
+                $this->getName(), $query, $this->prepareBindings($bindings), $e
             );
         }
     }
@@ -869,21 +850,19 @@ class Connection implements ConnectionInterface
     {
         $this->totalQueryDuration += $time ?? 0.0;
 
-        $readWriteType = $this->latestReadWriteTypeUsed();
-
-        $this->event(new QueryExecuted($query, $bindings, $time, $this, $readWriteType));
+        $this->event(new QueryExecuted($query, $bindings, $time, $this));
 
         $query = $this->pretending === true
             ? $this->queryGrammar?->substituteBindingsIntoRawSql($query, $bindings) ?? $query
             : $query;
 
         if ($this->loggingQueries) {
-            $this->queryLog[] = compact('query', 'bindings', 'time', 'readWriteType');
+            $this->queryLog[] = compact('query', 'bindings', 'time');
         }
     }
 
     /**
-     * Get the elapsed time in milliseconds since a given starting point.
+     * Get the elapsed time since a given starting point.
      *
      * @param  float  $start
      * @return float
@@ -897,7 +876,7 @@ class Connection implements ConnectionInterface
      * Register a callback to be invoked when the connection queries for longer than a given amount of time.
      *
      * @param  \DateTimeInterface|\Carbon\CarbonInterval|float|int  $threshold
-     * @param  (callable(\Illuminate\Database\Connection, \Illuminate\Database\Events\QueryExecuted): mixed)  $handler
+     * @param  (callable(\Illuminate\Database\Connection, class-string<\Illuminate\Database\Events\QueryExecuted>): mixed)  $handler
      * @return void
      */
     public function whenQueryingForLongerThan($threshold, $handler)
@@ -1069,7 +1048,7 @@ class Connection implements ConnectionInterface
     /**
      * Register a database query listener with the connection.
      *
-     * @param  \Closure(\Illuminate\Database\Events\QueryExecuted)  $callback
+     * @param  \Closure  $callback
      * @return void
      */
     public function listen(Closure $callback)
@@ -1122,8 +1101,6 @@ class Connection implements ConnectionInterface
      * @param  string|float|int|bool|null  $value
      * @param  bool  $binary
      * @return string
-     *
-     * @throws \RuntimeException
      */
     public function escape($value, $binary = false)
     {
@@ -1177,8 +1154,6 @@ class Connection implements ConnectionInterface
      *
      * @param  string  $value
      * @return string
-     *
-     * @throws \RuntimeException
      */
     protected function escapeBinary($value)
     {
@@ -1251,8 +1226,6 @@ class Connection implements ConnectionInterface
      */
     public function getPdo()
     {
-        $this->latestPdoTypeRetrieved = 'write';
-
         if ($this->pdo instanceof Closure) {
             return $this->pdo = call_user_func($this->pdo);
         }
@@ -1285,8 +1258,6 @@ class Connection implements ConnectionInterface
             ($this->recordsModified && $this->getConfig('sticky'))) {
             return $this->getPdo();
         }
-
-        $this->latestPdoTypeRetrieved = 'read';
 
         if ($this->readPdo instanceof Closure) {
             return $this->readPdo = call_user_func($this->readPdo);
@@ -1334,19 +1305,6 @@ class Connection implements ConnectionInterface
     }
 
     /**
-     * Set the read PDO connection configuration.
-     *
-     * @param  array  $config
-     * @return $this
-     */
-    public function setReadPdoConfig(array $config)
-    {
-        $this->readPdoConfig = $config;
-
-        return $this;
-    }
-
-    /**
      * Set the reconnect instance on the connection.
      *
      * @param  (callable(\Illuminate\Database\Connection): mixed)  $reconnector
@@ -1370,15 +1328,13 @@ class Connection implements ConnectionInterface
     }
 
     /**
-     * Get the database connection with its read / write type.
+     * Get the database connection full name.
      *
      * @return string|null
      */
     public function getNameWithReadWriteType()
     {
-        $name = $this->getName().($this->readWriteType ? '::'.$this->readWriteType : '');
-
-        return empty($name) ? null : $name;
+        return $this->getName().($this->readWriteType ? '::'.$this->readWriteType : '');
     }
 
     /**
@@ -1390,27 +1346,6 @@ class Connection implements ConnectionInterface
     public function getConfig($option = null)
     {
         return Arr::get($this->config, $option);
-    }
-
-    /**
-     * Get the basic connection information as an array for debugging.
-     *
-     * @return array
-     */
-    protected function getConnectionDetails()
-    {
-        $config = $this->latestReadWriteTypeUsed() === 'read'
-            ? $this->readPdoConfig
-            : $this->config;
-
-        return [
-            'driver' => $this->getDriverName(),
-            'name' => $this->getNameWithReadWriteType(),
-            'host' => $config['host'] ?? null,
-            'port' => $config['port'] ?? null,
-            'database' => $config['database'] ?? null,
-            'unix_socket' => $config['unix_socket'] ?? null,
-        ];
     }
 
     /**
@@ -1505,7 +1440,7 @@ class Connection implements ConnectionInterface
     /**
      * Get the event dispatcher used by the connection.
      *
-     * @return \Illuminate\Contracts\Events\Dispatcher|null
+     * @return \Illuminate\Contracts\Events\Dispatcher
      */
     public function getEventDispatcher()
     {
@@ -1681,16 +1616,6 @@ class Connection implements ConnectionInterface
     }
 
     /**
-     * Retrieve the latest read / write type used.
-     *
-     * @return 'read'|'write'|null
-     */
-    protected function latestReadWriteTypeUsed()
-    {
-        return $this->readWriteType ?? $this->latestPdoTypeRetrieved;
-    }
-
-    /**
      * Get the table prefix for the connection.
      *
      * @return string
@@ -1763,20 +1688,5 @@ class Connection implements ConnectionInterface
     public static function getResolver($driver)
     {
         return static::$resolvers[$driver] ?? null;
-    }
-
-    /**
-     * Prepare the instance for cloning.
-     *
-     * @return void
-     */
-    public function __clone()
-    {
-        // When cloning, re-initialize grammars to reference cloned connection...
-        $this->useDefaultQueryGrammar();
-
-        if (! is_null($this->schemaGrammar)) {
-            $this->useDefaultSchemaGrammar();
-        }
     }
 }

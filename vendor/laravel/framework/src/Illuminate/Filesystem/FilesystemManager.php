@@ -287,8 +287,6 @@ class FilesystemManager implements FactoryContract
      *
      * @param  array  $config
      * @return \Illuminate\Contracts\Filesystem\Filesystem
-     *
-     * @throws \InvalidArgumentException
      */
     public function createScopedDriver(array $config)
     {
@@ -315,10 +313,6 @@ class FilesystemManager implements FactoryContract
                 if (isset($config['visibility'])) {
                     $parent['visibility'] = $config['visibility'];
                 }
-
-                if (isset($config['throw'])) {
-                    $parent['throw'] = $config['throw'];
-                }
             }
         ));
     }
@@ -332,7 +326,7 @@ class FilesystemManager implements FactoryContract
      */
     protected function createFlysystem(FlysystemAdapter $adapter, array $config)
     {
-        if ($config['read-only'] ?? false) {
+        if ($config['read-only'] ?? false === true) {
             $adapter = new ReadOnlyFilesystemAdapter($adapter);
         }
 

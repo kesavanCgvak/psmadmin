@@ -117,7 +117,7 @@ class RouteUrlGenerator
      *
      * @param  \Illuminate\Routing\Route  $route
      * @param  array  $parameters
-     * @return string|null
+     * @return string
      */
     protected function getRouteDomain($route, &$parameters)
     {

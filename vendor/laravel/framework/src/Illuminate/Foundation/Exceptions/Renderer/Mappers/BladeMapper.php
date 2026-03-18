@@ -2,7 +2,6 @@
 
 namespace Illuminate\Foundation\Exceptions\Renderer\Mappers;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;

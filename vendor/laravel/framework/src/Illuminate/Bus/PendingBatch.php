@@ -12,7 +12,6 @@ use Illuminate\Support\Traits\Conditionable;
 use Laravel\SerializableClosure\SerializableClosure;
 use RuntimeException;
 use Throwable;
-use UnitEnum;
 
 use function Illuminate\Support\enum_value;
 
@@ -65,7 +64,7 @@ class PendingBatch
     {
         $this->container = $container;
 
-        $this->jobs = $jobs->filter()->values()->each(function (object|array $job) {
+        $this->jobs = $jobs->each(function (object|array $job) {
             $this->ensureJobIsBatchable($job);
         });
     }
@@ -120,7 +119,9 @@ class PendingBatch
      */
     public function before($callback)
     {
-        $this->registerCallback('before', $callback);
+        $this->options['before'][] = $callback instanceof Closure
+            ? new SerializableClosure($callback)
+            : $callback;
 
         return $this;
     }
@@ -143,7 +144,9 @@ class PendingBatch
      */
     public function progress($callback)
     {
-        $this->registerCallback('progress', $callback);
+        $this->options['progress'][] = $callback instanceof Closure
+            ? new SerializableClosure($callback)
+            : $callback;
 
         return $this;
     }
@@ -166,7 +169,9 @@ class PendingBatch
      */
     public function then($callback)
     {
-        $this->registerCallback('then', $callback);
+        $this->options['then'][] = $callback instanceof Closure
+            ? new SerializableClosure($callback)
+            : $callback;
 
         return $this;
     }
@@ -189,7 +194,9 @@ class PendingBatch
      */
     public function catch($callback)
     {
-        $this->registerCallback('catch', $callback);
+        $this->options['catch'][] = $callback instanceof Closure
+            ? new SerializableClosure($callback)
+            : $callback;
 
         return $this;
     }
@@ -212,7 +219,9 @@ class PendingBatch
      */
     public function finally($callback)
     {
-        $this->registerCallback('finally', $callback);
+        $this->options['finally'][] = $callback instanceof Closure
+            ? new SerializableClosure($callback)
+            : $callback;
 
         return $this;
     }
@@ -228,28 +237,14 @@ class PendingBatch
     }
 
     /**
-     * Indicate that the batch should not be canceled when a job within the batch fails.
+     * Indicate that the batch should not be cancelled when a job within the batch fails.
      *
-     * Optionally, add callbacks to be executed upon each job failure.
-     *
-     * @phpstan-type TParam (Closure(\Illuminate\Bus\Batch, \Throwable|null): mixed)|(callable(\Illuminate\Bus\Batch, \Throwable|null): mixed)
-     *
-     * @param  bool|TParam|array<array-key, TParam>  $param
+     * @param  bool  $allowFailures
      * @return $this
      */
-    public function allowFailures($param = true)
+    public function allowFailures($allowFailures = true)
     {
-        if (! is_bool($param)) {
-            $param = Arr::wrap($param);
-
-            foreach ($param as $callback) {
-                if (is_callable($callback)) {
-                    $this->registerCallback('failure', $callback);
-                }
-            }
-        }
-
-        $this->options['allowFailures'] = ! ($param === false);
+        $this->options['allowFailures'] = $allowFailures;
 
         return $this;
     }
@@ -262,26 +257,6 @@ class PendingBatch
     public function allowsFailures()
     {
         return Arr::get($this->options, 'allowFailures', false) === true;
-    }
-
-    /**
-     * Get the "failure" callbacks that have been registered with the pending batch.
-     *
-     * @return array<array-key, Closure|callable>
-     */
-    public function failureCallbacks(): array
-    {
-        return $this->options['failure'] ?? [];
-    }
-
-    /**
-     * Register a callback with proper serialization.
-     */
-    private function registerCallback(string $type, Closure|callable $callback): void
-    {
-        $this->options[$type][] = $callback instanceof Closure
-            ? new SerializableClosure($callback)
-            : $callback;
     }
 
     /**
@@ -300,12 +275,12 @@ class PendingBatch
     /**
      * Specify the queue connection that the batched jobs should run on.
      *
-     * @param  \UnitEnum|string  $connection
+     * @param  string  $connection
      * @return $this
      */
-    public function onConnection(UnitEnum|string $connection)
+    public function onConnection(string $connection)
     {
-        $this->options['connection'] = enum_value($connection);
+        $this->options['connection'] = $connection;
 
         return $this;
     }

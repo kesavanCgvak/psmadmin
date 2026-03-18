@@ -76,7 +76,6 @@ use Illuminate\Database\Console\WipeCommand;
  * @method static \PDO|\Closure|null getRawReadPdo()
  * @method static \Illuminate\Database\Connection setPdo(\PDO|\Closure|null $pdo)
  * @method static \Illuminate\Database\Connection setReadPdo(\PDO|\Closure|null $pdo)
- * @method static \Illuminate\Database\Connection setReadPdoConfig(array $config)
  * @method static string|null getName()
  * @method static string|null getNameWithReadWriteType()
  * @method static mixed getConfig(string|null $option = null)
@@ -88,7 +87,7 @@ use Illuminate\Database\Console\WipeCommand;
  * @method static \Illuminate\Database\Connection setSchemaGrammar(\Illuminate\Database\Schema\Grammars\Grammar $grammar)
  * @method static \Illuminate\Database\Query\Processors\Processor getPostProcessor()
  * @method static \Illuminate\Database\Connection setPostProcessor(\Illuminate\Database\Query\Processors\Processor $processor)
- * @method static \Illuminate\Contracts\Events\Dispatcher|null getEventDispatcher()
+ * @method static \Illuminate\Contracts\Events\Dispatcher getEventDispatcher()
  * @method static \Illuminate\Database\Connection setEventDispatcher(\Illuminate\Contracts\Events\Dispatcher $events)
  * @method static void unsetEventDispatcher()
  * @method static \Illuminate\Database\Connection setTransactionManager(\Illuminate\Database\DatabaseTransactionsManager $manager)
@@ -115,7 +114,6 @@ use Illuminate\Database\Console\WipeCommand;
  * @method static void rollBack(int|null $toLevel = null)
  * @method static int transactionLevel()
  * @method static void afterCommit(callable $callback)
- * @method static void afterRollBack(callable $callback)
  *
  * @see \Illuminate\Database\DatabaseManager
  */

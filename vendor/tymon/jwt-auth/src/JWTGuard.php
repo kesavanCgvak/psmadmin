@@ -64,7 +64,9 @@ class JWTGuard implements Guard
     }
 
     /**
-     * {@inheritDoc}
+     * Get the currently authenticated user.
+     *
+     * @return \Illuminate\Contracts\Auth\Authenticatable|null
      */
     public function user()
     {

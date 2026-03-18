@@ -97,7 +97,7 @@ class Blueprint
      *
      * @param  \Illuminate\Database\Connection  $connection
      * @param  string  $table
-     * @param  (\Closure(self): void)|null  $callback
+     * @param  \Closure|null  $callback
      */
     public function __construct(Connection $connection, $table, ?Closure $callback = null)
     {
@@ -215,7 +215,7 @@ class Blueprint
     protected function addFluentIndexes()
     {
         foreach ($this->columns as $column) {
-            foreach (['primary', 'unique', 'index', 'fulltext', 'fullText', 'spatialIndex', 'vectorIndex'] as $index) {
+            foreach (['primary', 'unique', 'index', 'fulltext', 'fullText', 'spatialIndex'] as $index) {
                 // If the column is supposed to be changed to an auto increment column and
                 // the specified index is primary, there is no need to add a command on
                 // MySQL, as it will be handled during the column definition instead.
@@ -227,11 +227,7 @@ class Blueprint
                 // to "true" (boolean), no name has been specified for this index so the
                 // index method can be called without a name and it will generate one.
                 if ($column->{$index} === true) {
-                    $indexMethod = $index === 'index' && $column->type === 'vector'
-                        ? 'vectorIndex'
-                        : $index;
-
-                    $this->{$indexMethod}($column->name);
+                    $this->{$index}($column->name);
                     $column->{$index} = null;
 
                     continue 2;
@@ -251,11 +247,7 @@ class Blueprint
                 // value, we'll go ahead and call the index method and pass the name for
                 // the index since the developer specified the explicit name for this.
                 elseif (isset($column->{$index})) {
-                    $indexMethod = $index === 'index' && $column->type === 'vector'
-                        ? 'vectorIndex'
-                        : $index;
-
-                    $this->{$indexMethod}($column->name, $column->{$index});
+                    $this->{$index}($column->name, $column->{$index});
                     $column->{$index} = null;
 
                     continue 2;
@@ -703,18 +695,6 @@ class Blueprint
     }
 
     /**
-     * Specify a vector index for the table.
-     *
-     * @param  string  $column
-     * @param  string|null  $name
-     * @return \Illuminate\Database\Schema\IndexDefinition
-     */
-    public function vectorIndex($column, $name = null)
-    {
-        return $this->indexCommand('vectorIndex', $column, $name, 'hnsw', 'vector_cosine_ops');
-    }
-
-    /**
      * Specify a raw index for the table.
      *
      * @param  string  $expression
@@ -745,7 +725,7 @@ class Blueprint
     }
 
     /**
-     * Create a new auto-incrementing big integer column on the table (8-byte, 0 to 18,446,744,073,709,551,615).
+     * Create a new auto-incrementing big integer (8-byte) column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ColumnDefinition
@@ -756,7 +736,7 @@ class Blueprint
     }
 
     /**
-     * Create a new auto-incrementing integer column on the table (4-byte, 0 to 4,294,967,295).
+     * Create a new auto-incrementing integer (4-byte) column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ColumnDefinition
@@ -767,7 +747,7 @@ class Blueprint
     }
 
     /**
-     * Create a new auto-incrementing integer column on the table (4-byte, 0 to 4,294,967,295).
+     * Create a new auto-incrementing integer (4-byte) column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ColumnDefinition
@@ -778,7 +758,7 @@ class Blueprint
     }
 
     /**
-     * Create a new auto-incrementing tiny integer column on the table (1-byte, 0 to 255).
+     * Create a new auto-incrementing tiny integer (1-byte) column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ColumnDefinition
@@ -789,7 +769,7 @@ class Blueprint
     }
 
     /**
-     * Create a new auto-incrementing small integer column on the table (2-byte, 0 to 65,535).
+     * Create a new auto-incrementing small integer (2-byte) column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ColumnDefinition
@@ -800,7 +780,7 @@ class Blueprint
     }
 
     /**
-     * Create a new auto-incrementing medium integer column on the table (3-byte, 0 to 16,777,215).
+     * Create a new auto-incrementing medium integer (3-byte) column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ColumnDefinition
@@ -811,7 +791,7 @@ class Blueprint
     }
 
     /**
-     * Create a new auto-incrementing big integer column on the table (8-byte, 0 to 18,446,744,073,709,551,615).
+     * Create a new auto-incrementing big integer (8-byte) column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ColumnDefinition
@@ -850,7 +830,7 @@ class Blueprint
     }
 
     /**
-     * Create a new tiny text column on the table (up to 255 characters).
+     * Create a new tiny text column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ColumnDefinition
@@ -861,7 +841,7 @@ class Blueprint
     }
 
     /**
-     * Create a new text column on the table (up to 65,535 characters / ~64 KB).
+     * Create a new text column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ColumnDefinition
@@ -872,7 +852,7 @@ class Blueprint
     }
 
     /**
-     * Create a new medium text column on the table (up to 16,777,215 characters / ~16 MB).
+     * Create a new medium text column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ColumnDefinition
@@ -883,7 +863,7 @@ class Blueprint
     }
 
     /**
-     * Create a new long text column on the table (up to 4,294,967,295 characters / ~4 GB).
+     * Create a new long text column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ColumnDefinition
@@ -895,7 +875,6 @@ class Blueprint
 
     /**
      * Create a new integer (4-byte) column on the table.
-     * Range: -2,147,483,648 to 2,147,483,647 (signed) or 0 to 4,294,967,295 (unsigned).
      *
      * @param  string  $column
      * @param  bool  $autoIncrement
@@ -909,7 +888,6 @@ class Blueprint
 
     /**
      * Create a new tiny integer (1-byte) column on the table.
-     * Range: -128 to 127 (signed) or 0 to 255 (unsigned).
      *
      * @param  string  $column
      * @param  bool  $autoIncrement
@@ -923,7 +901,6 @@ class Blueprint
 
     /**
      * Create a new small integer (2-byte) column on the table.
-     * Range: -32,768 to 32,767 (signed) or 0 to 65,535 (unsigned).
      *
      * @param  string  $column
      * @param  bool  $autoIncrement
@@ -937,7 +914,6 @@ class Blueprint
 
     /**
      * Create a new medium integer (3-byte) column on the table.
-     * Range: -8,388,608 to 8,388,607 (signed) or 0 to 16,777,215 (unsigned).
      *
      * @param  string  $column
      * @param  bool  $autoIncrement
@@ -951,7 +927,6 @@ class Blueprint
 
     /**
      * Create a new big integer (8-byte) column on the table.
-     * Range: -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807 (signed) or 0 to 18,446,744,073,709,551,615 (unsigned).
      *
      * @param  string  $column
      * @param  bool  $autoIncrement
@@ -964,7 +939,7 @@ class Blueprint
     }
 
     /**
-     * Create a new unsigned integer column on the table (4-byte, 0 to 4,294,967,295).
+     * Create a new unsigned integer (4-byte) column on the table.
      *
      * @param  string  $column
      * @param  bool  $autoIncrement
@@ -976,7 +951,7 @@ class Blueprint
     }
 
     /**
-     * Create a new unsigned tiny integer column on the table (1-byte, 0 to 255).
+     * Create a new unsigned tiny integer (1-byte) column on the table.
      *
      * @param  string  $column
      * @param  bool  $autoIncrement
@@ -988,7 +963,7 @@ class Blueprint
     }
 
     /**
-     * Create a new unsigned small integer column on the table (2-byte, 0 to 65,535).
+     * Create a new unsigned small integer (2-byte) column on the table.
      *
      * @param  string  $column
      * @param  bool  $autoIncrement
@@ -1000,7 +975,7 @@ class Blueprint
     }
 
     /**
-     * Create a new unsigned medium integer column on the table (3-byte, 0 to 16,777,215).
+     * Create a new unsigned medium integer (3-byte) column on the table.
      *
      * @param  string  $column
      * @param  bool  $autoIncrement
@@ -1012,7 +987,7 @@ class Blueprint
     }
 
     /**
-     * Create a new unsigned big integer column on the table (8-byte, 0 to 18,446,744,073,709,551,615).
+     * Create a new unsigned big integer (8-byte) column on the table.
      *
      * @param  string  $column
      * @param  bool  $autoIncrement
@@ -1024,7 +999,7 @@ class Blueprint
     }
 
     /**
-     * Create a new unsigned big integer column on the table (8-byte, 0 to 18,446,744,073,709,551,615).
+     * Create a new unsigned big integer (8-byte) column on the table.
      *
      * @param  string  $column
      * @return \Illuminate\Database\Schema\ForeignIdColumnDefinition
@@ -1519,17 +1494,6 @@ class Blueprint
     }
 
     /**
-     * Create a new tsvector column on the table.
-     *
-     * @param  string  $column
-     * @return \Illuminate\Database\Schema\ColumnDefinition
-     */
-    public function tsvector($column)
-    {
-        return $this->addColumn('tsvector', $column);
-    }
-
-    /**
      * Add the proper columns for a polymorphic table.
      *
      * @param  string  $name
@@ -1830,7 +1794,7 @@ class Blueprint
      * Add the columns from the callback after the given column.
      *
      * @param  string  $column
-     * @param  (\Closure(self): void)  $callback
+     * @param  \Closure  $callback
      * @return void
      */
     public function after($column, Closure $callback)

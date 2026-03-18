@@ -9,7 +9,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Number;
 use Symfony\Component\Console\Attribute\AsCommand;
 
-use function Laravel\Prompts\search;
+use function Laravel\Prompts\select;
 
 #[AsCommand(name: 'db:table')]
 class TableCommand extends DatabaseInspectionCommand
@@ -42,14 +42,9 @@ class TableCommand extends DatabaseInspectionCommand
         $tables = (new Collection($connection->getSchemaBuilder()->getTables()))
             ->keyBy('schema_qualified_name')->all();
 
-        $tableNames = (new Collection($tables))->keys();
-
-        $tableName = $this->argument('table') ?: search(
+        $tableName = $this->argument('table') ?: select(
             'Which table would you like to inspect?',
-            fn (string $query) => $tableNames
-                ->filter(fn ($table) => str_contains(strtolower($table), strtolower($query)))
-                ->values()
-                ->all()
+            array_keys($tables)
         );
 
         $table = $tables[$tableName] ?? (new Collection($tables))->when(

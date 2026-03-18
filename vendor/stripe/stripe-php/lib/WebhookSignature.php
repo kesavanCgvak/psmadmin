@@ -16,8 +16,7 @@ abstract class WebhookSignature
      *  Stripe
      * @param string $secret secret used to generate the signature
      * @param int $tolerance maximum difference allowed between the header's
-     * timestamp and the current time, in seconds. If null or 0, timestamp validation
-     * is skipped
+     *  timestamp and the current time
      *
      * @return bool
      *

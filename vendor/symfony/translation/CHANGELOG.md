@@ -1,13 +1,6 @@
 CHANGELOG
 =========
 
-7.4
----
-
- * Make the extractor alias optional
- * Deprecate `TranslatableMessage::__toString`
- * Add `Symfony\Component\Translation\StaticMessage`
-
 7.3
 ---
 

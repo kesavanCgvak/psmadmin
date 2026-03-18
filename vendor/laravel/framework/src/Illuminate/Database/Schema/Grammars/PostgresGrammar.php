@@ -269,12 +269,11 @@ class PostgresGrammar extends Grammar
     {
         if ($command->column->autoIncrement
             && $value = $command->column->get('startingValue', $command->column->get('from'))) {
-            return sprintf(
-                'select setval(pg_get_serial_sequence(%s, %s), %s, false)',
-                $this->quoteString($this->wrapTable($blueprint)),
-                $this->quoteString($command->column->name),
-                $value
-            );
+            [$schema, $table] = $this->connection->getSchemaBuilder()->parseSchemaAndTable($blueprint->getTable());
+
+            $table = ($schema ? $schema.'.' : '').$this->connection->getTablePrefix().$table;
+
+            return 'alter sequence '.$table.'_'.$command->column->name.'_seq restart with '.$value;
         }
     }
 
@@ -428,18 +427,6 @@ class PostgresGrammar extends Grammar
         }
 
         return $this->compileIndex($blueprint, $command);
-    }
-
-    /**
-     * Compile a vector index key command.
-     *
-     * @param  \Illuminate\Database\Schema\Blueprint  $blueprint
-     * @param  \Illuminate\Support\Fluent  $command
-     * @return string
-     */
-    public function compileVectorIndex(Blueprint $blueprint, Fluent $command)
-    {
-        return $this->compileIndexWithOperatorClass($blueprint, $command);
     }
 
     /**
@@ -1182,17 +1169,6 @@ class PostgresGrammar extends Grammar
     }
 
     /**
-     * Create the column definition for a tsvector type.
-     *
-     * @param  \Illuminate\Support\Fluent  $column
-     * @return string
-     */
-    protected function typeTsvector(Fluent $column)
-    {
-        return 'tsvector';
-    }
-
-    /**
      * Get the SQL for a collation column modifier.
      *
      * @param  \Illuminate\Database\Schema\Blueprint  $blueprint
@@ -1281,7 +1257,7 @@ class PostgresGrammar extends Grammar
         }
 
         if (! is_null($column->virtualAs)) {
-            return " generated always as ({$this->getValue($column->virtualAs)}) virtual";
+            return " generated always as ({$this->getValue($column->virtualAs)})";
         }
     }
 

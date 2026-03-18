@@ -7,20 +7,10 @@ use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Notifications\Dispatcher as DispatcherContract;
 use Illuminate\Contracts\Notifications\Factory as FactoryContract;
 use Illuminate\Support\Manager;
-use Illuminate\Support\Traits\Macroable;
 use InvalidArgumentException;
 
 class ChannelManager extends Manager implements DispatcherContract, FactoryContract
 {
-    use Macroable;
-
-    /**
-     * The resolved notification sender instance.
-     *
-     * @var \Illuminate\Notifications\NotificationSender|null
-     */
-    protected $notificationSender;
-
     /**
      * The default channel used to deliver messages.
      *
@@ -44,7 +34,9 @@ class ChannelManager extends Manager implements DispatcherContract, FactoryContr
      */
     public function send($notifiables, $notification)
     {
-        $this->resolveNotificationSender()->send($notifiables, $notification);
+        (new NotificationSender(
+            $this, $this->container->make(Bus::class), $this->container->make(Dispatcher::class), $this->locale)
+        )->send($notifiables, $notification);
     }
 
     /**
@@ -57,7 +49,9 @@ class ChannelManager extends Manager implements DispatcherContract, FactoryContr
      */
     public function sendNow($notifiables, $notification, ?array $channels = null)
     {
-        $this->resolveNotificationSender()->sendNow($notifiables, $notification, $channels);
+        (new NotificationSender(
+            $this, $this->container->make(Bus::class), $this->container->make(Dispatcher::class), $this->locale)
+        )->sendNow($notifiables, $notification, $channels);
     }
 
     /**
@@ -120,18 +114,6 @@ class ChannelManager extends Manager implements DispatcherContract, FactoryContr
 
             throw $e;
         }
-    }
-
-    /**
-     * Resolve the NotificationSender instance.
-     *
-     * @return \Illuminate\Notifications\NotificationSender
-     */
-    protected function resolveNotificationSender()
-    {
-        return $this->notificationSender ??= new NotificationSender(
-            $this, $this->container->make(Bus::class), $this->container->make(Dispatcher::class), $this->locale
-        );
     }
 
     /**

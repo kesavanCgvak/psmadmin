@@ -76,15 +76,15 @@ class DatabaseServiceProvider extends ServiceProvider
             return $app['db']->connection()->getSchemaBuilder();
         });
 
-        $this->app->singleton('db.transactions', function () {
+        $this->app->singleton('db.transactions', function ($app) {
             return new DatabaseTransactionsManager;
         });
 
-        $this->app->singleton(ConcurrencyErrorDetectorContract::class, function () {
+        $this->app->singleton(ConcurrencyErrorDetectorContract::class, function ($app) {
             return new ConcurrencyErrorDetector;
         });
 
-        $this->app->singleton(LostConnectionDetectorContract::class, function () {
+        $this->app->singleton(LostConnectionDetectorContract::class, function ($app) {
             return new LostConnectionDetector;
         });
     }
@@ -96,10 +96,6 @@ class DatabaseServiceProvider extends ServiceProvider
      */
     protected function registerFakerGenerator()
     {
-        if (! class_exists(FakerGenerator::class)) {
-            return;
-        }
-
         $this->app->singleton(FakerGenerator::class, function ($app, $parameters) {
             $locale = $parameters['locale'] ?? $app['config']->get('app.faker_locale', 'en_US');
 

@@ -117,7 +117,7 @@ class Gate implements GateContract
     /**
      * Determine if a given ability has been defined.
      *
-     * @param  \UnitEnum|array|string  $ability
+     * @param  string|array  $ability
      * @return bool
      */
     public function has($ability)
@@ -125,7 +125,7 @@ class Gate implements GateContract
         $abilities = is_array($ability) ? $ability : func_get_args();
 
         foreach ($abilities as $ability) {
-            if (! isset($this->abilities[enum_value($ability)])) {
+            if (! isset($this->abilities[$ability])) {
                 return false;
             }
         }
@@ -186,7 +186,7 @@ class Gate implements GateContract
             $response = $condition;
         }
 
-        return ($response instanceof Response ? $response : new Response(
+        return with($response instanceof Response ? $response : new Response(
             (bool) $response === $allowWhenResponseIs, $message, $code
         ))->authorize();
     }

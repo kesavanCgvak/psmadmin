@@ -56,7 +56,7 @@ class Number
      * @param  string|null  $locale
      * @return int|float|false
      */
-    public static function parse(string $string, ?int $type = NumberFormatter::TYPE_DOUBLE, ?string $locale = null): int|float|false
+    public static function parse(string $string, ?int $type = NumberFormatter::TYPE_DOUBLE, ?string $locale = null): int|float
     {
         static::ensureIntlExtensionIsInstalled();
 
@@ -72,7 +72,7 @@ class Number
      * @param  string|null  $locale
      * @return int|false
      */
-    public static function parseInt(string $string, ?string $locale = null): int|false
+    public static function parseInt(string $string, ?string $locale = null): int
     {
         return self::parse($string, NumberFormatter::TYPE_INT32, $locale);
     }
@@ -84,7 +84,7 @@ class Number
      * @param  string|null  $locale
      * @return float|false
      */
-    public static function parseFloat(string $string, ?string $locale = null): float|false
+    public static function parseFloat(string $string, ?string $locale = null): float
     {
         return self::parse($string, NumberFormatter::TYPE_DOUBLE, $locale);
     }
@@ -222,7 +222,7 @@ class Number
      * @param  int|float  $number
      * @param  int  $precision
      * @param  int|null  $maxPrecision
-     * @return string|false
+     * @return bool|string
      */
     public static function abbreviate(int|float $number, int $precision = 0, ?int $maxPrecision = null)
     {
@@ -277,7 +277,7 @@ class Number
         }
 
         switch (true) {
-            case (float) $number === 0.0:
+            case floatval($number) === 0.0:
                 return $precision > 0 ? static::format(0, $precision, $maxPrecision) : '0';
             case $number < 0:
                 return sprintf('-%s', static::summarize(abs($number), $precision, $maxPrecision, $units));
@@ -312,7 +312,7 @@ class Number
      * @param  int|float  $by
      * @param  int|float  $start
      * @param  int|float  $offset
-     * @return list<array{int|float, int|float}>
+     * @return array
      */
     public static function pairs(int|float $to, int|float $by, int|float $start = 0, int|float $offset = 1)
     {
@@ -345,11 +345,9 @@ class Number
     /**
      * Execute the given callback using the given locale.
      *
-     * @template TReturn
-     *
      * @param  string  $locale
-     * @param  callable(): TReturn  $callback
-     * @return TReturn
+     * @param  callable  $callback
+     * @return mixed
      */
     public static function withLocale(string $locale, callable $callback)
     {
@@ -367,11 +365,9 @@ class Number
     /**
      * Execute the given callback using the given currency.
      *
-     * @template TReturn
-     *
      * @param  string  $currency
-     * @param  callable(): TReturn  $callback
-     * @return TReturn
+     * @param  callable  $callback
+     * @return mixed
      */
     public static function withCurrency(string $currency, callable $callback)
     {

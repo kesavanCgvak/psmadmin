@@ -8,12 +8,10 @@ use Illuminate\Support\Carbon;
 trait InteractsWithTime
 {
     /**
-     * @template TReturn of mixed
-     *
      * Freeze time.
      *
-     * @param  (callable(): TReturn)|null  $callback
-     * @return ($callback is null ? \Illuminate\Support\Carbon : TReturn)
+     * @param  callable|null  $callback
+     * @return mixed
      */
     public function freezeTime($callback = null)
     {
@@ -23,12 +21,10 @@ trait InteractsWithTime
     }
 
     /**
-     * @template TReturn of mixed
-     *
      * Freeze time at the beginning of the current second.
      *
-     * @param  (callable(): TReturn)|null  $callback
-     * @return ($callback is null ? \Illuminate\Support\Carbon : TReturn)
+     * @param  callable|null  $callback
+     * @return mixed
      */
     public function freezeSecond($callback = null)
     {
@@ -49,13 +45,11 @@ trait InteractsWithTime
     }
 
     /**
-     * @template TReturn of mixed
-     *
      * Travel to another time.
      *
      * @param  \DateTimeInterface|\Closure|\Illuminate\Support\Carbon|string|bool|null  $date
-     * @param  (callable(): TReturn)|null  $callback
-     * @return ($callback is null ? void : TReturn)
+     * @param  callable|null  $callback
+     * @return mixed
      */
     public function travelTo($date, $callback = null)
     {

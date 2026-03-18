@@ -137,6 +137,7 @@ class BusFake implements Fake, QueueingDispatcher
      * Assert if a job was pushed exactly once.
      *
      * @param  string|\Closure  $command
+     * @param  int  $times
      * @return void
      */
     public function assertDispatchedOnce($command)
@@ -487,7 +488,7 @@ class BusFake implements Fake, QueueingDispatcher
     /**
      * Create a new assertion about a chained batch.
      *
-     * @param  \Closure(\Illuminate\Bus\PendingBatch): bool  $callback
+     * @param  \Closure  $callback
      * @return \Illuminate\Support\Testing\Fakes\ChainedBatchTruthTest
      */
     public function chainedBatch(Closure $callback)
@@ -498,13 +499,11 @@ class BusFake implements Fake, QueueingDispatcher
     /**
      * Assert if a batch was dispatched based on a truth-test callback.
      *
-     * @param  array|callable(\Illuminate\Bus\PendingBatch): bool  $callback
+     * @param  callable  $callback
      * @return void
      */
-    public function assertBatched(callable|array $callback)
+    public function assertBatched(callable $callback)
     {
-        $callback = is_array($callback) ? fn (PendingBatchFake $batch) => $batch->hasJobs($callback) : $callback;
-
         PHPUnit::assertTrue(
             $this->batched($callback)->count() > 0,
             'The expected batch was not dispatched.'
@@ -607,8 +606,8 @@ class BusFake implements Fake, QueueingDispatcher
     /**
      * Get all of the pending batches matching a truth-test callback.
      *
-     * @param  callable(\Illuminate\Bus\PendingBatch): bool  $callback
-     * @return \Illuminate\Support\Collection<int, \Illuminate\Bus\PendingBatch>
+     * @param  callable  $callback
+     * @return \Illuminate\Support\Collection
      */
     public function batched(callable $callback)
     {

@@ -7,7 +7,6 @@ use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Contracts\Queue\Queue as QueueContract;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
-use Illuminate\Queue\Events\JobAttempted;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
@@ -132,11 +131,7 @@ class SyncQueue extends Queue implements QueueContract
 
             $this->raiseAfterJobEvent($queueJob);
         } catch (Throwable $e) {
-            $exceptionOccurred = true;
-
             $this->handleException($queueJob, $e);
-        } finally {
-            $this->raiseJobAttemptedEvent($queueJob, $exceptionOccurred ?? false);
         }
 
         return 0;
@@ -177,20 +172,6 @@ class SyncQueue extends Queue implements QueueContract
     {
         if ($this->container->bound('events')) {
             $this->container['events']->dispatch(new JobProcessed($this->connectionName, $job));
-        }
-    }
-
-    /**
-     * Raise the job attempted event.
-     *
-     * @param  \Illuminate\Contracts\Queue\Job  $job
-     * @param  bool  $exceptionOccurred
-     * @return void
-     */
-    protected function raiseJobAttemptedEvent(Job $job, bool $exceptionOccurred = false)
-    {
-        if ($this->container->bound('events')) {
-            $this->container['events']->dispatch(new JobAttempted($this->connectionName, $job, $exceptionOccurred));
         }
     }
 

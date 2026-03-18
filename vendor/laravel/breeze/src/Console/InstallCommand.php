@@ -7,7 +7,6 @@ use Illuminate\Contracts\Console\PromptsForMissingInput;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
-use Pest\TestSuite;
 use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
@@ -443,6 +442,6 @@ class InstallCommand extends Command implements PromptsForMissingInput
      */
     protected function isUsingPest()
     {
-        return class_exists(TestSuite::class);
+        return class_exists(\Pest\TestSuite::class);
     }
 }

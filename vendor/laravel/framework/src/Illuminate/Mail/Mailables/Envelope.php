@@ -61,7 +61,7 @@ class Envelope
     public $tags = [];
 
     /**
-     * The message's metadata.
+     * The message's meta data.
      *
      * @var array
      */

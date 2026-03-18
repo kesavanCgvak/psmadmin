@@ -1,5 +1,4 @@
 # {{ $exception->class() }} - {!! $exception->title() !!}
-
 {!! $exception->message() !!}
 
 PHP {{ PHP_VERSION }}

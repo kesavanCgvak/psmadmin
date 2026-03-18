@@ -5,11 +5,9 @@ namespace Illuminate\Redis\Connections;
 use Closure;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Redis\Events\CommandExecuted;
-use Illuminate\Redis\Events\CommandFailed;
 use Illuminate\Redis\Limiters\ConcurrencyLimiterBuilder;
 use Illuminate\Redis\Limiters\DurationLimiterBuilder;
 use Illuminate\Support\Traits\Macroable;
-use Throwable;
 
 abstract class Connection
 {
@@ -115,15 +113,7 @@ abstract class Connection
     {
         $start = microtime(true);
 
-        try {
-            $result = $this->client->{$method}(...$parameters);
-        } catch (Throwable $e) {
-            $this->events?->dispatch(new CommandFailed(
-                $method, $this->parseParametersForEvent($parameters), $e, $this
-            ));
-
-            throw $e;
-        }
+        $result = $this->client->{$method}(...$parameters);
 
         $time = round((microtime(true) - $start) * 1000, 2);
 
@@ -170,17 +160,6 @@ abstract class Connection
     }
 
     /**
-     * Register a Redis command failure listener with the connection.
-     *
-     * @param  \Closure  $callback
-     * @return void
-     */
-    public function listenForFailures(Closure $callback)
-    {
-        $this->events?->listen(CommandFailed::class, $callback);
-    }
-
-    /**
      * Get the connection name.
      *
      * @return string|null
@@ -191,7 +170,7 @@ abstract class Connection
     }
 
     /**
-     * Set the connection's name.
+     * Set the connections name.
      *
      * @param  string  $name
      * @return $this
@@ -206,7 +185,7 @@ abstract class Connection
     /**
      * Get the event dispatcher used by the connection.
      *
-     * @return \Illuminate\Contracts\Events\Dispatcher|null
+     * @return \Illuminate\Contracts\Events\Dispatcher
      */
     public function getEventDispatcher()
     {

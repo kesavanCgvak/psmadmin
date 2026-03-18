@@ -5,6 +5,7 @@ namespace Illuminate\Foundation\Exceptions\Renderer;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Foundation\Exceptions\Renderer\Mappers\BladeMapper;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Symfony\Component\ErrorHandler\ErrorRenderer\HtmlErrorRenderer;
 use Throwable;
 
@@ -107,7 +108,19 @@ class Renderer
      */
     public static function css()
     {
-        return '<style>'.file_get_contents(static::DIST.'styles.css').'</style>';
+        return (new Collection([
+            ['styles.css', []],
+            ['light-mode.css', ['data-theme' => 'light']],
+            ['dark-mode.css', ['data-theme' => 'dark']],
+        ]))->map(function ($fileAndAttributes) {
+            [$filename, $attributes] = $fileAndAttributes;
+
+            return '<style '.(new Collection($attributes))->map(function ($value, $attribute) {
+                return $attribute.'="'.$value.'"';
+            })->implode(' ').'>'
+                .file_get_contents(static::DIST.$filename)
+                .'</style>';
+        })->implode('');
     }
 
     /**

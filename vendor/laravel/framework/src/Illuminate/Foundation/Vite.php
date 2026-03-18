@@ -897,7 +897,7 @@ class Vite implements Htmlable
 
         $chunk = $this->chunk($this->manifest($buildDirectory), $asset);
 
-        $path = $this->publicPath($buildDirectory.'/'.$chunk['file']);
+        $path = public_path($buildDirectory.'/'.$chunk['file']);
 
         if (! is_file($path) || ! file_exists($path)) {
             throw new ViteException("Unable to locate file from Vite manifest: {$path}.");
@@ -916,17 +916,6 @@ class Vite implements Htmlable
     protected function assetPath($path, $secure = null)
     {
         return ($this->assetPathResolver ?? asset(...))($path, $secure);
-    }
-
-    /**
-     * Generate a public path for an asset.
-     *
-     * @param  string  $path
-     * @return string
-     */
-    protected function publicPath($path)
-    {
-        return public_path($path);
     }
 
     /**

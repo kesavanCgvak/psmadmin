@@ -73,7 +73,7 @@ class EventListCommand extends Command
         $data = $events->map(function ($listeners, $event) {
             return [
                 'event' => strip_tags($this->appendEventInterfaces($event)),
-                'listeners' => (new Collection($listeners))->map(fn ($listener) => strip_tags($listener))->values()->all(),
+                'listeners' => collect($listeners)->map(fn ($listener) => strip_tags($listener))->values()->all(),
             ];
         })->values();
 
@@ -230,8 +230,6 @@ class EventListCommand extends Command
      * Gets the raw version of event listeners from the event dispatcher.
      *
      * @return array
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     protected function getRawListeners()
     {
@@ -242,8 +240,6 @@ class EventListCommand extends Command
      * Get the event dispatcher.
      *
      * @return \Illuminate\Events\Dispatcher
-     *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
      */
     public function getEventsDispatcher()
     {

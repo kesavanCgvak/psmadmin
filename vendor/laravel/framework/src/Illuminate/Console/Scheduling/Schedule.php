@@ -200,23 +200,15 @@ class Schedule
                 : $job::class;
         }
 
-        $this->events[] = $event = new CallbackEvent(
-            $this->eventMutex, function () use ($job, $queue, $connection) {
-                $job = is_string($job) ? Container::getInstance()->make($job) : $job;
+        return $this->name($jobName)->call(function () use ($job, $queue, $connection) {
+            $job = is_string($job) ? Container::getInstance()->make($job) : $job;
 
-                if ($job instanceof ShouldQueue) {
-                    $this->dispatchToQueue($job, $queue ?? $job->queue, $connection ?? $job->connection);
-                } else {
-                    $this->dispatchNow($job);
-                }
-            }, [], $this->timezone
-        );
-
-        $event->name($jobName);
-
-        $this->mergePendingAttributes($event);
-
-        return $event;
+            if ($job instanceof ShouldQueue) {
+                $this->dispatchToQueue($job, $queue ?? $job->queue, $connection ?? $job->connection);
+            } else {
+                $this->dispatchNow($job);
+            }
+        });
     }
 
     /**
@@ -309,7 +301,7 @@ class Schedule
     /**
      * Create new schedule group.
      *
-     * @param  \Closure  $events
+     * @param  \Illuminate\Console\Scheduling\Event  $event
      * @return void
      *
      * @throws \RuntimeException
@@ -320,8 +312,7 @@ class Schedule
             throw new RuntimeException('Invoke an attribute method such as Schedule::daily() before defining a schedule group.');
         }
 
-        $this->groupStack[] = $this->attributes;
-        $this->attributes = null;
+        $this->groupStack[] = clone $this->attributes;
 
         $events($this);
 
@@ -336,16 +327,16 @@ class Schedule
      */
     protected function mergePendingAttributes(Event $event)
     {
-        if (! empty($this->groupStack)) {
-            $group = array_last($this->groupStack);
-
-            $group->mergeAttributes($event);
-        }
-
         if (isset($this->attributes)) {
             $this->attributes->mergeAttributes($event);
 
             $this->attributes = null;
+        }
+
+        if (! empty($this->groupStack)) {
+            $group = array_last($this->groupStack);
+
+            $group->mergeAttributes($event);
         }
     }
 
@@ -432,13 +423,11 @@ class Schedule
     /**
      * Specify the cache store that should be used to store mutexes.
      *
-     * @param  \UnitEnum|string  $store
+     * @param  string  $store
      * @return $this
      */
     public function useCache($store)
     {
-        $store = enum_value($store);
-
         if ($this->eventMutex instanceof CacheAware) {
             $this->eventMutex->useStore($store);
         }
@@ -486,8 +475,8 @@ class Schedule
             return $this->macroCall($method, $parameters);
         }
 
-        if (method_exists(PendingEventAttributes::class, $method) || Event::hasMacro($method)) {
-            $this->attributes ??= $this->groupStack ? clone array_last($this->groupStack) : new PendingEventAttributes($this);
+        if (method_exists(PendingEventAttributes::class, $method)) {
+            $this->attributes ??= array_last($this->groupStack) ?: new PendingEventAttributes($this);
 
             return $this->attributes->$method(...$parameters);
         }

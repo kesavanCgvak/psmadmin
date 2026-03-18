@@ -12,9 +12,7 @@ class MariaDbSchemaState extends MySqlSchemaState
      */
     public function load($path)
     {
-        $versionInfo = $this->detectClientVersion();
-
-        $command = 'mariadb '.$this->connectionString($versionInfo).' --database="${:LARAVEL_LOAD_DATABASE}" < "${:LARAVEL_LOAD_PATH}"';
+        $command = 'mariadb '.$this->connectionString().' --database="${:LARAVEL_LOAD_DATABASE}" < "${:LARAVEL_LOAD_PATH}"';
 
         $process = $this->makeProcess($command)->setTimeout(null);
 
@@ -30,9 +28,7 @@ class MariaDbSchemaState extends MySqlSchemaState
      */
     protected function baseDumpCommand()
     {
-        $versionInfo = $this->detectClientVersion();
-
-        $command = 'mariadb-dump '.$this->connectionString($versionInfo).' --no-tablespaces --skip-add-locks --skip-comments --skip-set-charset --tz-utc';
+        $command = 'mariadb-dump '.$this->connectionString().' --no-tablespaces --skip-add-locks --skip-comments --skip-set-charset --tz-utc';
 
         return $command.' "${:LARAVEL_LOAD_DATABASE}"';
     }

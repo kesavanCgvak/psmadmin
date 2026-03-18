@@ -44,7 +44,7 @@ class Listener
     /**
      * Returns the queries that have been executed.
      *
-     * @return array<int, array{connectionName: string, time: float, sql: string, bindings: array}>
+     * @return array<int, array{sql: string, time: float}>
      */
     public function queries()
     {
@@ -59,7 +59,7 @@ class Listener
      */
     public function onQueryExecuted(QueryExecuted $event)
     {
-        if (count($this->queries) === 101) {
+        if (count($this->queries) === 100) {
             return;
         }
 

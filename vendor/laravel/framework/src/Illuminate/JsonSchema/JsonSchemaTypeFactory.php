@@ -3,9 +3,8 @@
 namespace Illuminate\JsonSchema;
 
 use Closure;
-use Illuminate\Contracts\JsonSchema\JsonSchema as JsonSchemaContract;
 
-class JsonSchemaTypeFactory extends JsonSchema implements JsonSchemaContract
+class JsonSchemaTypeFactory extends JsonSchema
 {
     /**
      * Create a new object schema instance.

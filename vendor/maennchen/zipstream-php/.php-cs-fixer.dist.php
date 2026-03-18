@@ -71,5 +71,4 @@ return $config->setRules([
     ])
     ->setFinder($finder)
     ->setRiskyAllowed(true)
-    ->setUnsupportedPhpVersionAllowed(true)
     ->setParallelConfig(Runner\Parallel\ParallelConfigFactory::detect());

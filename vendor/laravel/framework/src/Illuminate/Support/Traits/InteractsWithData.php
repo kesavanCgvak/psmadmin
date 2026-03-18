@@ -2,12 +2,9 @@
 
 namespace Illuminate\Support\Traits;
 
-use Carbon\CarbonInterval;
-use Carbon\Unit;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Date;
-use Illuminate\Support\Number;
 use Illuminate\Support\Str;
 use stdClass;
 
@@ -272,7 +269,7 @@ trait InteractsWithData
      */
     public function integer($key, $default = 0)
     {
-        return (int) $this->data($key, $default);
+        return intval($this->data($key, $default));
     }
 
     /**
@@ -284,21 +281,7 @@ trait InteractsWithData
      */
     public function float($key, $default = 0.0)
     {
-        return (float) $this->data($key, $default);
-    }
-
-    /**
-     * Retrieve data clamped between min and max values.
-     *
-     * @param  string  $key
-     * @param  int|float  $min
-     * @param  int|float  $max
-     * @param  int|float  $default
-     * @return float|int
-     */
-    public function clamp($key, $min, $max, $default = 0)
-    {
-        return Number::clamp($this->data($key, $default), $min, $max);
+        return floatval($this->data($key, $default));
     }
 
     /**
@@ -327,39 +310,14 @@ trait InteractsWithData
     }
 
     /**
-     * Retrieve data from the instance as a CarbonInterval instance.
-     *
-     * @param  string  $key
-     * @param  \Carbon\Unit|string|null  $unit
-     * @return \Carbon\CarbonInterval|null
-     */
-    public function interval($key, $unit = null)
-    {
-        if ($this->isNotFilled($key)) {
-            return null;
-        }
-
-        $value = $this->data($key);
-
-        if (is_null($unit)) {
-            return CarbonInterval::make($value);
-        }
-
-        $unit = $unit instanceof Unit ? $unit : Unit::fromName($unit);
-
-        return $unit->interval((float) $value);
-    }
-
-    /**
      * Retrieve data from the instance as an enum.
      *
      * @template TEnum of \BackedEnum
-     * @template TDefault of TEnum|null
      *
      * @param  string  $key
      * @param  class-string<TEnum>  $enumClass
-     * @param  TDefault  $default
-     * @return TEnum|TDefault
+     * @param  TEnum|null  $default
+     * @return TEnum|null
      */
     public function enum($key, $enumClass, $default = null)
     {
@@ -399,7 +357,7 @@ trait InteractsWithData
      */
     protected function isBackedEnum($enumClass)
     {
-        return is_a($enumClass, \BackedEnum::class, true);
+        return enum_exists($enumClass) && method_exists($enumClass, 'tryFrom');
     }
 
     /**

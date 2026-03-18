@@ -21,8 +21,6 @@ use Illuminate\Contracts\Foundation\CachesRoutes;
 use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
 use Pusher\Pusher;
-use RuntimeException;
-use Throwable;
 
 /**
  * @mixin \Illuminate\Contracts\Broadcasting\Broadcaster
@@ -189,12 +187,15 @@ class BroadcastManager implements FactoryContract
                 : $dispatch();
         }
 
-        $queue = match (true) {
-            method_exists($event, 'broadcastQueue') => $event->broadcastQueue(),
-            isset($event->broadcastQueue) => $event->broadcastQueue,
-            isset($event->queue) => $event->queue,
-            default => null,
-        };
+        $queue = null;
+
+        if (method_exists($event, 'broadcastQueue')) {
+            $queue = $event->broadcastQueue();
+        } elseif (isset($event->broadcastQueue)) {
+            $queue = $event->broadcastQueue;
+        } elseif (isset($event->queue)) {
+            $queue = $event->queue;
+        }
 
         $broadcastEvent = new BroadcastEvent(clone $event);
 
@@ -291,11 +292,7 @@ class BroadcastManager implements FactoryContract
             throw new InvalidArgumentException("Driver [{$config['driver']}] is not supported.");
         }
 
-        try {
-            return $this->{$driverMethod}($config);
-        } catch (Throwable $e) {
-            throw new RuntimeException("Failed to create broadcaster for connection \"{$name}\" with error: {$e->getMessage()}.", 0, $e);
-        }
+        return $this->{$driverMethod}($config);
     }
 
     /**
@@ -328,7 +325,7 @@ class BroadcastManager implements FactoryContract
      */
     protected function createPusherDriver(array $config)
     {
-        return new PusherBroadcaster($this->pusher($config), $config['jsonp'] ?? false);
+        return new PusherBroadcaster($this->pusher($config));
     }
 
     /**
@@ -462,7 +459,7 @@ class BroadcastManager implements FactoryContract
     }
 
     /**
-     * Disconnect the given driver / connection and remove it from local cache.
+     * Disconnect the given disk and remove from local cache.
      *
      * @param  string|null  $name
      * @return void

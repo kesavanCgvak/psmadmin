@@ -1168,7 +1168,7 @@ class ReferenceHelper
     private function clearStripCell(Worksheet $worksheet, string $coordinate): void
     {
         $worksheet->removeConditionalStyles($coordinate);
-        $worksheet->setHyperlink($coordinate, null, false);
+        $worksheet->setHyperlink($coordinate);
         $worksheet->setDataValidation($coordinate);
         $worksheet->removeComment($coordinate);
 

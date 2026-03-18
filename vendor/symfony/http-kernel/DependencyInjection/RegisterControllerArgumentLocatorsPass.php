@@ -46,7 +46,7 @@ class RegisterControllerArgumentLocatorsPass implements CompilerPassInterface
 
         $publicAliases = [];
         foreach ($container->getAliases() as $id => $alias) {
-            if ($alias->isPublic()) {
+            if ($alias->isPublic() && !$alias->isPrivate()) {
                 $publicAliases[(string) $alias][] = $id;
             }
         }
@@ -198,10 +198,8 @@ class RegisterControllerArgumentLocatorsPass implements CompilerPassInterface
                         $args[$p->name] = new Reference($erroredId, ContainerInterface::RUNTIME_EXCEPTION_ON_INVALID_REFERENCE);
                         ++$erroredIds;
                     } else {
-                        $targetAttribute = null;
-                        $name = Target::parseName($p, $targetAttribute);
-                        $target = preg_replace('/(^|[(|&])\\\\/', '\\1', $target);
-                        $args[$p->name] = $type ? new TypedReference($target, $type, $invalidBehavior, $name, $targetAttribute ? [$targetAttribute] : []) : new Reference($target, $invalidBehavior);
+                        $target = preg_replace('/(^|[(|&])\\\\/', '\1', $target);
+                        $args[$p->name] = $type ? new TypedReference($target, $type, $invalidBehavior, Target::parseName($p)) : new Reference($target, $invalidBehavior);
                     }
                 }
                 // register the maps as a per-method service-locators
