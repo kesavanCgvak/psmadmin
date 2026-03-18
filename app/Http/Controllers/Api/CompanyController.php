@@ -814,7 +814,24 @@ class CompanyController extends Controller
             }
 
             // ✅ Distance or same-city fallback
-            $query->havingRaw('distance <= ? OR companies.city_id = ?', [$radius, $validated['city_id']])
+            // Note: city_id must be in WHERE (not HAVING) - MySQL disallows non-grouping fields in HAVING
+            $query->where(function ($q) use ($radius, $cityLat, $cityLng, $validated) {
+                $q->whereRaw('(
+                    COALESCE(
+                        6371 * acos(
+                            LEAST(
+                                1.0,
+                                cos(radians(?))
+                                * cos(radians(companies.latitude))
+                                * cos(radians(companies.longitude) - radians(?))
+                                + sin(radians(?))
+                                * sin(radians(companies.latitude))
+                            )
+                        ), 0
+                    )
+                ) <= ?', [$cityLat, $cityLng, $cityLat, $radius])
+                ->orWhere('companies.city_id', $validated['city_id']);
+            })
                 ->orderBy('distance');
 
             $results = $query->get();

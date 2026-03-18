@@ -220,7 +220,7 @@ class RentalRequestController extends Controller
                         Mail::send('emails.quoteRequest', $mailContent, function ($message) use ($company, $validated) {
                             $message->to($company->getDefaultcontact->email, $validated['name'])
                                 ->subject('Quote Request from Pro Subrental Marketplace')
-                                ->from('acctracking001@gmail.com', 'Pro Subrental Marketplace');
+                                ->from(config('mail.from.address'), config('mail.from.name'));
                         });
                     }
                 }
