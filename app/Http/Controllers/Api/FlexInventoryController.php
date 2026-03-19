@@ -9,6 +9,7 @@ use App\Models\LinearUnit;
 use App\Models\Product;
 use App\Models\WeightUnit;
 use App\Services\FlexService;
+use App\Services\InventoryImportService;
 use App\Support\PsmCodeGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -95,34 +96,39 @@ class FlexInventoryController extends Controller
         }
 
         try {
-            $existingByFlex = Equipment::where('company_id', $companyId)
-                ->where('flex_resource_id', $flexId)
-                ->first();
+            $result = InventoryImportService::checkImportStatus($companyId, $flexId);
 
-            if ($existingByFlex) {
+            if ($result['status'] === 'already_in_inventory') {
                 return response()->json([
                     'status' => 'already_in_inventory',
-                    'message' => 'Already imported',
+                    'message' => $result['message'],
+                    'brand_name' => $result['brand_name'] ?? null,
+                    'model' => $result['model'] ?? null,
                 ], 200);
             }
 
-            $details = FlexService::getInventoryDetails($companyId, $flexId);
-            $name = $details['name'] ?? '';
-            $parsed = FlexService::parseBrandAndModel($name);
-            $existingProduct = FlexService::findExistingProduct($parsed['brand_id'], $parsed['normalized_model']);
-            $dayRate = FlexService::getDayRentalRate($companyId, $flexId);
+            if ($result['status'] === 'inventory_exists') {
+                return response()->json([
+                    'status' => 'inventory_exists',
+                    'inventory_id' => $result['inventory_id'],
+                    'brand_name' => $result['brand_name'] ?? null,
+                    'model' => $result['model'] ?? null,
+                ], 200);
+            }
 
-            if ($existingProduct) {
+            if ($result['status'] === 'product_exists') {
                 return response()->json([
                     'status' => 'product_exists',
-                    'product_id' => $existingProduct->id,
-                    'day_rate' => $dayRate,
+                    'product_id' => $result['product_id'],
+                    'day_rate' => $result['day_rate'],
+                    'brand_name' => $result['brand_name'] ?? null,
+                    'model' => $result['model'] ?? null,
                 ], 200);
             }
 
             return response()->json([
                 'status' => 'new_product',
-                'day_rate' => $dayRate,
+                'day_rate' => $result['day_rate'],
             ], 200);
         } catch (\RuntimeException $e) {
             return response()->json([
@@ -137,6 +143,81 @@ class FlexInventoryController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'An unexpected error occurred while checking import status.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Link an existing company_inventory item to a Flex resource.
+     * POST /api/flex/link-inventory
+     * Payload: { inventory_id, flex_id }
+     */
+    public function linkInventory(Request $request): JsonResponse
+    {
+        $user = $this->getAuthenticatedUser();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $companyId = $user->company_id;
+        if (!$companyId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Company not found for this user.',
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'inventory_id' => 'required|integer|min:1',
+            'flex_id' => 'required',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $inventoryId = (int) $request->input('inventory_id');
+        $flexId = (string) $request->input('flex_id');
+
+        try {
+            $result = InventoryImportService::linkFlexToExistingInventory($companyId, $inventoryId, $flexId);
+
+            if (isset($result['status']) && $result['status'] === 'already_linked') {
+                return response()->json([
+                    'success' => false,
+                    'status' => 'already_linked',
+                    'message' => $result['message'],
+                ], 200);
+            }
+
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message'],
+                ], 400);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $result['message'],
+            ], 200);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 400);
+        } catch (\Exception $e) {
+            Log::error('Flex link-inventory error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'An unexpected error occurred while linking Flex.',
             ], 500);
         }
     }
@@ -182,27 +263,30 @@ class FlexInventoryController extends Controller
         $confirm = $request->boolean('confirm', true);
 
         try {
-            // Step 1: Check duplicate inventory (company_id + flex_resource_id)
-            $existingByFlex = Equipment::where('company_id', $companyId)
-                ->where('flex_resource_id', $flexId)
-                ->first();
+            $checkResult = InventoryImportService::checkImportStatus($companyId, $flexId);
 
-            if ($existingByFlex) {
+            if ($checkResult['status'] === 'already_in_inventory') {
                 return response()->json([
                     'success' => false,
                     'status' => 'already_in_inventory',
-                    'message' => 'Already imported',
+                    'message' => $checkResult['message'],
                 ], 200);
             }
 
-            // Step 2: Fetch details from Flex
+            if ($checkResult['status'] === 'inventory_exists') {
+                return response()->json([
+                    'status' => 'inventory_exists',
+                    'inventory_id' => $checkResult['inventory_id'],
+                ], 200);
+            }
+
             $details = FlexService::getInventoryDetails($companyId, $flexId);
             $name = $details['name'] ?? $request->input('name', '');
             $softwareCode = $details['sku'] ?? $details['partNumber'] ?? $flexId;
-
-            // Step 3: Parse brand + model and check for existing product
             $parsed = FlexService::parseBrandAndModel($name);
-            $existingProduct = FlexService::findExistingProduct($parsed['brand_id'], $parsed['normalized_model']);
+            $existingProduct = ($checkResult['status'] === 'product_exists')
+                ? Product::find($checkResult['product_id'])
+                : null;
 
             if (!$confirm) {
                 $dayRate = FlexService::getDayRentalRate($companyId, $flexId);

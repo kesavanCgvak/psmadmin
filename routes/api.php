@@ -193,6 +193,7 @@ Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
     Route::get('/search', [FlexInventoryController::class, 'search']);
     Route::get('/import/check', [FlexInventoryController::class, 'checkImport']);
     Route::post('/import', [FlexInventoryController::class, 'import']);
+    Route::post('/link-inventory', [FlexInventoryController::class, 'linkInventory']);
 });
 
 Route::middleware(['jwt.verify'])->group(function () {

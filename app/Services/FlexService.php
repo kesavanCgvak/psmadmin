@@ -239,6 +239,7 @@ class FlexService
     public function getDayRate($flexId, $currencyId): ?float
     {
         if (!$currencyId) {
+            Log::warning('Flex Day Rate: currencyId is null, cannot fetch pricing');
             return null;
         }
 
@@ -257,6 +258,12 @@ class FlexService
                 ))
                 ->get($url, $params);
 
+            $pricingResponse = $response->json();
+            Log::info('Flex Pricing Response', [
+                'flex_id' => $flexId,
+                'response' => $pricingResponse,
+            ]);
+
             if (!$response->successful()) {
                 Log::warning('Flex pricing API error', [
                     'url' => $url,
@@ -267,24 +274,37 @@ class FlexService
                 return null;
             }
 
-            $data = $response->json();
-            $rows = $data['content'] ?? $data['rows'] ?? $data['data'] ?? (is_array($data) ? $data : []);
+            $rows = $pricingResponse['content'] ?? $pricingResponse['rows'] ?? $pricingResponse['data'] ?? (is_array($pricingResponse) ? $pricingResponse : []);
 
             if (!is_array($rows)) {
+                Log::warning('Day Rate not found', [
+                    'flex_id' => $flexId,
+                    'pricing_response' => $pricingResponse,
+                ]);
                 return null;
             }
 
-            foreach ($rows as $row) {
-                $modelName = $row['pricingModelName'] ?? $row['pricing_model_name'] ?? $row['name'] ?? '';
-                if (stripos((string) $modelName, 'Day Rate') !== false) {
-                    $price = $row['retailPricePerUnit'] ?? $row['retail_price_per_unit'] ?? $row['price'] ?? null;
-                    if ($price !== null && $price !== '') {
-                        return (float) $price;
-                    }
+            $dayRate = null;
+            foreach ($rows as $price) {
+                if (
+                    isset($price['pricingModelName']) &&
+                    trim(strtolower((string) $price['pricingModelName'])) === 'day rate'
+                ) {
+                    $dayRate = $price['retailPricePerUnit'] ?? $price['retail_price_per_unit'] ?? $price['price'] ?? null;
+                    break;
                 }
             }
 
-            return null;
+            $dayRate = $dayRate !== null && $dayRate !== '' ? (float) $dayRate : null;
+
+            if ($dayRate === null) {
+                Log::warning('Day Rate not found', [
+                    'flex_id' => $flexId,
+                    'pricing_response' => $pricingResponse,
+                ]);
+            }
+
+            return $dayRate;
         } catch (\Exception $e) {
             Log::error('Flex Day Rate fetch error', [
                 'resource_id' => $flexId,
@@ -339,24 +359,31 @@ class FlexService
                 }
 
                 $data = $response->json();
+
+                // Flex API can return: wrapped {content/currencies/data: [...]} OR direct array [{...}]
                 $items = $data['content'] ?? $data['currencies'] ?? $data['data'] ?? null;
+                if ($items === null && is_array($data) && isset($data[0]) && is_array($data[0])) {
+                    $items = $data;
+                }
 
                 if (is_array($items)) {
-                    foreach ($items as $item) {
-                        $isoCode = $item['isoCode'] ?? $item['iso_code'] ?? $item['code'] ?? null;
-                        if (strtoupper((string) $isoCode) === 'USD') {
-                            return (string) ($item['id'] ?? $item['currencyId'] ?? null);
-                        }
+                    $usd = collect($items)->first(function ($item) {
+                        $isoCode = $item['isoCode'] ?? null;
+                        return strtoupper((string) $isoCode) === 'USD';
+                    });
+                    if ($usd !== null) {
+                        return (string) ($usd['id'] ?? $usd['currencyId'] ?? null);
                     }
                 }
 
-                if (is_array($data)) {
-                    $isoCode = $data['isoCode'] ?? $data['iso_code'] ?? $data['code'] ?? null;
-                    if (strtoupper((string) $isoCode) === 'USD') {
-                        return (string) ($data['id'] ?? $data['currencyId'] ?? null);
+                // Single currency object (not wrapped in array)
+                if (is_array($data) && isset($data['isoCode'])) {
+                    if (strtoupper((string) $data['isoCode']) === 'USD') {
+                        return (string) ($data['id'] ?? null);
                     }
                 }
 
+                Log::warning('Flex currency: USD not found in currency/identity response');
                 return null;
             } catch (\Exception $e) {
                 Log::error('Flex currency fetch error', ['error' => $e->getMessage()]);
@@ -375,56 +402,15 @@ class FlexService
     public static function getDayRentalRate(int $companyId, $resourceId): ?float
     {
         try {
-            $service = new self($companyId);
             $currencyId = self::getUsdCurrencyId($companyId);
 
             if (!$currencyId) {
-                Log::debug('Flex Day Rate: USD currency not found, skipping pricing fetch');
+                Log::warning('Flex Day Rate: USD currency not found (currencyId is null), stopping pricing fetch');
                 return null;
             }
 
-            $path = config('flex.pricing_path', '/f5/api/resource-pricing/grid-node');
-            $url = $service->baseUrl . $path;
-            $params = [
-                'resourceId' => $resourceId,
-                'currencyId' => $currencyId,
-            ];
-
-            $response = Http::timeout($service->timeout)
-                ->withHeaders(array_merge(
-                    $service->getAuthHeaders(),
-                    ['Content-Type' => 'application/json']
-                ))
-                ->get($url, $params);
-
-            if (!$response->successful()) {
-                Log::warning('Flex pricing API error', [
-                    'url' => $url,
-                    'resource_id' => $resourceId,
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                ]);
-                return null;
-            }
-
-            $data = $response->json();
-            $rows = $data['content'] ?? $data['rows'] ?? $data['data'] ?? (is_array($data) ? $data : []);
-
-            if (!is_array($rows)) {
-                return null;
-            }
-
-            foreach ($rows as $row) {
-                $modelName = $row['pricingModelName'] ?? $row['pricing_model_name'] ?? $row['name'] ?? '';
-                if (stripos((string) $modelName, 'Day Rate') !== false) {
-                    $price = $row['retailPricePerUnit'] ?? $row['retail_price_per_unit'] ?? $row['price'] ?? null;
-                    if ($price !== null && $price !== '') {
-                        return (float) $price;
-                    }
-                }
-            }
-
-            return null;
+            $service = new self($companyId);
+            return $service->getDayRate($resourceId, $currencyId);
         } catch (\Exception $e) {
             Log::error('Flex Day Rate fetch error', [
                 'resource_id' => $resourceId,
@@ -515,12 +501,12 @@ class FlexService
 
         // 2. Fetch pricing
         $dayRate = $overrideRentalRate;
-        if ($dayRate === null) {
-            $currencyId = $service->getCurrencyId();
-            $dayRate = $currencyId ? $service->getDayRate($flexId, $currencyId) : null;
-        }
+        // if ($dayRate === null) {
+        $currencyId = $service->getCurrencyId();
+        $dayRate = $currencyId ? $service->getDayRate($flexId, $currencyId) : null;
+        // }F
 
-        // 3. Update inventory_master ONLY if values exist (do not overwrite with null)
+        // 3. Update inventory_master ONLY if values are empty (do not overwrite existing)
         $productUpdates = [];
         $dimensionFields = ['height', 'width', 'length', 'weight', 'replacement_price'];
         $flexMapping = [
@@ -532,12 +518,15 @@ class FlexService
         ];
 
         foreach ($dimensionFields as $dbField) {
+            $currentValue = $product->{$dbField};
+            if ($currentValue !== null && $currentValue !== '') {
+                continue;
+            }
             $flexKey = $flexMapping[$dbField];
             $value = $details[$flexKey] ?? null;
             if ($value === null || $value === '') {
                 continue;
             }
-            // If replacementCost is 0, do not overwrite existing product replacement_price
             if ($dbField === 'replacement_price' && (float) $value === 0.0) {
                 continue;
             }
@@ -584,24 +573,48 @@ class FlexService
 
     /**
      * Find existing product in inventory_master by brand_id + normalized model.
+     * Uses exact match first, then fallback to partial matching (e.g. "NXAE104" matches "NXAE104 AES/EBU Network Card").
      *
      * @param int|null $brandId Brand ID
-     * @param string|null $normalizedModel Normalized model string
+     * @param string|null $normalizedModel Normalized model string from full Flex name
+     * @param string|null $rawModelOrFullName Optional raw Flex name for extractModelCode fallback (e.g. "NXAE104 AES/EBU Network Card")
      * @return Product|null
      */
-    public static function findExistingProduct(?int $brandId, ?string $normalizedModel): ?Product
+    public static function findExistingProduct(?int $brandId, ?string $normalizedModel, ?string $rawModelOrFullName = null): ?Product
     {
-        if (!$normalizedModel) {
+        if (!$normalizedModel && !$rawModelOrFullName) {
             return null;
         }
 
-        $query = Product::where('normalized_model', $normalizedModel);
+        $baseQuery = function ($q) use ($normalizedModel, $rawModelOrFullName) {
+            if ($normalizedModel && ProductNormalizer::isValidNormalizedCode($normalizedModel)) {
+                $q->where('normalized_model', $normalizedModel)
+                    ->orWhereRaw('? LIKE CONCAT(\'%\', COALESCE(normalized_model, \'\'), \'%\')', [$normalizedModel])
+                    ->orWhereRaw('COALESCE(normalized_model, \'\') LIKE CONCAT(\'%\', ?, \'%\')', [$normalizedModel]);
+            }
+
+            if ($rawModelOrFullName) {
+                $extractedCode = ProductNormalizer::extractModelCode($rawModelOrFullName);
+                if ($extractedCode) {
+                    $extractedNormalized = ProductNormalizer::normalizeCode($extractedCode);
+                    if ($extractedNormalized && ProductNormalizer::isValidNormalizedCode($extractedNormalized)) {
+                        $q->orWhere('normalized_model', $extractedNormalized)
+                            ->orWhereRaw('? LIKE CONCAT(\'%\', COALESCE(normalized_model, \'\'), \'%\')', [$extractedNormalized])
+                            ->orWhereRaw('COALESCE(normalized_model, \'\') LIKE CONCAT(\'%\', ?, \'%\')', [$extractedNormalized]);
+                    }
+                }
+            }
+        };
+
+        $query = Product::where(function ($q) use ($baseQuery) {
+            $baseQuery($q);
+        });
 
         if ($brandId !== null) {
             $query->where('brand_id', $brandId);
-        } else {
-            $query->whereNull('brand_id');
         }
+        // When brand_id is null (no brand matched from Flex name), search across all brands
+        // to find products like "NXAE104" that may exist with or without a brand
 
         return $query->first();
     }
