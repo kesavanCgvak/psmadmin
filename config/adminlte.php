@@ -479,6 +479,12 @@ return [
             'icon_color' => 'primary',
         ],
         [
+            'text' => 'Email Logs',
+            'route' => 'admin.email-logs.index',
+            'icon' => 'fas fa-fw fa-inbox',
+            'icon_color' => 'info',
+        ],
+        [
             'text' => 'User Restrictions',
             'route' => 'admin.user-restrictions.index',
             'icon' => 'fas fa-fw fa-users-cog',
