@@ -25,4 +25,13 @@ return [
     | - 'x_auth'  => X-Auth-Token: {api_key} (Flex docs often use this)
     */
     'auth_header' => env('FLEX_AUTH_HEADER', 'bearer'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Currency & Pricing API Paths
+    |--------------------------------------------------------------------------
+    | Used for fetching Day Rate from Flex resource pricing.
+    */
+    'currency_path' => env('FLEX_CURRENCY_PATH', '/f5/api/currency/identity'),
+    'pricing_path' => env('FLEX_PRICING_PATH', '/f5/api/resource-pricing/grid-node'),
 ];

@@ -14,6 +14,7 @@ class Equipment extends Model
         'product_id',
         'quantity',
         'rental_price',
+        'replacement_price',
         'description',
         'software_code',
         'company_id',

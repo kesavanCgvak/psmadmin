@@ -191,6 +191,7 @@ Route::middleware(['jwt.verify'])->group(function () {
 // Flex Rental Solutions inventory import (company-specific credentials)
 Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
     Route::get('/search', [FlexInventoryController::class, 'search']);
+    Route::get('/import/check', [FlexInventoryController::class, 'checkImport']);
     Route::post('/import', [FlexInventoryController::class, 'import']);
 });
 
