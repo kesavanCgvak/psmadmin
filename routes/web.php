@@ -211,6 +211,12 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
         ->name('email-templates.toggle-status');
     Route::get('/email-templates/{emailTemplate}/preview', [\App\Http\Controllers\Admin\EmailTemplateController::class, 'preview'])
         ->name('email-templates.preview');
+
+    // Email Logs (read-only)
+    Route::get('/email-logs', [\App\Http\Controllers\Admin\EmailLogController::class, 'index'])
+        ->name('email-logs.index');
+    Route::get('/email-logs/{emailLog}', [\App\Http\Controllers\Admin\EmailLogController::class, 'show'])
+        ->name('email-logs.show');
 });
 
 // Clear application cache
