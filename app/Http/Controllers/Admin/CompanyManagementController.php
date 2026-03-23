@@ -13,8 +13,11 @@ use App\Models\Country;
 use App\Models\StateProvince;
 use App\Models\City;
 use App\Models\User;
+use App\Models\CompanyRating;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class CompanyManagementController extends Controller
 {
@@ -26,7 +29,58 @@ class CompanyManagementController extends Controller
         $companies = Company::with(['region', 'country', 'city', 'currency', 'rentalSoftware'])
             ->withCount(['users', 'equipments'])
             ->get();
-        return view('admin.companies.index', compact('companies'));
+
+        $companyIds = $companies->pluck('id')->values();
+
+        // Same rating sources as API: job_ratings (renter→provider) then company_ratings fallback.
+        $jobRatingsData = DB::table('job_ratings')
+            ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
+            ->whereIn('supply_jobs.provider_id', $companyIds)
+            ->whereNotNull('job_ratings.rated_at')
+            ->groupBy('supply_jobs.provider_id')
+            ->select(
+                'supply_jobs.provider_id',
+                DB::raw('AVG(job_ratings.rating) as avg_rating'),
+                DB::raw('COUNT(job_ratings.id) as rating_count')
+            )
+            ->get()
+            ->keyBy('provider_id');
+
+        $companyRatingsData = DB::table('company_ratings')
+            ->whereIn('company_id', $companyIds)
+            ->groupBy('company_id')
+            ->select(
+                'company_id',
+                DB::raw('AVG(rating) as avg_rating'),
+                DB::raw('COUNT(id) as rating_count')
+            )
+            ->get()
+            ->keyBy('company_id');
+
+        $ratingStats = [];
+        foreach ($companyIds as $cid) {
+            if (isset($jobRatingsData[$cid])) {
+                $ratingStats[$cid] = [
+                    'avg' => round((float) $jobRatingsData[$cid]->avg_rating, 1),
+                    'count' => (int) $jobRatingsData[$cid]->rating_count,
+                    'source' => 'job_ratings',
+                ];
+            } elseif (isset($companyRatingsData[$cid])) {
+                $ratingStats[$cid] = [
+                    'avg' => round((float) $companyRatingsData[$cid]->avg_rating, 1),
+                    'count' => (int) $companyRatingsData[$cid]->rating_count,
+                    'source' => 'company_ratings',
+                ];
+            } else {
+                $ratingStats[$cid] = [
+                    'avg' => 0.0,
+                    'count' => 0,
+                    'source' => null,
+                ];
+            }
+        }
+
+        return view('admin.companies.index', compact('companies', 'ratingStats'));
     }
 
     /**
@@ -90,6 +144,9 @@ class CompanyManagementController extends Controller
             $data['subscription_mode'] = 'paid';
         }
         $company = Company::create($data);
+
+        // NOTE: We do not insert default company_ratings automatically.
+        // User/company ratings are created only when users submit ratings.
 
         // Check if we should redirect back to user create page
         if ($request->input('return_to_user_create')) {
@@ -261,6 +318,36 @@ class CompanyManagementController extends Controller
             return redirect()->route('admin.companies.index')
                 ->with('error', $message);
         }
+    }
+
+    /**
+     * Update the admin override rating for a company (absolute value).
+     * NULL clears the override (falls back to calculated rating).
+     */
+    public function updateRatingOverride(Request $request, Company $company)
+    {
+        $validator = Validator::make($request->all(), [
+            'rating_override' => 'nullable|numeric|min:0|max:5',
+            'rating_override_reason' => 'nullable|string|max:2000',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->withInput();
+        }
+
+        $override = $request->input('rating_override');
+        $override = ($override === '' || $override === null) ? null : (float) $override;
+
+        $company->update([
+            'rating_override' => $override,
+            'rating_override_reason' => $request->input('rating_override_reason') ?: null,
+            'rating_override_set_by' => Auth::id(),
+            'rating_override_set_at' => now(),
+        ]);
+
+        return redirect()->back()->with('success', 'Company rating override updated.');
     }
 
     /**

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\UserProfile;
 use App\Models\Company;
+use App\Models\CompanyRating;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -162,6 +163,9 @@ class UserManagementController extends Controller
             $company->default_contact_id = $user->id;
             $company->save();
         }
+
+        // NOTE: We do not insert default company_ratings automatically.
+        // User/company ratings are created only when users submit ratings.
 
         // Send emails to the newly created USER (not admin)
         try {

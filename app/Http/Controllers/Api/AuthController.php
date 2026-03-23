@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\DB;
 use App\Jobs\SyncUserToHubSpot;
+use App\Models\CompanyRating;
 
 
 class AuthController extends Controller
@@ -144,6 +145,9 @@ class AuthController extends Controller
                 $company->default_contact_id = $user->id;
                 $company->save();
             }
+
+            // NOTE: We do not insert default company_ratings automatically.
+            // User/company ratings are created only when users submit ratings.
 
             //Create profile
 

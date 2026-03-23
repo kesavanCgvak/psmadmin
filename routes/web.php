@@ -96,6 +96,8 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     Route::resource('companies', \App\Http\Controllers\Admin\CompanyManagementController::class);
     Route::post('/companies/bulk-delete', [\App\Http\Controllers\Admin\CompanyManagementController::class, 'bulkDelete'])
         ->name('companies.bulk-delete');
+    Route::post('/companies/{company}/rating-override', [\App\Http\Controllers\Admin\CompanyManagementController::class, 'updateRatingOverride'])
+        ->name('companies.rating-override');
 
     // Company AJAX endpoints
     Route::get('/ajax/regions/{region}/countries', [\App\Http\Controllers\Admin\CompanyManagementController::class, 'getCountriesByRegion'])

@@ -34,10 +34,16 @@ class Company extends Model
         'hide_from_gear_finder',
         'subscription_mode',
         'blocked_by_admin_at',
+        'rating_override',
+        'rating_override_set_by',
+        'rating_override_reason',
+        'rating_override_set_at',
     ];
 
     protected $casts = [
         'blocked_by_admin_at' => 'datetime',
+        'rating_override' => 'float',
+        'rating_override_set_at' => 'datetime',
     ];
 
     public function users()
