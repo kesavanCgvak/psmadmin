@@ -43,18 +43,31 @@
                             <small class="form-text text-muted">If left empty, will be auto-generated from email address.</small>
                         </div>
 
-                        <div class="form-group">
-                            <label for="full_name">Full Name <span class="text-danger">*</span></label>
-                            <input type="text"
-                                   class="form-control @error('full_name') is-invalid @enderror"
-                                   id="full_name"
-                                   name="full_name"
-                                   value="{{ old('full_name', $adminUser->profile?->full_name) }}"
-                                   required
-                                   placeholder="Enter full name">
-                            @error('full_name')
-                                <span class="invalid-feedback">{{ $message }}</span>
-                            @enderror
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="first_name">First Name <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control @error('first_name') is-invalid @enderror"
+                                           id="first_name" name="first_name"
+                                           value="{{ old('first_name', $adminUser->profile?->first_name) }}"
+                                           required placeholder="Enter first name">
+                                    @error('first_name')
+                                        <span class="invalid-feedback">{{ $message }}</span>
+                                    @enderror
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="last_name">Last Name <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control @error('last_name') is-invalid @enderror"
+                                           id="last_name" name="last_name"
+                                           value="{{ old('last_name', $adminUser->profile?->last_name) }}"
+                                           required placeholder="Enter last name">
+                                    @error('last_name')
+                                        <span class="invalid-feedback">{{ $message }}</span>
+                                    @enderror
+                                </div>
+                            </div>
                         </div>
 
                         <div class="form-group">

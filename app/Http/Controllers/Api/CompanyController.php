@@ -342,8 +342,11 @@ class CompanyController extends Controller
                 ], 404);
             }
 
+            $fullName = trim(($contact->first_name ?? '') . ' ' . ($contact->last_name ?? '')) ?: $contact->full_name;
             $contactData = [
-                'name' => $contact->full_name,
+                'first_name' => $contact->first_name,
+                'last_name' => $contact->last_name,
+                'name' => $fullName,
                 'email' => $contact->email,
                 'mobile' => $contact->mobile,
             ];

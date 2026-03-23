@@ -121,7 +121,7 @@ class RentalJobActionsController extends Controller
 
             // Prepare receiver details
             $receiver = (object) [
-                'contact_name' => $contactUser->name ?? 'there',
+                'contact_name' => $profile->full_name ?? $contactUser->username ?? 'there',
                 'email' => $profile->email,
                 'company_name' => $company->name ?? '-',
             ];
@@ -373,7 +373,7 @@ class RentalJobActionsController extends Controller
         }
 
         $receiver = (object) [
-            'contact_name' => $contactUser->name ?? 'there',
+            'contact_name' => $profile->full_name ?? $contactUser->username ?? 'there',
             'email' => $profile->email,
             'company_name' => $company->name ?? '',
         ];
@@ -484,7 +484,7 @@ class RentalJobActionsController extends Controller
                 continue;
 
             $receiver = (object) [
-                'contact_name' => $contactUser->name ?? 'there',
+                'contact_name' => $profile->full_name ?? $contactUser->username ?? 'there',
                 'email' => $profile->email,
                 'company_name' => $company->name ?? '',
             ];
@@ -642,7 +642,7 @@ class RentalJobActionsController extends Controller
                             }
 
                             $mailData = [
-                                'receiver_contact_name' => $providerContact->name ?? 'there',
+                                'receiver_contact_name' => $providerContact->full_name ?? 'there',
                                 'requester_company_name' => $requesterCompany->name ?? '-',
                                 'rental_job_name' => $rentalJob->name ?? '-',
                                 'status' => 'Cancelled by User',

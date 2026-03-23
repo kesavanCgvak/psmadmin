@@ -186,7 +186,7 @@ class JobNegotiationController extends Controller
 
             $mailContent = [
                 'sender_company_name' => $senderCompany->name,
-                'receiver_contact_name' => $receiverContact?->profile?->first_name ?? 'there',
+                'receiver_contact_name' => $receiverContact?->profile?->full_name ?? 'there',
                 'version' => $offer->version,
                 'total_price' => $offer->total_price,
                 'currency' => $currencySymbol,
