@@ -116,6 +116,7 @@ class AuthController extends Controller
             $company = Company::create([
                 'name' => $request->company_name,
                 'account_type' => $request->account_type,
+                'subscription_mode' => $paymentEnabled ? 'paid' : 'free',
                 'region_id' => $request->region,
                 'country_id' => $request->country_id,
                 'city_id' => $request->city,
