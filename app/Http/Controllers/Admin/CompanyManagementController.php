@@ -145,8 +145,19 @@ class CompanyManagementController extends Controller
         }
         $company = Company::create($data);
 
-        // NOTE: We do not insert default company_ratings automatically.
-        // User/company ratings are created only when users submit ratings.
+        // For provider companies, create an initial 5-star company rating
+        // using the currently logged-in admin user's ID.
+        if (strtolower((string) $company->account_type) === 'provider' && Auth::id()) {
+            CompanyRating::updateOrCreate(
+                [
+                    'company_id' => $company->id,
+                    'user_id' => Auth::id(),
+                ],
+                [
+                    'rating' => 5,
+                ]
+            );
+        }
 
         // Check if we should redirect back to user create page
         if ($request->input('return_to_user_create')) {

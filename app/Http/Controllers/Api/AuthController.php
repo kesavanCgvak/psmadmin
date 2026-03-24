@@ -146,8 +146,19 @@ class AuthController extends Controller
                 $company->save();
             }
 
-            // NOTE: We do not insert default company_ratings automatically.
-            // User/company ratings are created only when users submit ratings.
+            // For provider companies, create an initial 5-star company rating
+            // using the newly registered user's ID.
+            if (strtolower((string) $request->account_type) === 'provider') {
+                CompanyRating::updateOrCreate(
+                    [
+                        'company_id' => $company->id,
+                        'user_id' => $user->id,
+                    ],
+                    [
+                        'rating' => 5,
+                    ]
+                );
+            }
 
             //Create profile
 
