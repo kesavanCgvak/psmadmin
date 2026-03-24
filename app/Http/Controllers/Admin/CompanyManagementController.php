@@ -175,7 +175,42 @@ class CompanyManagementController extends Controller
     public function show(Company $company)
     {
         $company->load(['region', 'country', 'state', 'city', 'currency', 'rentalSoftware', 'users', 'equipments.product.brand', 'defaultContact']);
-        return view('admin.companies.show', compact('company'));
+
+        // Keep rating logic consistent with the companies index:
+        // job_ratings (renter->provider) first, then company_ratings fallback.
+        $jobRatings = DB::table('job_ratings')
+            ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
+            ->where('supply_jobs.provider_id', $company->id)
+            ->whereNotNull('job_ratings.rated_at')
+            ->select(
+                DB::raw('AVG(job_ratings.rating) as avg_rating'),
+                DB::raw('COUNT(job_ratings.id) as rating_count')
+            )
+            ->first();
+
+        $companyRatings = DB::table('company_ratings')
+            ->where('company_id', $company->id)
+            ->select(
+                DB::raw('AVG(rating) as avg_rating'),
+                DB::raw('COUNT(id) as rating_count')
+            )
+            ->first();
+
+        $userAvg = 0.0;
+        $userCount = 0;
+
+        if (!empty($jobRatings) && (int) ($jobRatings->rating_count ?? 0) > 0) {
+            $userAvg = round((float) $jobRatings->avg_rating, 1);
+            $userCount = (int) $jobRatings->rating_count;
+        } elseif (!empty($companyRatings) && (int) ($companyRatings->rating_count ?? 0) > 0) {
+            $userAvg = round((float) $companyRatings->avg_rating, 1);
+            $userCount = (int) $companyRatings->rating_count;
+        }
+
+        $overrideRating = $company->rating_override;
+        $displayRating = $overrideRating !== null ? (float) $overrideRating : $userAvg;
+
+        return view('admin.companies.show', compact('company', 'userAvg', 'userCount', 'overrideRating', 'displayRating'));
     }
 
     /**

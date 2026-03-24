@@ -115,16 +115,29 @@
                         <dt class="col-sm-3">Rating</dt>
                         <dd class="col-sm-9">
                             @php
-                                $rating = $company->rating ?? 0;
+                                $rating = $displayRating ?? 0;
+                                $fullStars = (int) floor($rating);
+                                $hasHalfStar = ($rating - $fullStars) >= 0.5 && $fullStars < 5;
                             @endphp
                             @for($i = 1; $i <= 5; $i++)
-                                @if($i <= $rating)
+                                @if($i <= $fullStars)
                                     <i class="fas fa-star text-warning"></i>
+                                @elseif($hasHalfStar && $i === $fullStars + 1)
+                                    <i class="fas fa-star-half-alt text-warning"></i>
                                 @else
                                     <i class="far fa-star text-muted"></i>
                                 @endif
                             @endfor
-                            ({{ number_format($rating, 1) }})
+                            ({{ number_format((float) $rating, 1) }})
+                            @if(($overrideRating ?? null) !== null)
+                                <span class="badge badge-dark ml-1">Override</span>
+                            @endif
+                            <div>
+                                <small class="text-muted">
+                                    User avg: {{ number_format((float) ($userAvg ?? 0), 1) }}
+                                    ({{ (int) ($userCount ?? 0) }} users)
+                                </small>
+                            </div>
                         </dd>
 
                         <dt class="col-sm-3">Created At</dt>
