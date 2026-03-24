@@ -101,20 +101,20 @@
 
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label for="price">Price per Day <span class="text-danger">*</span></label>
+                            <label for="rental_price">Rental Price <span class="text-danger">*</span></label>
                             <div class="input-group">
                                 <div class="input-group-prepend">
                                     <span class="input-group-text">$</span>
                                 </div>
                                 <input type="number"
                                        step="0.01"
-                                       class="form-control @error('price') is-invalid @enderror"
-                                       id="price"
-                                       name="price"
-                                       value="{{ old('price', $equipment->price) }}"
+                                       class="form-control @error('rental_price') is-invalid @enderror"
+                                       id="rental_price"
+                                       name="rental_price"
+                                       value="{{ old('rental_price', $equipment->rental_price) }}"
                                        min="0"
                                        required>
-                                @error('price')
+                                @error('rental_price')
                                     <div class="invalid-feedback">{{ $message }}</div>
                                 @enderror
                             </div>

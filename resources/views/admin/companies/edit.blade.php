@@ -35,6 +35,22 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="account_type">Company Type <span class="text-danger">*</span></label>
+                    <select class="form-control @error('account_type') is-invalid @enderror"
+                            id="account_type"
+                            name="account_type"
+                            required>
+                        <option value="">-- Select Company Type --</option>
+                        <option value="user" {{ strtolower(old('account_type', $company->account_type ?? '')) === 'user' ? 'selected' : '' }}>User Company</option>
+                        <option value="provider" {{ strtolower(old('account_type', $company->account_type ?? '')) === 'provider' ? 'selected' : '' }}>Provider Company</option>
+                    </select>
+                    @error('account_type')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <small class="form-text text-muted">Changing this will update the account type for all users in this company.</small>
+                </div>
+
+                <div class="form-group">
                     <label for="description">Description</label>
                     <textarea class="form-control @error('description') is-invalid @enderror"
                               id="description"

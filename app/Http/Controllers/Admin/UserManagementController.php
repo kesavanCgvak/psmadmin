@@ -33,7 +33,7 @@ class UserManagementController extends Controller
      */
     public function create(Request $request)
     {
-        $companies = Company::orderBy('name')->get();
+        $companies = Company::whereIn('account_type', ['provider', 'Provider'])->orderBy('name')->get();
         $selectedCompanyId = $request->query('company_id');
 
         return view('admin.users.create', compact('companies', 'selectedCompanyId'));
@@ -55,7 +55,8 @@ class UserManagementController extends Controller
             'set_as_default_contact' => 'boolean',
 
             // Profile fields
-            'full_name' => 'required|string|max:255',
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
             'mobile' => 'required|string|max:20',
             'birthday' => ['nullable', 'string', 'max:255', 'regex:/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/'],
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
@@ -115,9 +116,12 @@ class UserManagementController extends Controller
         $user = User::create($userData);
 
         // Create user profile
+        $fullName = trim($request->first_name . ' ' . ($request->last_name ?? ''));
         $profileData = [
             'user_id' => $user->id,
-            'full_name' => $request->full_name,
+            'first_name' => $request->first_name,
+            'last_name' => $request->last_name,
+            'full_name' => $fullName,
             'email' => $request->email,
             'mobile' => $request->mobile,
             'birthday' => $request->birthday,
@@ -173,7 +177,7 @@ class UserManagementController extends Controller
             // Email is sent TO the user's email address ($request->email)
             // Using EmailHelper to get template from database or fallback to blade file
             \App\Helpers\EmailHelper::send('registrationSuccess', [
-                'name' => $request->full_name,
+                'name' => trim($request->first_name . ' ' . ($request->last_name ?? '')),
                 'email' => $request->email,
                 'username' => $request->username,
                 'password' => $request->password,
@@ -257,7 +261,8 @@ class UserManagementController extends Controller
             'company_id' => 'nullable|exists:companies,id',
 
             // Profile fields
-            'full_name' => 'nullable|string|max:255',
+            'first_name' => 'nullable|string|max:255',
+            'last_name' => 'nullable|string|max:255',
             'mobile' => 'nullable|string|max:20',
             'birthday' => ['nullable', 'string', 'max:255', 'regex:/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/'],
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
@@ -299,8 +304,11 @@ class UserManagementController extends Controller
         $user->update($userData);
 
         // Update or create user profile
+        $fullName = trim(($request->first_name ?? '') . ' ' . ($request->last_name ?? ''));
         $profileData = [
-            'full_name' => $request->full_name,
+            'first_name' => $request->first_name,
+            'last_name' => $request->last_name,
+            'full_name' => $fullName ?: $user->profile?->full_name,
             'email' => $request->email,
             'mobile' => $request->mobile,
             'birthday' => $request->birthday,

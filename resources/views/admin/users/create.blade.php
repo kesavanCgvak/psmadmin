@@ -169,14 +169,26 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="full_name">Full Name <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control @error('full_name') is-invalid @enderror"
-                                           id="full_name" name="full_name" value="{{ old('full_name') }}" required>
-                                    @error('full_name')
+                                    <label for="first_name">First Name <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control @error('first_name') is-invalid @enderror"
+                                           id="first_name" name="first_name" value="{{ old('first_name') }}" required>
+                                    @error('first_name')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
                                 </div>
                             </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="last_name">Last Name <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control @error('last_name') is-invalid @enderror"
+                                           id="last_name" name="last_name" value="{{ old('last_name') }}" required>
+                                    @error('last_name')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label for="email">Email <span class="text-danger">*</span></label>
@@ -511,7 +523,8 @@ $(document).ready(function() {
         formData = {
             username: $('#username').val(),
             account_type: $('#account_type').val(),
-            full_name: $('#full_name').val(),
+            first_name: $('#first_name').val(),
+            last_name: $('#last_name').val(),
             email: $('#email').val(),
             mobile: $('#mobile').val(),
             birthday: $('#birthday').val(),
@@ -528,7 +541,8 @@ $(document).ready(function() {
             formData = JSON.parse(savedData);
             $('#username').val(formData.username || '');
             $('#account_type').val(formData.account_type || '');
-            $('#full_name').val(formData.full_name || '');
+            $('#first_name').val(formData.first_name || '');
+            $('#last_name').val(formData.last_name || '');
             $('#email').val(formData.email || '');
             $('#mobile').val(formData.mobile || '');
             $('#birthday').val(formData.birthday || '');

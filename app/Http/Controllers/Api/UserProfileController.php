@@ -115,6 +115,8 @@ class UserProfileController extends Controller
 
             $profileDetails = [
                 'name' => $profile->full_name,
+                'first_name' => $profile->first_name,
+                'last_name' => $profile->last_name,
                 'username' => $user->username,
                 'mobile' => $profile->mobile,
                 'email' => $profile->email,
@@ -159,7 +161,7 @@ class UserProfileController extends Controller
                     'required',
                     'string',
                     'max:255',
-                    Rule::unique('users', 'name')->ignore($user->id)
+                    Rule::unique('users', 'username')->ignore($user->id)
                 ]
             ]);
 
@@ -177,7 +179,7 @@ class UserProfileController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Username updated successfully',
-                'data' => ['username' => $user->name]
+                'data' => ['username' => $user->username]
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -200,13 +202,14 @@ class UserProfileController extends Controller
     }
 
     /**
-     * Update user's full name
+     * Update user's name. Accepts first_name and last_name from the frontend.
      */
     public function updateName(Request $request)
     {
         try {
             $validator = Validator::make($request->all(), [
-                'name' => 'required|string|max:255'
+                'first_name' => 'required|string|max:255',
+                'last_name' => 'required|string|max:255',
             ]);
 
             if ($validator->fails()) {
@@ -224,12 +227,19 @@ class UserProfileController extends Controller
                 return response()->json(['success' => false, 'message' => 'User profile not found'], 404);
             }
 
-            $profile->update(['full_name' => $request->name]);
+            $profile->update([
+                'first_name' => $request->first_name,
+                'last_name' => $request->last_name,
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Name updated successfully',
-                'data' => ['name' => $request->name]
+                'data' => [
+                    'first_name' => $profile->first_name,
+                    'last_name' => $profile->last_name,
+                    'full_name' => $profile->full_name,
+                ]
             ], 200);
 
         } catch (\Throwable $e) {

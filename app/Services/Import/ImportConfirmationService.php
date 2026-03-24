@@ -73,7 +73,7 @@ class ImportConfirmationService
 
                         // Only override price if a price was actually provided in the import
                         if ($importPrice !== null) {
-                            $updateData['price'] = $importPrice;
+                            $updateData['rental_price'] = $importPrice;
                         }
 
                         $existingEquipment->update($updateData);
@@ -84,7 +84,7 @@ class ImportConfirmationService
                             'company_id' => $companyId,
                             'product_id' => $rowData['product_id'],
                             'quantity' => $importQuantity,
-                            'price' => $importPrice,
+                            'rental_price' => $importPrice,
                             'software_code' => $item->software_code ?? null,
                         ]);
                     }
@@ -153,7 +153,7 @@ class ImportConfirmationService
 
                         // Only override price if a price was actually provided in the import
                         if ($importPrice !== null && !empty($importPrice)) {
-                            $updateData['price'] = $importPrice;
+                            $updateData['rental_price'] = $importPrice;
                         }
 
                         $existingEquipment->update($updateData);
@@ -164,7 +164,7 @@ class ImportConfirmationService
                             'company_id' => $companyId,
                             'product_id' => $product->id,
                             'quantity' => $importQuantity,
-                            'price' => $importPrice,
+                            'rental_price' => $importPrice,
                             'software_code' => $item->software_code ?? null,
                         ]);
                     }

@@ -16,7 +16,7 @@ class UserResource extends JsonResource
             'id' => $this->id,
             'account_type' => $this->account_type,
             'username' => $this->username,
-            'name' => $this->name,
+            'name' => $this->profile?->full_name ?? $this->username,
             'email' => $this->preferred_email,
             'email_verified' => (bool) $this->email_verified,
             'company_id' => $this->company_id,

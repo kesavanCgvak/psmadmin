@@ -84,7 +84,8 @@ class AdminUserManagementController extends Controller
         $validator = Validator::make($request->all(), [
             'username' => 'nullable|string|max:255|unique:users,username',
             'email' => 'required|email|max:255',
-            'full_name' => 'required|string|max:255',
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
             'mobile' => 'nullable|string|max:20',
             'role' => 'required|in:super_admin',
         ]);
@@ -127,10 +128,13 @@ class AdminUserManagementController extends Controller
             ]);
 
             // Create the user profile
+            $fullName = trim($request->first_name . ' ' . ($request->last_name ?? ''));
             UserProfile::create([
                 'user_id' => $user->id,
                 'email' => $request->email,
-                'full_name' => $request->full_name,
+                'first_name' => $request->first_name,
+                'last_name' => $request->last_name,
+                'full_name' => $fullName,
                 'mobile' => $request->mobile,
             ]);
 
@@ -206,7 +210,8 @@ class AdminUserManagementController extends Controller
         $validator = Validator::make($request->all(), [
             'username' => 'nullable|string|max:255|unique:users,username,' . $adminUser->id,
             'email' => 'required|email|max:255',
-            'full_name' => 'required|string|max:255',
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
             'mobile' => 'nullable|string|max:20',
             'role' => 'required|in:super_admin',
             'is_blocked' => 'boolean',
@@ -242,17 +247,22 @@ class AdminUserManagementController extends Controller
             ]);
 
             // Update profile
+            $fullName = trim($request->first_name . ' ' . ($request->last_name ?? ''));
             if ($adminUser->profile) {
                 $adminUser->profile->update([
                     'email' => $request->email,
-                    'full_name' => $request->full_name,
+                    'first_name' => $request->first_name,
+                    'last_name' => $request->last_name,
+                    'full_name' => $fullName,
                     'mobile' => $request->mobile,
                 ]);
             } else {
                 UserProfile::create([
                     'user_id' => $adminUser->id,
                     'email' => $request->email,
-                    'full_name' => $request->full_name,
+                    'first_name' => $request->first_name,
+                    'last_name' => $request->last_name,
+                    'full_name' => $fullName,
                     'mobile' => $request->mobile,
                 ]);
             }

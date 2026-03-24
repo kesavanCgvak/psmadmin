@@ -502,7 +502,7 @@ class ImportController extends Controller
             'items.*.product_id' => [
                 'nullable',
                 'integer',
-                'exists:products,id',
+                'exists:inventory_master,id',
                 'required_if:items.*.action,attach',
             ],
         ]);
@@ -583,7 +583,7 @@ class ImportController extends Controller
             'rows.*.product_id' => [
                 'nullable',
                 'integer',
-                'exists:products,id',
+                'exists:inventory_master,id',
                 'required_if:rows.*.action,attach',
             ],
         ]);

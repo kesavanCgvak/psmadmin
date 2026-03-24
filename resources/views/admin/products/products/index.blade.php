@@ -57,6 +57,8 @@
                         <th>Category</th>
                         <th>Sub-Category</th>
                         <th>PSM Code</th>
+                        <th>Replacement Price</th>
+                        <th>Dimensions & Weight</th>
                         <th>Verified Status</th>
                         <th>Created At</th>
                         <th>Actions</th>
@@ -176,6 +178,21 @@
                     },
                     { "data": "psm_code", "name": "psm_code" },
                     {
+                        "data": "replacement_price",
+                        "name": "replacement_price"
+                    },
+                    {
+                        "data": "dimensions",
+                        "name": "dimensions",
+                        "render": function(data, type, row) {
+                            var parts = [];
+                            if (row.dimensions) parts.push('<div><small class="text-muted">Dimensions:</small> ' + row.dimensions + '</div>');
+                            if (row.weight) parts.push('<div><small class="text-muted">Weight:</small> ' + row.weight + '</div>');
+                            if (parts.length === 0) return '<span class="text-muted">—</span>';
+                            return parts.join('');
+                        }
+                    },
+                    {
                         "data": "is_verified",
                         "name": "is_verified",
                         "render": function(data, type, row) {
@@ -195,10 +212,10 @@
                     }
                 ],
                 "columnDefs": [
-                    { "orderable": false, "targets": [0, 9] }, // Checkbox and Actions columns
-                    { "searchable": false, "targets": [0, 9] }, // Checkbox and Actions columns
-                    { "responsivePriority": 1, "targets": 3 }, // Brand
-                    { "responsivePriority": 2, "targets": 9 }, // Actions
+                    { "orderable": false, "targets": [0, 8, 11] }, // Checkbox, Dimensions & Weight, Actions
+                    { "searchable": false, "targets": [0, 8, 11] }, // Checkbox, Dimensions & Weight, Actions
+                    { "responsivePriority": 1, "targets": 3 }, // Model
+                    { "responsivePriority": 2, "targets": 11 }, // Actions
                     { "responsivePriority": 3, "targets": [3, 4] } // Model and Category
                 ],
                 "order": [[1, "desc"]], // Sort by ID descending by default

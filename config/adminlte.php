@@ -479,10 +479,33 @@ return [
             'icon_color' => 'primary',
         ],
         [
+            'text' => 'Email Logs',
+            'route' => 'admin.email-logs.index',
+            'icon' => 'fas fa-fw fa-inbox',
+            'icon_color' => 'info',
+        ],
+        [
             'text' => 'User Restrictions',
             'route' => 'admin.user-restrictions.index',
             'icon' => 'fas fa-fw fa-users-cog',
             'icon_color' => 'warning',
+        ],
+        [
+            'text' => 'Measurement Units',
+            'icon' => 'fas fa-fw fa-ruler-combined',
+            'icon_color' => 'info',
+            'submenu' => [
+                [
+                    'text' => 'Linear Units',
+                    'route' => 'admin.linear-units.index',
+                    'icon' => 'fas fa-fw fa-ruler-horizontal',
+                ],
+                [
+                    'text' => 'Weight Units',
+                    'route' => 'admin.weight-units.index',
+                    'icon' => 'fas fa-fw fa-weight-hanging',
+                ],
+            ],
         ],
         [
             'text' => 'Subscriptions',

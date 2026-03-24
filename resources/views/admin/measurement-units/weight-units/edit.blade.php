@@ -1,0 +1,104 @@
+@extends('adminlte::page')
+
+@section('title', 'Edit Weight Unit')
+
+@section('content_header')
+    <h1>Edit Weight Unit</h1>
+@stop
+
+@section('css')
+    @include('partials.responsive-css')
+@stop
+
+@section('content')
+    <div class="card card-warning">
+        <div class="card-header">
+            <h3 class="card-title">Weight Unit Details</h3>
+        </div>
+        <form action="{{ route('admin.weight-units.update', $weightUnit) }}" method="POST">
+            @csrf
+            @method('PUT')
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="name">Name <span class="text-danger">*</span></label>
+                            <input type="text"
+                                   class="form-control @error('name') is-invalid @enderror"
+                                   id="name"
+                                   name="name"
+                                   value="{{ old('name', $weightUnit->name) }}"
+                                   placeholder="e.g., Pound, Ounce, Kilogram"
+                                   maxlength="50"
+                                   required>
+                            @error('name')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="code">Code <span class="text-danger">*</span></label>
+                            <input type="text"
+                                   class="form-control @error('code') is-invalid @enderror"
+                                   id="code"
+                                   name="code"
+                                   value="{{ old('code', $weightUnit->code) }}"
+                                   placeholder="e.g., lb, oz, kg"
+                                   maxlength="10"
+                                   required>
+                            @error('code')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                            <small class="form-text text-muted">Unique code (e.g., lb, oz, kg)</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="system">System <span class="text-danger">*</span></label>
+                            <select class="form-control @error('system') is-invalid @enderror" id="system" name="system" required>
+                                <option value="">Select System</option>
+                                <option value="imperial" {{ old('system', $weightUnit->system) == 'imperial' ? 'selected' : '' }}>Imperial</option>
+                                <option value="metric" {{ old('system', $weightUnit->system) == 'metric' ? 'selected' : '' }}>Metric</option>
+                            </select>
+                            @error('system')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="is_active">Active Status</label>
+                            <div class="custom-control custom-switch mt-2">
+                                <input type="checkbox"
+                                       class="custom-control-input"
+                                       id="is_active"
+                                       name="is_active"
+                                       value="1"
+                                       {{ old('is_active', $weightUnit->is_active) ? 'checked' : '' }}>
+                                <label class="custom-control-label" for="is_active">Active</label>
+                            </div>
+                            @error('is_active')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-footer">
+                <button type="submit" class="btn btn-warning">
+                    <i class="fas fa-save"></i> Update Weight Unit
+                </button>
+                <a href="{{ route('admin.weight-units.index') }}" class="btn btn-default">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+@stop

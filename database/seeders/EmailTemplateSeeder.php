@@ -144,7 +144,7 @@ class EmailTemplateSeeder extends Seeder
                 'name' => 'newRegistration',
                 'subject' => 'New Registration - Pro Subrental Marketplace',
                 'description' => 'Email sent to admin when a new company/user registers',
-                'variables' => ['company_name', 'account_type', 'username', 'region_name', 'country_name', 'city_name', 'state_name', 'mobile', 'email', 'current_year'],
+                'variables' => ['company_name', 'account_type', 'full_name', 'username', 'region_name', 'country_name', 'city_name', 'state_name', 'mobile', 'email', 'current_year'],
                 'file' => 'newRegistration.blade.php',
             ],
             [

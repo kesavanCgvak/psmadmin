@@ -717,7 +717,7 @@ class CompanyController extends Controller
             // ✅ Validate request
             $validated = $request->validate([
                 'products' => 'required|array|min:1',
-                'products.*.product_id' => 'required|integer|exists:products,id',
+                'products.*.product_id' => 'required|integer|exists:inventory_master,id',
                 'products.*.quantity' => 'required|numeric|min:1',
                 'city_id' => 'required|integer|exists:cities,id',
                 'country' => 'nullable|integer|exists:countries,id',
@@ -748,12 +748,12 @@ class CompanyController extends Controller
             // ✅ Main query with joins + geolocation (exclude admin-blocked companies)
             $query = Company::with(['defaultContactProfile'])
                 ->whereNull('blocked_by_admin_at')
-                ->join('equipments', function ($join) use ($productIds) {
-                    $join->on('companies.id', '=', 'equipments.company_id')
-                        ->whereIn('equipments.product_id', $productIds);
+                ->join('company_inventory', function ($join) use ($productIds) {
+                    $join->on('companies.id', '=', 'company_inventory.company_id')
+                        ->whereIn('company_inventory.product_id', $productIds);
                 })
-                ->join('products', 'products.id', '=', 'equipments.product_id')
-                ->leftJoin('brands', 'brands.id', '=', 'products.brand_id')
+                ->join('inventory_master', 'inventory_master.id', '=', 'company_inventory.product_id')
+                ->leftJoin('brands', 'brands.id', '=', 'inventory_master.brand_id')
                 ->join('currencies', 'currencies.id', '=', 'companies.currency_id')
                 ->leftJoin('rental_softwares', 'rental_softwares.id', '=', 'companies.rental_software_id')
                 // 🆕 Join city, state, and country tables for geolocation details
@@ -770,15 +770,15 @@ class CompanyController extends Controller
                     'companies.rating_override as company_rating_override',
                     'companies.default_contact_id',
                     'companies.city_id',
-                    'equipments.product_id',
-                    'equipments.quantity',
-                    // 'products.model as product_name',
+                    'company_inventory.product_id',
+                    'company_inventory.quantity',
+                    // 'inventory_master.model as product_name',
                     DB::raw("CONCAT(COALESCE(brands.name, ''),
                         CASE WHEN brands.name IS NOT NULL THEN ' - ' ELSE '' END,
-                        products.model) as product_name"),
-                    'products.psm_code',
-                    'equipments.price',
-                    'equipments.software_code',
+                        inventory_master.model) as product_name"),
+                    'inventory_master.psm_code',
+                    'company_inventory.rental_price',
+                    'company_inventory.software_code',
                     'currencies.id as currency_id',
                     'currencies.name as currency_name',
                     'currencies.code as currency_code',
@@ -906,7 +906,7 @@ class CompanyController extends Controller
                             'product_name' => $item->product_name,
                             'requested_quantity' => (int) $requestedQty,
                             'available_quantity' => (int) $availableQty,
-                            'price' => number_format($item->price, 2, '.', ''),
+                            'price' => number_format($item->rental_price, 2, '.', ''),
                             'software_code' => $item->software_code,
                             'psm_code' => $item->psm_code,
                         ];
@@ -974,11 +974,11 @@ class CompanyController extends Controller
             $query = Company::where('hide_from_gear_finder', 0)
                 ->whereNull('blocked_by_admin_at')
                 ->with(['defaultContactProfile'])
-                ->join('equipments', function ($join) use ($productIds) {
-                    $join->on('companies.id', '=', 'equipments.company_id')
-                        ->whereIn('equipments.product_id', $productIds);
+                ->join('company_inventory', function ($join) use ($productIds) {
+                    $join->on('companies.id', '=', 'company_inventory.company_id')
+                        ->whereIn('company_inventory.product_id', $productIds);
                 })
-                ->join('products', 'products.id', '=', 'equipments.product_id')
+                ->join('inventory_master', 'inventory_master.id', '=', 'company_inventory.product_id')
                 ->select(
                     'companies.id as company_id',
                     'companies.name as company_name',
@@ -986,10 +986,10 @@ class CompanyController extends Controller
                     'companies.longitude as company_lng',
                     'companies.rating as company_rating',
                     'companies.default_contact_id',
-                    'equipments.product_id',
-                    'products.model as product_name',
-                    'equipments.price',
-                    'equipments.software_code',
+                    'company_inventory.product_id',
+                    'inventory_master.model as product_name',
+                    'company_inventory.rental_price',
+                    'company_inventory.software_code',
                     DB::raw("(
                     6371 * acos(
                         cos(radians($city_lat))
@@ -1025,7 +1025,7 @@ class CompanyController extends Controller
                         return [
                             'product_id' => $item->product_id,
                             'product_name' => $item->product_name,
-                            'price' => number_format($item->price, 2, '.', ''),
+                            'price' => number_format($item->rental_price, 2, '.', ''),
                             'software_code' => $item->software_code,
                         ];
                     })->values(),

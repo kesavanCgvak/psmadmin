@@ -7,6 +7,8 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\SubCategory;
 use App\Models\Brand;
+use App\Models\LinearUnit;
+use App\Models\WeightUnit;
 use App\Services\BulkDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -54,11 +56,16 @@ class ProductController extends Controller
     public function getProductsData(Request $request)
     {
         try {
-            $query = Product::select(['id', 'category_id', 'brand_id', 'sub_category_id', 'model', 'psm_code', 'is_verified', 'created_at'])
+            $query = Product::select([
+                'id', 'category_id', 'brand_id', 'sub_category_id', 'model', 'psm_code', 'is_verified', 'created_at',
+                'height', 'width', 'length', 'weight', 'linear_unit_id', 'weight_unit_id', 'replacement_price'
+            ])
                 ->with([
                     'category:id,name',
                     'subCategory:id,name',
-                    'brand:id,name'
+                    'brand:id,name',
+                    'linearUnit:id,code',
+                    'weightUnit:id,code'
                 ]);
 
             // Handle DataTables parameters
@@ -71,9 +78,16 @@ class ProductController extends Controller
             $orderColumn = (is_array($order) && isset($order[0]['column'])) ? $order[0]['column'] : 0;
             $orderDir = (is_array($order) && isset($order[0]['dir'])) ? $order[0]['dir'] : 'desc';
 
-            // Column mapping for ordering
-            $columns = ['id', 'brand_id', 'model', 'category_id', 'sub_category_id', 'psm_code', 'is_verified', 'created_at'];
-            $orderColumnName = $columns[$orderColumn] ?? 'created_at';
+            // Column mapping for ordering (DataTables column index => database column)
+            // Columns: 0=checkbox, 1=id, 2=brand, 3=model, 4=category, 5=sub_category, 6=psm_code, 7=replacement_price, 8=dimensions, 9=is_verified, 10=created_at, 11=actions
+            $sortColumnMap = [
+                0 => null, 1 => 'id', 2 => 'brand_id', 3 => 'model', 4 => 'category_id', 5 => 'sub_category_id',
+                6 => 'psm_code', 7 => 'replacement_price', 8 => null, 9 => 'is_verified', 10 => 'created_at', 11 => null,
+            ];
+            $orderColumnName = $sortColumnMap[$orderColumn] ?? 'created_at';
+            if ($orderColumnName === null) {
+                $orderColumnName = 'created_at';
+            }
 
             // Apply unverified filter if requested
             if ($request->has('unverified_only') && $request->get('unverified_only') == '1') {
@@ -103,8 +117,8 @@ class ProductController extends Controller
             // Get filtered count
             $filteredRecords = $query->count();
 
-            // Apply ordering and pagination
-            $products = $query->orderBy($orderColumnName, $orderDir)
+            // Apply ordering and pagination (use table-qualified column for clarity)
+            $products = $query->orderBy('inventory_master.' . $orderColumnName, $orderDir)
                 ->skip($start)
                 ->take($length)
                 ->get();
@@ -112,6 +126,25 @@ class ProductController extends Controller
             // Prepare data for DataTables
             $data = [];
             foreach ($products as $product) {
+                $dimensions = null;
+                if ($product->height !== null || $product->width !== null || $product->length !== null) {
+                    $h = $product->height ?? '—';
+                    $w = $product->width ?? '—';
+                    $l = $product->length ?? '—';
+                    $dimensions = "{$h} × {$w} × {$l}";
+                    if ($product->linearUnit) {
+                        $dimensions .= ' ' . $product->linearUnit->code;
+                    }
+                }
+
+                $weight = null;
+                if ($product->weight !== null) {
+                    $weight = (string) $product->weight;
+                    if ($product->weightUnit) {
+                        $weight .= ' ' . $product->weightUnit->code;
+                    }
+                }
+
                 $data[] = [
                     'checkbox' => '', // Placeholder for checkbox column (rendered client-side)
                     'id' => $product->id,
@@ -120,6 +153,9 @@ class ProductController extends Controller
                     'category' => $product->category ? $product->category->name : '—',
                     'sub_category' => $product->subCategory ? $product->subCategory->name : '—',
                     'psm_code' => $product->psm_code ?? '—',
+                    'replacement_price' => $product->replacement_price !== null ? number_format($product->replacement_price, 2) : '—',
+                    'dimensions' => $dimensions,
+                    'weight' => $weight,
                     'is_verified' => $product->is_verified ?? 0,
                     'created_at' => $product->created_at ? $product->created_at->format('M d, Y') : '—',
                     'actions' => $this->getActionButtons($product)
@@ -251,10 +287,13 @@ class ProductController extends Controller
             return Brand::select(['id', 'name'])->orderBy('name')->get();
         });
 
+        $linearUnits = LinearUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+        $weightUnits = WeightUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+
         // Generate the next PSM code for the form
         $nextPsmCode = $this->generateNextPsmCode();
 
-        return view('admin.products.products.create', compact('categories', 'subCategories', 'brands', 'nextPsmCode'));
+        return view('admin.products.products.create', compact('categories', 'subCategories', 'brands', 'linearUnits', 'weightUnits', 'nextPsmCode'));
     }
 
     /**
@@ -268,6 +307,17 @@ class ProductController extends Controller
             'brand_id' => 'nullable|exists:brands,id',
             'model' => 'required|string|max:255',
             'webpage_url' => 'nullable|url|max:2048',
+            'height' => 'nullable|numeric',
+            'width' => 'nullable|numeric',
+            'length' => 'nullable|numeric',
+            'weight' => 'nullable|numeric',
+            'linear_unit_id' => 'nullable|exists:linear_units,id',
+            'weight_unit_id' => 'nullable|exists:weight_units,id',
+            'replacement_price' => 'nullable|numeric',
+            'country_of_origin' => 'nullable|string|max:100',
+            'iso_code_2' => 'nullable|string|max:2',
+            'iso_code_3' => 'nullable|string|max:3',
+            'hsn_code' => 'nullable|string|max:20',
         ]);
 
         if ($validator->fails()) {
@@ -299,7 +349,7 @@ class ProductController extends Controller
         // Generate automatic PSM Code
         $psmCode = $this->generateNextPsmCode();
 
-        $productData = $request->all();
+        $productData = $this->prepareProductData($request->all());
         $productData['psm_code'] = $psmCode;
 
         Product::create($productData);
@@ -318,7 +368,7 @@ class ProductController extends Controller
      */
     public function show(Product $product)
     {
-        $product->load(['category', 'subCategory', 'brand', 'equipments']);
+        $product->load(['category', 'subCategory', 'brand', 'equipments', 'linearUnit', 'weightUnit']);
         return view('admin.products.products.show', compact('product'));
     }
 
@@ -343,7 +393,10 @@ class ProductController extends Controller
             return Brand::select(['id', 'name'])->orderBy('name')->get();
         });
 
-        return view('admin.products.products.edit', compact('product', 'categories', 'subCategories', 'brands'));
+        $linearUnits = LinearUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+        $weightUnits = WeightUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+
+        return view('admin.products.products.edit', compact('product', 'categories', 'subCategories', 'brands', 'linearUnits', 'weightUnits'));
     }
 
     /**
@@ -356,8 +409,19 @@ class ProductController extends Controller
             'sub_category_id' => 'nullable|exists:sub_categories,id',
             'brand_id' => 'nullable|exists:brands,id',
             'model' => 'required|string|max:255',
-            'psm_code' => 'nullable|string|max:255|unique:products,psm_code,' . $product->id,
+            'psm_code' => 'nullable|string|max:255|unique:inventory_master,psm_code,' . $product->id,
             'webpage_url' => 'nullable|url|max:2048',
+            'height' => 'nullable|numeric',
+            'width' => 'nullable|numeric',
+            'length' => 'nullable|numeric',
+            'weight' => 'nullable|numeric',
+            'linear_unit_id' => 'nullable|exists:linear_units,id',
+            'weight_unit_id' => 'nullable|exists:weight_units,id',
+            'replacement_price' => 'nullable|numeric',
+            'country_of_origin' => 'nullable|string|max:100',
+            'iso_code_2' => 'nullable|string|max:2',
+            'iso_code_3' => 'nullable|string|max:3',
+            'hsn_code' => 'nullable|string|max:20',
         ]);
 
         if ($validator->fails()) {
@@ -366,7 +430,7 @@ class ProductController extends Controller
                 ->withInput();
         }
 
-        $product->update($request->all());
+        $product->update($this->prepareProductData($request->all()));
 
         // Clear related caches when a product is updated
         Cache::forget('categories_list');
@@ -458,6 +522,27 @@ class ProductController extends Controller
     }
 
     /**
+     * Prepare product data for create/update - convert empty strings to null for optional fields.
+     */
+    protected function prepareProductData(array $data): array
+    {
+        $optionalFields = [
+            'height', 'width', 'length', 'weight',
+            'linear_unit_id', 'weight_unit_id',
+            'replacement_price',
+            'country_of_origin', 'iso_code_2', 'iso_code_3', 'hsn_code',
+        ];
+
+        foreach ($optionalFields as $field) {
+            if (isset($data[$field]) && $data[$field] === '') {
+                $data[$field] = null;
+            }
+        }
+
+        return $data;
+    }
+
+    /**
      * Normalize product name for comparison
      * Handles case-insensitive, word-order independent comparison
      */
@@ -542,7 +627,7 @@ class ProductController extends Controller
     {
         $request->validate([
             'product_ids' => 'required|array',
-            'product_ids.*' => 'exists:products,id'
+            'product_ids.*' => 'exists:inventory_master,id'
         ]);
 
         $products = Product::whereIn('id', $request->product_ids)->get();
@@ -662,7 +747,7 @@ class ProductController extends Controller
     public function merge(Request $request, Product $product)
     {
         $validator = Validator::make($request->all(), [
-            'correct_product_id' => 'required|exists:products,id|different:id'
+            'correct_product_id' => 'required|exists:inventory_master,id|different:id'
         ]);
 
         if ($validator->fails()) {
@@ -749,13 +834,13 @@ class ProductController extends Controller
     private function mergeEquipmentInventory(int $wrongProductId, int $correctProductId)
     {
         // Get all equipment records for the wrong product (Product A), grouped by company
-        $wrongProductEquipments = DB::table('equipments')
+        $wrongProductEquipments = DB::table('company_inventory')
             ->where('product_id', $wrongProductId)
             ->get()
             ->groupBy('company_id');
 
         // Get all companies that have equipment for the correct product (Product B)
-        $companiesWithCorrectProduct = DB::table('equipments')
+        $companiesWithCorrectProduct = DB::table('company_inventory')
             ->where('product_id', $correctProductId)
             ->select('company_id')
             ->distinct()
@@ -774,7 +859,7 @@ class ProductController extends Controller
 
                 if ($totalQuantityToMerge > 0) {
                     // Get the first Product B equipment record for this company
-                    $firstCorrectEquipment = DB::table('equipments')
+                    $firstCorrectEquipment = DB::table('company_inventory')
                         ->where('product_id', $correctProductId)
                         ->where('company_id', $companyId)
                         ->orderBy('id')
@@ -782,7 +867,7 @@ class ProductController extends Controller
 
                     if ($firstCorrectEquipment) {
                         // Add the merged quantity to the first Product B record
-                        DB::table('equipments')
+                        DB::table('company_inventory')
                             ->where('id', $firstCorrectEquipment->id)
                             ->increment('quantity', $totalQuantityToMerge);
                     }
@@ -790,14 +875,14 @@ class ProductController extends Controller
 
                 // Delete all Product A equipment records for this company
                 $equipmentIds = $equipmentRecords->pluck('id')->toArray();
-                DB::table('equipments')
+                DB::table('company_inventory')
                     ->whereIn('id', $equipmentIds)
                     ->delete();
             } else {
                 // Company only has Product A
                 // Update all Product A records' product_id to Product B
                 $equipmentIds = $equipmentRecords->pluck('id')->toArray();
-                DB::table('equipments')
+                DB::table('company_inventory')
                     ->whereIn('id', $equipmentIds)
                     ->update(['product_id' => $correctProductId]);
             }
@@ -805,7 +890,7 @@ class ProductController extends Controller
 
         // Final safety check: Delete any remaining Product A equipment records
         // This handles edge cases where records might not have been processed above
-        DB::table('equipments')
+        DB::table('company_inventory')
             ->where('product_id', $wrongProductId)
             ->delete();
     }
@@ -817,7 +902,7 @@ class ProductController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'product_ids' => 'required|array',
-            'product_ids.*' => 'exists:products,id'
+            'product_ids.*' => 'exists:inventory_master,id'
         ]);
 
         if ($validator->fails()) {

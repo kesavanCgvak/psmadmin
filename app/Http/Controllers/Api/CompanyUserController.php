@@ -33,7 +33,8 @@ class CompanyUserController extends Controller
             $validator = Validator::make($request->all(), [
                 'username' => 'required|string|unique:users,username|min:3|max:20|regex:/^[a-zA-Z0-9_]+$/',
                 'email' => 'required|email',
-                'name' => 'required|string',
+                'first_name' => 'required|string|max:255',
+                'last_name' => 'required|string|max:255',
                 'mobile' => 'required|string',
                 'password' => 'required|string|min:6',
                 'role' => 'required|in:admin,user',
@@ -75,8 +76,11 @@ class CompanyUserController extends Controller
                 'is_admin' => $request->role === 'admin',
             ]);
 
+            $fullName = trim($request->first_name . ' ' . ($request->last_name ?? ''));
             $user->profile()->create([
-                'full_name' => $request->name,
+                'first_name' => $request->first_name,
+                'last_name' => $request->last_name,
+                'full_name' => $fullName,
                 'email' => $request->email,
                 'mobile' => $request->mobile,
             ]);
@@ -163,15 +167,21 @@ class CompanyUserController extends Controller
             $users = $company->users()
                 ->select(['id', 'is_company_default_contact', 'is_admin'])
                 ->with([
-                    'profile:id,user_id,full_name,email,mobile'
+                    'profile:id,user_id,first_name,last_name,full_name,email,mobile'
                 ])
                 ->get()
                 ->map(function ($user) {
+                    $profile = $user->profile;
+                    $fullName = $profile
+                        ? (trim(($profile->first_name ?? '') . ' ' . ($profile->last_name ?? '')) ?: $profile->full_name)
+                        : null;
                     return [
                         'id' => $user->id,
-                        'name' => $user->profile->full_name ?? null,
-                        'email' => $user->profile->email ?? null,
-                        'mobile' => $user->profile->mobile ?? null,
+                        'first_name' => $profile?->first_name ?? null,
+                        'last_name' => $profile?->last_name ?? null,
+                        'name' => $fullName,
+                        'email' => $profile?->email ?? null,
+                        'mobile' => $profile?->mobile ?? null,
                         'is_company_default_contact' => $user->is_company_default_contact,
                         'is_admin' => $user->is_admin,
                     ];
@@ -218,7 +228,8 @@ class CompanyUserController extends Controller
             }
 
             $validator = Validator::make($request->all(), [
-                'name' => 'required|string|max:255',
+                'first_name' => 'required|string|max:255',
+                'last_name' => 'required|string|max:255',
                 'mobile' => 'required|string|max:20',
             ]);
 
@@ -228,8 +239,11 @@ class CompanyUserController extends Controller
 
             $user = User::where('company_id', $authUser->company_id)->findOrFail($id);
 
+            $fullName = trim($request->first_name . ' ' . ($request->last_name ?? ''));
             $user->profile()->update([
-                'full_name' => $request->name,
+                'first_name' => $request->first_name,
+                'last_name' => $request->last_name,
+                'full_name' => $fullName,
                 'mobile' => $request->mobile,
             ]);
 
@@ -363,7 +377,7 @@ class CompanyUserController extends Controller
                 'message' => $isAdmin ? 'User promoted to admin' : 'User demoted to user',
                 'data' => [
                     'id' => $user->id,
-                    'name' => $user->name,
+                    'name' => $user->profile?->full_name ?? $user->username,
                     'is_admin' => $user->is_admin,
                     'role' => $user->role,
                 ]

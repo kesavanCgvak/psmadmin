@@ -203,12 +203,22 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     Route::put('/terms-and-conditions', [\App\Http\Controllers\Admin\TermsAndConditionsController::class, 'update'])
         ->name('terms-and-conditions.update');
 
+    // Measurement Units (Settings)
+    Route::resource('linear-units', \App\Http\Controllers\Admin\LinearUnitController::class)->except(['show']);
+    Route::resource('weight-units', \App\Http\Controllers\Admin\WeightUnitController::class)->except(['show']);
+
     // Email Templates Management
     Route::resource('email-templates', \App\Http\Controllers\Admin\EmailTemplateController::class)->only(['index', 'edit', 'update']);
     Route::post('/email-templates/{emailTemplate}/toggle-status', [\App\Http\Controllers\Admin\EmailTemplateController::class, 'toggleStatus'])
         ->name('email-templates.toggle-status');
     Route::get('/email-templates/{emailTemplate}/preview', [\App\Http\Controllers\Admin\EmailTemplateController::class, 'preview'])
         ->name('email-templates.preview');
+
+    // Email Logs (read-only)
+    Route::get('/email-logs', [\App\Http\Controllers\Admin\EmailLogController::class, 'index'])
+        ->name('email-logs.index');
+    Route::get('/email-logs/{emailLog}', [\App\Http\Controllers\Admin\EmailLogController::class, 'show'])
+        ->name('email-logs.show');
 });
 
 // Clear application cache

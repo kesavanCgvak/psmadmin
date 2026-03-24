@@ -34,6 +34,12 @@
                         <td><strong>Account Type:</strong></td>
                         <td>{{ $account_type }}</td>
                     </tr>
+                    @if(!empty($full_name))
+                    <tr>
+                        <td><strong>Full Name:</strong></td>
+                        <td>{{ $full_name }}</td>
+                    </tr>
+                    @endif
                     <tr>
                         <td><strong>User Name:</strong></td>
                         <td>{{ $username }}</td>

@@ -115,7 +115,7 @@ class Company extends Model
     public function defaultContactProfile()
     {
         return $this->hasOne(UserProfile::class, 'user_id', 'default_contact_id')
-            ->select('user_id', 'full_name', 'email', 'mobile');
+            ->select('user_id', 'first_name', 'last_name', 'full_name', 'email', 'mobile');
     }
 
     public function supplyJobs()
@@ -265,6 +265,14 @@ class Company extends Model
     public function getMaxUserLimit(): int
     {
         return \App\Models\Setting::getCompanyUserLimit();
+    }
+
+    /**
+     * Get the company's integration configurations.
+     */
+    public function integrations()
+    {
+        return $this->hasMany(CompanyIntegration::class);
     }
 
 }

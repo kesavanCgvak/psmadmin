@@ -39,7 +39,8 @@ class AuthController extends Controller
             'account_type' => 'required|string|in:provider,user',
             'company_name' => 'required|string|max:255|unique:companies,name',
             'username' => 'required|string|max:255|unique:users,username',
-            'name' => 'required|string|max:255',
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
             'region' => 'required|exists:regions,id',
             'country_id' => 'required|exists:countries,id',
             'state_id' => 'required|exists:states_provinces,id',
@@ -162,9 +163,15 @@ class AuthController extends Controller
 
             //Create profile
 
+            $firstName = $request->first_name;
+            $lastName = $request->last_name;
+            $fullName = trim($firstName . ' ' . ($lastName ?? ''));
+
             // Build profile payload explicitly so we can log and avoid nulls
             $profileData = [
-                'full_name' => $request->name ?? $request->username,
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'full_name' => $fullName,
                 'birthday' => $request->birthday, // stored as VARCHAR in DB (e.g. MM-DD)
                 // user_profiles.email column is NOT nullable in DB, so make sure we never send null here
                 'email' => $request->email ?? $user->email ?? '',
@@ -188,7 +195,7 @@ class AuthController extends Controller
                     // Create Stripe customer
                     $customer = $subscriptionService->createCustomer([
                         'email' => $request->email,
-                        'name' => $request->name ?? $request->username,
+                        'name' => $fullName ?: $request->username,
                         'metadata' => [
                             'user_id' => $user->id,
                             'company_id' => $company->id,
@@ -302,6 +309,7 @@ class AuthController extends Controller
                 \App\Helpers\EmailHelper::send('newRegistration', [
                     'company_name' => $request->company_name,
                     'account_type' => $request->account_type,
+                    'full_name' => $fullName,
                     'username' => $request->username,
                     'region_name' => $company_details->getregion->name,
                     'country_name' => $company_details->getcountry->name,
