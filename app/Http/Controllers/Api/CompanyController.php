@@ -767,6 +767,7 @@ class CompanyController extends Controller
                     'companies.latitude as company_lat',
                     'companies.longitude as company_lng',
                     'companies.rating as company_rating',
+                    'companies.rating_override as company_rating_override',
                     'companies.default_contact_id',
                     'companies.city_id',
                     'company_inventory.product_id',
@@ -870,13 +871,18 @@ class CompanyController extends Controller
                     $avgRating = round((float) $companyRatingsAvg[$cid], 1);
                     $ratingCount = (int) ($companyRatingsCount[$cid] ?? 0);
                 }
+                $displayAverageRating = $first->company_rating_override !== null
+                    ? round((float) $first->company_rating_override, 1)
+                    : $avgRating;
 
                 return [
                     'id' => $cid,
                     'name' => $first->company_name,
                     'company_logo' => $first->company_logo,
                     'rating' => $first->company_rating,
-                    'average_rating' => $avgRating,
+                    // If admin override exists, use it for the displayed overall rating.
+                    'average_rating' => $displayAverageRating,
+                    'user_average_rating' => $avgRating,
                     'rating_count' => $ratingCount,
                     'rental_software_code' => $first->rental_software_code,
                     'distance' => round($first->distance, 2),
@@ -1196,6 +1202,10 @@ class CompanyController extends Controller
                         : null;
                 }
 
+                $displayAverageRating = $company->rating_override !== null
+                    ? (float) $company->rating_override
+                    : (float) $avgRating;
+
                 return [
                     'id' => $company->id,
                     'name' => $company->name,
@@ -1207,7 +1217,8 @@ class CompanyController extends Controller
                     'country' => $company->country?->name ?? null,
 
                     // Ratings: average, count, and star breakdown for popup (progress bars)
-                    'average_rating' => round($avgRating, 1),
+                    // If admin override exists, use it for the displayed overall rating (keep count/breakdown from user ratings).
+                    'average_rating' => round($displayAverageRating, 1),
                     'rating_count' => (int) $ratingCount,
                     'rating_breakdown' => $ratingBreakdown,
 
@@ -1391,6 +1402,76 @@ class CompanyController extends Controller
                 ];
             }
 
+            // 3️⃣ Aggregate rating stats (same rules as other endpoints)
+            $avgRating = 0.0;
+            $ratingCount = 0;
+            $ratingBreakdown = ['1' => 0, '2' => 0, '3' => 0, '4' => 0, '5' => 0];
+
+            // Job ratings first
+            $jobStats = DB::table('job_ratings')
+                ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
+                ->where('supply_jobs.provider_id', $companyId)
+                ->whereNotNull('job_ratings.rated_at')
+                ->whereNotNull('job_ratings.rating')
+                ->select(
+                    DB::raw('AVG(job_ratings.rating) as avg_rating'),
+                    DB::raw('COUNT(job_ratings.id) as rating_count')
+                )
+                ->first();
+
+            if ($jobStats && $jobStats->rating_count > 0) {
+                $avgRating = (float) $jobStats->avg_rating;
+                $ratingCount = (int) $jobStats->rating_count;
+
+                $jobBreakdownRows = DB::table('job_ratings')
+                    ->join('supply_jobs', 'job_ratings.supply_job_id', '=', 'supply_jobs.id')
+                    ->where('supply_jobs.provider_id', $companyId)
+                    ->whereNotNull('job_ratings.rated_at')
+                    ->whereNotNull('job_ratings.rating')
+                    ->select('job_ratings.rating', DB::raw('COUNT(*) as cnt'))
+                    ->groupBy('job_ratings.rating')
+                    ->get();
+
+                foreach ($jobBreakdownRows as $row) {
+                    $key = (string) $row->rating;
+                    if (array_key_exists($key, $ratingBreakdown)) {
+                        $ratingBreakdown[$key] = (int) $row->cnt;
+                    }
+                }
+            } else {
+                // Fallback to company_ratings
+                $companyStats = DB::table('company_ratings')
+                    ->where('company_id', $companyId)
+                    ->select(
+                        DB::raw('AVG(rating) as avg_rating'),
+                        DB::raw('COUNT(id) as rating_count')
+                    )
+                    ->first();
+
+                if ($companyStats && $companyStats->rating_count > 0) {
+                    $avgRating = (float) $companyStats->avg_rating;
+                    $ratingCount = (int) $companyStats->rating_count;
+
+                    $companyBreakdownRows = DB::table('company_ratings')
+                        ->where('company_id', $companyId)
+                        ->select('rating', DB::raw('COUNT(*) as cnt'))
+                        ->groupBy('rating')
+                        ->get();
+
+                    foreach ($companyBreakdownRows as $row) {
+                        $key = (string) $row->rating;
+                        if (array_key_exists($key, $ratingBreakdown)) {
+                            $ratingBreakdown[$key] = (int) $row->cnt;
+                        }
+                    }
+                }
+            }
+
+            // Apply admin override for displayed average, if present (keeps breakdown from user ratings)
+            $displayAverageRating = $company->rating_override !== null
+                ? (float) $company->rating_override
+                : $avgRating;
+
             // Sort all reviews by rated_at descending (most recent first)
             usort($reviews, function ($a, $b) {
                 $timeA = $a['rated_at'] ? strtotime($a['rated_at']) : 0;
@@ -1405,6 +1486,10 @@ class CompanyController extends Controller
                     'company_name' => $company->name,
                     'reviews' => $reviews,
                     'total_reviews' => count($reviews),
+                    'average_rating' => round($displayAverageRating, 1),
+                    'user_average_rating' => round($avgRating, 1),
+                    'rating_count' => (int) $ratingCount,
+                    'rating_breakdown' => $ratingCount > 0 ? $ratingBreakdown : null,
                 ]
             ], 200);
 

@@ -1,0 +1,15 @@
+.company-rating-meta {
+  line-height: 1.2;
+}
+
+.company-rating-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.company-rating-actions .btn {
+  padding: 0.15rem 0.35rem;
+}
+

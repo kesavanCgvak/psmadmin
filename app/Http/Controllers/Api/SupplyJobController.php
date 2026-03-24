@@ -325,6 +325,12 @@ class SupplyJobController extends Controller
                         $renterCompanyRatingCount = (int) CompanyRating::where('company_id', $renterCompanyId)->count();
                     }
                 }
+
+                // If admin has set an override rating for this company, prefer that for the displayed overall rating.
+                $renterCompany = Company::select(['id', 'rating_override'])->find($renterCompanyId);
+                if ($renterCompany && $renterCompany->rating_override !== null) {
+                    $renterCompanyRating = round((float) $renterCompany->rating_override, 1);
+                }
             }
 
             $data = [
