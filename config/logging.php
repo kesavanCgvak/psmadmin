@@ -65,6 +65,16 @@ return [
             'replace_placeholders' => true,
         ],
 
+        /*
+         * Flex rental quote integration (always check storage/logs/flex-integration.log)
+         */
+        'flex' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/flex-integration.log'),
+            'level' => env('FLEX_LOG_LEVEL', env('LOG_LEVEL', 'debug')),
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),

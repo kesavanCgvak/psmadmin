@@ -43,7 +43,7 @@ class Product extends Model
         static::saving(function (Product $product) {
             // Normalize model code
             $product->normalized_model = ProductNormalizer::normalizeCode($product->model);
-            
+
             // Get brand name for full name normalization
             $brandName = null;
             if ($product->brand_id) {
@@ -53,7 +53,7 @@ class Product extends Model
                 }
                 $brandName = $product->brand->name ?? null;
             }
-            
+
             // Normalize full name (brand + model)
             $product->normalized_full_name = ProductNormalizer::normalizeFullName($brandName, $product->model);
         });

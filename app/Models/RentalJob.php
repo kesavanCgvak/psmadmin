@@ -24,6 +24,9 @@ class RentalJob extends Model
         'offer_requirements',
         'global_message',
         'status',
+        'flex_sales_quote_id',
+        'flex_sales_quote_number',
+        'flex_sync_status',
         'cancelled_by',
         'notes',
     ];
@@ -83,6 +86,16 @@ class RentalJob extends Model
     public function requesterCompany()
     {
         return $this->belongsTo(Company::class, 'requester_company_id');
+    }
+
+    public function flexIntegrationLogs()
+    {
+        return $this->hasMany(FlexIntegrationLog::class, 'rental_request_id');
+    }
+
+    public function rentalRequestProviderQuotes()
+    {
+        return $this->hasMany(RentalRequestProviderQuote::class, 'rental_request_id');
     }
 
 }

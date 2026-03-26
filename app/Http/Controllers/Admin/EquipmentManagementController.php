@@ -217,4 +217,3 @@ class EquipmentManagementController extends Controller
         return response()->json($users);
     }
 }
-

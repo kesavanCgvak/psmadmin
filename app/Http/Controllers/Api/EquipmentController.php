@@ -161,6 +161,7 @@ class EquipmentController extends Controller
                         : $modelName, // show only model if brand is missing
                     'psm_code' => $product->psm_code,
                     'webpage_url' => $product->webpage_url, // 🔗 product webpage URL
+                    'flex_resource_id' => $product->flex_resource_id, // 🔗 for future integration
                     'software_code' => $equipment->software_code,
                     'quantity' => $equipment->quantity,
                     'price' => $equipment->rental_price,
@@ -266,7 +267,7 @@ class EquipmentController extends Controller
 
         Log::debug('updatePrice: success', [
             'equipment_id' => $equipment->id,
-            'rental_price' => $equipment->rental_price,
+            'rental_price' => $newPrice,
         ]);
 
         return response()->json(['success' => true, 'message' => 'Price updated', 'data' => $equipment]);
