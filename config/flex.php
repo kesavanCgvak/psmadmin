@@ -15,6 +15,8 @@ return [
     */
     'search_path' => env('FLEX_SEARCH_PATH', '/f5/api/inventory-model/search'),
     'details_path' => env('FLEX_DETAILS_PATH', '/f5/api/inventory-model'),
+    /** GET ?modelId= — inventory quantities per location (Rental qty in stockQtyList) */
+    'qty_per_location_path' => env('FLEX_QTY_PER_LOCATION_PATH', '/f5/api/inventory-model/qty-per-location'),
 
     /*
     |--------------------------------------------------------------------------

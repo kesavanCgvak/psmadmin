@@ -217,6 +217,95 @@ class FlexService
     }
 
     /**
+     * Get Rental resource type qty on hand / allocated from Flex qty-per-location API.
+     * GET /f5/api/inventory-model/qty-per-location?modelId={flexId}
+     * Sums qtyOnHand and qtyAllocated for resourceType.name === "Rental" across all locations.
+     *
+     * @return array{qty_on_hand: int|null, qty_allocated: int|null}
+     */
+    public static function getRentalQtySummary(int $companyId, string $flexId): array
+    {
+        $defaults = ['qty_on_hand' => null, 'qty_allocated' => null];
+
+        try {
+            $service = new self($companyId);
+            $path = config('flex.qty_per_location_path', '/f5/api/inventory-model/qty-per-location');
+            $url = $service->baseUrl . $path;
+            $params = ['modelId' => $flexId];
+
+            $response = Http::timeout($service->timeout)
+                ->withHeaders(array_merge(
+                    $service->getAuthHeaders(),
+                    ['Content-Type' => 'application/json']
+                ))
+                ->get($url, $params);
+
+            if (!$response->successful()) {
+                Log::debug('Flex qty-per-location API non-success', [
+                    'status' => $response->status(),
+                    'body_preview' => substr($response->body(), 0, 300),
+                ]);
+                return $defaults;
+            }
+
+            $rows = $response->json();
+            if (!is_array($rows)) {
+                return $defaults;
+            }
+
+            $sumOnHand = 0;
+            $sumAllocated = 0;
+            $foundRental = false;
+
+            foreach ($rows as $row) {
+                $stockList = $row['stockQtyList'] ?? [];
+                if (!is_array($stockList)) {
+                    continue;
+                }
+                foreach ($stockList as $item) {
+                    $typeName = $item['resourceType']['name'] ?? '';
+                    if (strcasecmp(trim((string) $typeName), 'Rental') !== 0) {
+                        continue;
+                    }
+                    $foundRental = true;
+                    $sumOnHand += (int) ($item['qtyOnHand'] ?? 0);
+                    $sumAllocated += (int) ($item['qtyAllocated'] ?? 0);
+                }
+            }
+
+            if (!$foundRental) {
+                return $defaults;
+            }
+
+            return [
+                'qty_on_hand' => $sumOnHand,
+                'qty_allocated' => $sumAllocated,
+            ];
+        } catch (\Throwable $e) {
+            Log::debug('Flex qty-per-location fetch failed', ['error' => $e->getMessage()]);
+            return $defaults;
+        }
+    }
+
+    /**
+     * Build a compact payload for import-check / UI from getInventoryDetails + getRentalQtySummary.
+     *
+     * @param array $details Output of getInventoryDetails
+     * @param array $rentalQty Output of getRentalQtySummary
+     * @return array{name: string|null, sku: string|null, part_number: string|null, rental_qty_on_hand: int|null, rental_qty_allocated: int|null}
+     */
+    public static function flexImportCheckFlexPayload(array $details, array $rentalQty): array
+    {
+        return [
+            'name' => $details['name'] ?? null,
+            'sku' => $details['sku'] ?? null,
+            'part_number' => $details['partNumber'] ?? null,
+            'rental_qty_on_hand' => $rentalQty['qty_on_hand'] ?? null,
+            'rental_qty_allocated' => $rentalQty['qty_allocated'] ?? null,
+        ];
+    }
+
+    /**
      * Get USD currency ID from Flex (instance method).
      * API: GET /f5/api/currency/identity — find currency where isoCode = 'USD'.
      *
@@ -572,6 +661,12 @@ class FlexService
     }
 
     /**
+     * Minimum length for substring/LIKE matching on normalized_model.
+     * Shorter values (e.g. "ss") must not match inside longer Flex names (e.g. "debbiessubaru").
+     */
+    protected const MIN_NORMALIZED_SUBSTRING_MATCH_LEN = 4;
+
+    /**
      * Find existing product in inventory_master by brand_id + normalized model.
      * Uses exact match first, then fallback to partial matching (e.g. "NXAE104" matches "NXAE104 AES/EBU Network Card").
      *
@@ -586,11 +681,24 @@ class FlexService
             return null;
         }
 
-        $baseQuery = function ($q) use ($normalizedModel, $rawModelOrFullName) {
+        $minLen = self::MIN_NORMALIZED_SUBSTRING_MATCH_LEN;
+
+        $baseQuery = function ($q) use ($normalizedModel, $rawModelOrFullName, $minLen) {
             if ($normalizedModel && ProductNormalizer::isValidNormalizedCode($normalizedModel)) {
-                $q->where('normalized_model', $normalizedModel)
-                    ->orWhereRaw('? LIKE CONCAT(\'%\', COALESCE(normalized_model, \'\'), \'%\')', [$normalizedModel])
-                    ->orWhereRaw('COALESCE(normalized_model, \'\') LIKE CONCAT(\'%\', ?, \'%\')', [$normalizedModel]);
+                $q->where('normalized_model', $normalizedModel);
+
+                // Substring matching only when both sides are long enough to avoid false positives
+                // (e.g. "debbiessubaru" must not match inventory row "ss" via LIKE '%ss%').
+                if (strlen($normalizedModel) >= $minLen) {
+                    $q->orWhere(function ($sub) use ($normalizedModel, $minLen) {
+                        $sub->whereRaw('LENGTH(COALESCE(normalized_model, \'\')) >= ?', [$minLen])
+                            ->whereRaw('? LIKE CONCAT(\'%\', COALESCE(normalized_model, \'\'), \'%\')', [$normalizedModel]);
+                    });
+                    $q->orWhere(function ($sub) use ($normalizedModel, $minLen) {
+                        $sub->whereRaw('LENGTH(COALESCE(normalized_model, \'\')) >= ?', [$minLen])
+                            ->whereRaw('COALESCE(normalized_model, \'\') LIKE CONCAT(\'%\', ?, \'%\')', [$normalizedModel]);
+                    });
+                }
             }
 
             if ($rawModelOrFullName) {
@@ -598,9 +706,18 @@ class FlexService
                 if ($extractedCode) {
                     $extractedNormalized = ProductNormalizer::normalizeCode($extractedCode);
                     if ($extractedNormalized && ProductNormalizer::isValidNormalizedCode($extractedNormalized)) {
-                        $q->orWhere('normalized_model', $extractedNormalized)
-                            ->orWhereRaw('? LIKE CONCAT(\'%\', COALESCE(normalized_model, \'\'), \'%\')', [$extractedNormalized])
-                            ->orWhereRaw('COALESCE(normalized_model, \'\') LIKE CONCAT(\'%\', ?, \'%\')', [$extractedNormalized]);
+                        $q->orWhere('normalized_model', $extractedNormalized);
+
+                        if (strlen($extractedNormalized) >= $minLen) {
+                            $q->orWhere(function ($sub) use ($extractedNormalized, $minLen) {
+                                $sub->whereRaw('LENGTH(COALESCE(normalized_model, \'\')) >= ?', [$minLen])
+                                    ->whereRaw('? LIKE CONCAT(\'%\', COALESCE(normalized_model, \'\'), \'%\')', [$extractedNormalized]);
+                            });
+                            $q->orWhere(function ($sub) use ($extractedNormalized, $minLen) {
+                                $sub->whereRaw('LENGTH(COALESCE(normalized_model, \'\')) >= ?', [$minLen])
+                                    ->whereRaw('COALESCE(normalized_model, \'\') LIKE CONCAT(\'%\', ?, \'%\')', [$extractedNormalized]);
+                            });
+                        }
                     }
                 }
             }
@@ -615,6 +732,10 @@ class FlexService
         }
         // When brand_id is null (no brand matched from Flex name), search across all brands
         // to find products like "NXAE104" that may exist with or without a brand
+
+        if ($normalizedModel !== null && $normalizedModel !== '') {
+            $query->orderByRaw('CASE WHEN normalized_model = ? THEN 0 ELSE 1 END', [$normalizedModel]);
+        }
 
         return $query->first();
     }

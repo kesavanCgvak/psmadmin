@@ -161,7 +161,7 @@ class EquipmentController extends Controller
                         : $modelName, // show only model if brand is missing
                     'psm_code' => $product->psm_code,
                     'webpage_url' => $product->webpage_url, // 🔗 product webpage URL
-                    'flex_resource_id' => $product->flex_resource_id, // 🔗 for future integration
+                    'flex_resource_id' => $equipment->flex_resource_id,
                     'software_code' => $equipment->software_code,
                     'quantity' => $equipment->quantity,
                     'price' => $equipment->rental_price,
