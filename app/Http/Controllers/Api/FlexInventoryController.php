@@ -104,6 +104,7 @@ class FlexInventoryController extends Controller
                     'message' => $result['message'],
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
+                    'flex' => $result['flex'] ?? null,
                 ], 200);
             }
 
@@ -113,6 +114,7 @@ class FlexInventoryController extends Controller
                     'inventory_id' => $result['inventory_id'],
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
+                    'flex' => $result['flex'] ?? null,
                 ], 200);
             }
 
@@ -123,12 +125,14 @@ class FlexInventoryController extends Controller
                     'day_rate' => $result['day_rate'],
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
+                    'flex' => $result['flex'] ?? null,
                 ], 200);
             }
 
             return response()->json([
                 'status' => 'new_product',
                 'day_rate' => $result['day_rate'],
+                'flex' => $result['flex'] ?? null,
             ], 200);
         } catch (\RuntimeException $e) {
             return response()->json([
@@ -424,6 +428,12 @@ class FlexInventoryController extends Controller
                 'weight_unit_id' => $weightUnitId,
                 'replacement_price' => $details['replacementCost'] ?? null,
                 'source' => 'flex',
+            ]);
+
+            Log::info('Created new product from Flex import', [
+                'product_id' => $product->id,
+                'flex_resource_id' => $flexResourceId,
+                'company_id' => $companyId,
             ]);
 
             $equipment = Equipment::create([

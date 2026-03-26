@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Equipment;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
-use Log;
 
 class InventoryImportService
 {
@@ -28,7 +27,7 @@ class InventoryImportService
      *
      * @param int $companyId Company ID
      * @param string $flexId Flex resource ID
-     * @return array{status: string, inventory_id?: int, product_id?: int, day_rate?: float|null, message?: string}
+     * @return array{status: string, flex?: array, inventory_id?: int, product_id?: int, day_rate?: float|null, message?: string}
      */
     public static function checkImportStatus(int $companyId, string $flexId): array
     {
@@ -39,15 +38,21 @@ class InventoryImportService
 
         if ($existingByFlex) {
             $product = $existingByFlex->product;
+            $flex = self::buildFlexImportCheckExtras($companyId, $flexId);
+
             return [
                 'status' => 'already_in_inventory',
                 'message' => 'Already imported',
                 'brand_name' => $product?->brand?->name ?? null,
                 'model' => $product?->model ?? null,
+                'flex' => $flex,
             ];
         }
 
         $details = FlexService::getInventoryDetails($companyId, $flexId);
+        $rentalQty = FlexService::getRentalQtySummary($companyId, $flexId);
+        $flex = FlexService::flexImportCheckFlexPayload($details, $rentalQty);
+
         $name = $details['name'] ?? '';
         $parsed = FlexService::parseBrandAndModel($name);
         $existingProduct = FlexService::findExistingProduct($parsed['brand_id'], $parsed['normalized_model'], $name);
@@ -66,6 +71,7 @@ class InventoryImportService
                     'inventory_id' => $existingInventory->id,
                     'brand_name' => $brandName,
                     'model' => $model,
+                    'flex' => $flex,
                 ];
             }
 
@@ -75,13 +81,35 @@ class InventoryImportService
                 'day_rate' => $dayRate,
                 'brand_name' => $brandName,
                 'model' => $model,
+                'flex' => $flex,
             ];
         }
 
         return [
             'status' => 'new_product',
             'day_rate' => $dayRate,
+            'flex' => $flex,
         ];
+    }
+
+    /**
+     * Flex name/sku/part/qty for import-check when getInventoryDetails may be called alone (already imported branch).
+     *
+     * @return array{name: string|null, sku: string|null, part_number: string|null, rental_qty_on_hand: int|null, rental_qty_allocated: int|null}
+     */
+    protected static function buildFlexImportCheckExtras(int $companyId, string $flexId): array
+    {
+        try {
+            $details = FlexService::getInventoryDetails($companyId, $flexId);
+            $rentalQty = FlexService::getRentalQtySummary($companyId, $flexId);
+
+            return FlexService::flexImportCheckFlexPayload($details, $rentalQty);
+        } catch (\Throwable $e) {
+            return FlexService::flexImportCheckFlexPayload([], [
+                'qty_on_hand' => null,
+                'qty_allocated' => null,
+            ]);
+        }
     }
 
     /**
@@ -134,7 +162,7 @@ class InventoryImportService
         // 1. Get Flex pricing (Day Rate)
         $currencyId = FlexService::getUsdCurrencyId($companyId);
         $dayRate = $currencyId ? $service->getDayRate($flexId, $currencyId) : null;
-Log::info("day rate price".$dayRate);
+
         // 2. Get Flex item details
         $details = FlexService::getInventoryDetails($companyId, $flexId);
         $replacementCost = $details['replacementCost'] ?? null;

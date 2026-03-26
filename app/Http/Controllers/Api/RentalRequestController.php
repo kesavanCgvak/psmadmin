@@ -12,6 +12,9 @@ use App\Models\RentalJobProduct;
 use App\Models\RentalJobComment;
 use App\Models\JobOffer;
 use App\Models\Equipment;
+use App\Jobs\CreateFlexQuoteFromRentalRequestJob;
+use App\Support\FlexIntegrationDebugLog;
+use App\Services\SupplierSmsNotifier;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -44,7 +47,7 @@ class RentalRequestController extends Controller
             'company_products' => 'required|array|min:1',
             'company_products.*.company_id' => 'required|integer|exists:companies,id',
             'company_products.*.products' => 'required|array|min:1',
-            'company_products.*.products.*.product_id' => 'required|integer|exists:products,id',
+            'company_products.*.products.*.product_id' => 'required|integer|exists:inventory_master,id',
             'company_products.*.products.*.requested_quantity' => 'required|integer|min:1',
             // Per-product similar flag (preferred)
             'company_products.*.products.*.is_similar' => 'nullable|boolean',
@@ -140,7 +143,7 @@ class RentalRequestController extends Controller
                     foreach ($companyData['products'] as $product) {
                         $productId = $product['product_id'];
                         $equipment = $companyEquipment->get($productId);
-                        $pricePerUnit = $equipment?->price;
+                        $pricePerUnit = $equipment?->rental_price;
 
                         SupplyJobProduct::create([
                             'supply_job_id' => $supplyJob->id,
@@ -195,35 +198,88 @@ class RentalRequestController extends Controller
                     }
 
                     if ($company && $company->getDefaultcontact) {
-                        $mailContent = [
-                            'rental_name' => $validated['name'],
-                            'from_date' => $validated['from_date'],
-                            'to_date' => $validated['to_date'],
-                            'delivery_address' => $validated['delivery_address'],
-                            'offer_requirements' => $validated['offer_requirements'],
-                            'global_message' => $validated['global_message'] ?? null,
-                            'email' => $user->email,
-                            'mobile' => $user->mobile,
-                            'company_name' => $company->name,
-                            'private_message' => $companyData['private_message'] ?? null,
-                            'initial_offer' => $companyData['initial_offer'] ?? null,
-                            'currency_symbol' => $currencySymbol,
-                            'products' => $productsForMail,
-                            'is_similar_request' => $isSimilarRequest,
-                            'user_name' => $user->profile->full_name ?? $user->name ?? 'Unknown User',
-                            'user_email' => $user->profile->email ?? null,
-                            'user_mobile' => $user->profile->mobile ?? null,
-                            'user_company' => $user->company->name ?? 'N/A',
-                            'supplier_company_name' => $company->name,
-                        ];
+                            $defaultContact = $company->getDefaultcontact;
+                            $providerContactName = $defaultContact->full_name ?? $defaultContact->email ?? 'there';
 
-                        Mail::send('emails.quoteRequest', $mailContent, function ($message) use ($company, $validated) {
+                            // Pre-render sections for DB template compatibility (no @if/@foreach in stored body)
+                            $globalMessageSection = '';
+                            if (!empty($validated['global_message'])) {
+                                $globalMessageSection = '<h3 style="color: #1a73e8;">Global Message</h3><p style="background: #f9f9f9; padding: 12px; border-left: 4px solid #1a73e8;">' . e($validated['global_message']) . '</p>';
+                            }
+                            $offerRequirementsSection = '';
+                            if (!empty($validated['offer_requirements'])) {
+                                $offerRequirementsSection = '<h3 style="color: #1a73e8;">Offer Requirements</h3><p>' . e($validated['offer_requirements']) . '</p>';
+                            }
+                            $privateMessageSection = '';
+                            if (!empty($companyData['private_message'])) {
+                                $privateMessageSection = '<h3 style="color: #1a73e8;">Private Message</h3><p style="background: #f9f9f9; padding: 12px; border-left: 4px solid #1a73e8;">' . e($companyData['private_message']) . '</p>';
+                            }
+                            $initialOfferSection = '';
+                            if (isset($companyData['initial_offer']) && $companyData['initial_offer'] !== null && $companyData['initial_offer'] !== '') {
+                                $initialOfferSection = '<h3 style="color: #1a73e8;">Initial Offer Negotiation</h3><p><b>Offer Price : </b>' . $currencySymbol . number_format((float) $companyData['initial_offer'], 2) . '</p>';
+                            }
+                            $similarRequestNote = '';
+                            if ($isSimilarRequest) {
+                                $similarRequestNote = '<p style="margin-top: 15px; padding: 12px; background-color: #e8f4fd; border-left: 4px solid #1a73e8; font-size: 14px; line-height: 1.5;"><strong>Note:</strong> The requester is also open to similar or equivalent products. Please contact the requester if you can offer suitable alternatives.</p>';
+                            }
+
+                            $grandTotal = 0;
+                            $productsTableRows = '';
+                            foreach ($productsForMail as $p) {
+                                $itemTotal = $p['total_price'] ?? 0;
+                                $grandTotal += $itemTotal;
+                                $model = e($p['model'] ?? '-');
+                                $psmCode = e($p['psm_code'] ?? '—');
+                                $softwareCode = e($p['software_code'] ?? '—');
+                                $qty = (int) ($p['requested_quantity'] ?? 0);
+                                $similarOk = !empty($p['is_similar']) ? 'Yes' : 'No';
+                                $pricePerUnit = $currencySymbol . number_format((float) ($p['price_per_unit'] ?? 0), 2);
+                                $totalFormatted = $currencySymbol . number_format((float) $itemTotal, 2);
+                                $productsTableRows .= "<tr style=\"border-bottom: 1px solid #eee;\"><td>{$model}</td><td>{$psmCode}</td><td>{$softwareCode}</td><td>{$qty}</td><td>{$similarOk}</td><td>{$pricePerUnit}</td><td>{$totalFormatted}</td></tr>";
+                            }
+                            $grandTotalFormatted = $currencySymbol . number_format((float) $grandTotal, 2);
+                            $productsTableHtml = '<h3 style="color: #1a73e8;">Requested Equipment</h3><table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px; font-size: 14px;"><thead style="background-color: #f0f0f0; border-bottom: 2px solid #ddd;"><tr><th align="left">Equipment</th><th align="left">PSM Code</th><th align="left">Software Code</th><th align="left">Qty</th><th align="left">Similar OK?</th><th align="left">Price</th><th align="left">Total Price</th></tr></thead><tbody>' . $productsTableRows . '<tr style="border-top: 2px solid #ddd; background-color: #f9f9f9;"><td colspan="6" align="right" style="font-weight: bold; padding-right: 10px;">Grand Total:</td><td style="font-weight: bold;">' . $grandTotalFormatted . '</td></tr></tbody></table>';
+
+                            $mailContent = [
+                                'rental_name' => $validated['name'],
+                                'from_date' => $validated['from_date'],
+                                'to_date' => $validated['to_date'],
+                                'delivery_address' => $validated['delivery_address'] ?? '',
+                                'provider_contact_name' => $providerContactName,
+                                'user_name' => $user->profile->full_name ?? $user->name ?? 'Unknown User',
+                                'user_email' => $user->profile->email ?? '',
+                                'user_mobile' => $user->profile->mobile ?? '',
+                                'user_company' => $user->company->name ?? 'N/A',
+                                'currency_symbol' => $currencySymbol,
+                                'global_message_section' => $globalMessageSection,
+                                'offer_requirements_section' => $offerRequirementsSection,
+                                'private_message_section' => $privateMessageSection,
+                                'initial_offer_section' => $initialOfferSection,
+                                'products_table_html' => $productsTableHtml,
+                                'similar_request_note' => $similarRequestNote,
+                            ];
+
+                        \App\Helpers\EmailHelper::send('quoteRequest', $mailContent, function ($message) use ($company, $validated) {
                             $message->to($company->getDefaultcontact->email, $validated['name'])
-                                ->subject('Quote Request from Pro Subrental Marketplace')
                                 ->from(config('mail.from.address'), config('mail.from.name'));
                         });
                     }
+
+                    SupplierSmsNotifier::notifyIfNeeded($supplyJob, $rentalJob, $user);
                 }
+
+                DB::afterCommit(function () use ($rentalJob) {
+                    try {
+                        FlexIntegrationDebugLog::info($rentalJob->id, null, 'FLEX_QUOTE_JOB', 'AFTER_COMMIT_RUN', [
+                            'note' => 'Runs synchronously (not queued)',
+                        ]);
+                        CreateFlexQuoteFromRentalRequestJob::dispatch($rentalJob->id);
+                    } catch (\Throwable $e) {
+                        FlexIntegrationDebugLog::error($rentalJob->id, null, 'FLEX_QUOTE_JOB', 'AFTER_COMMIT_FAILED', [
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                });
 
                 return response()->json([
                     'success' => true,
