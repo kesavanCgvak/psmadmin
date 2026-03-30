@@ -229,7 +229,9 @@ class FlexInventoryController extends Controller
     /**
      * Import equipment from Flex into PSM.
      * POST /api/flex/import
-     * Payload: { flex_id, quantity, rental_rate?, confirm? }
+     * Payload: { flex_id, quantity, rental_rate?, rental_price?, confirm?, product_id? }
+     * When product_id is set, that inventory_master row is used (link unlinked row or add company_inventory).
+     * rental_price overrides Flex Day Rate when present; otherwise rental_rate is used as override.
      */
     public function import(Request $request): JsonResponse
     {
@@ -250,7 +252,9 @@ class FlexInventoryController extends Controller
             'flex_id' => 'required',
             'quantity' => 'required|numeric|min:1',
             'rental_rate' => 'nullable|numeric|min:0',
+            'rental_price' => 'nullable|numeric|min:0',
             'confirm' => 'nullable|boolean',
+            'product_id' => 'nullable|integer|min:1',
         ]);
 
         if ($validator->fails()) {
@@ -263,21 +267,42 @@ class FlexInventoryController extends Controller
 
         $flexId = (string) $request->input('flex_id');
         $quantity = (int) $request->input('quantity');
-        $rentalRate = $request->has('rental_rate') ? (float) $request->input('rental_rate') : null;
         $confirm = $request->boolean('confirm', true);
+
+        $rentalOverride = null;
+        if ($request->exists('rental_price')) {
+            $rentalOverride = (float) $request->input('rental_price');
+        } elseif ($request->has('rental_rate')) {
+            $rentalOverride = (float) $request->input('rental_rate');
+        }
+
+        $explicitProductId = $request->filled('product_id') ? (int) $request->input('product_id') : null;
 
         try {
             $checkResult = InventoryImportService::checkImportStatus($companyId, $flexId);
 
             if ($checkResult['status'] === 'already_in_inventory') {
-                return response()->json([
-                    'success' => false,
-                    'status' => 'already_in_inventory',
-                    'message' => $checkResult['message'],
-                ], 200);
+                $eq = Equipment::where('company_id', $companyId)
+                    ->where('flex_resource_id', $flexId)
+                    ->first();
+                if ($explicitProductId && $eq && (int) $eq->product_id === $explicitProductId) {
+                    // Allow import path to refresh qty / rental / Flex data for this product
+                } elseif (!$explicitProductId) {
+                    return response()->json([
+                        'success' => false,
+                        'status' => 'already_in_inventory',
+                        'message' => $checkResult['message'],
+                    ], 200);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'status' => 'already_in_inventory',
+                        'message' => 'This Flex resource is already linked to a different product.',
+                    ], 200);
+                }
             }
 
-            if ($checkResult['status'] === 'inventory_exists') {
+            if ($checkResult['status'] === 'inventory_exists' && !$explicitProductId) {
                 return response()->json([
                     'status' => 'inventory_exists',
                     'inventory_id' => $checkResult['inventory_id'],
@@ -292,8 +317,58 @@ class FlexInventoryController extends Controller
                 ? Product::find($checkResult['product_id'])
                 : null;
 
+            if ($explicitProductId) {
+                if (!Product::whereKey($explicitProductId)->exists()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Product not found.',
+                    ], 404);
+                }
+
+                if (!$confirm) {
+                    $dayRate = $rentalOverride !== null
+                        ? $rentalOverride
+                        : FlexService::getDayRentalRate($companyId, $flexId);
+
+                    return response()->json([
+                        'status' => 'product_exists',
+                        'product_id' => $explicitProductId,
+                        'day_rate' => $dayRate,
+                    ], 200);
+                }
+
+                try {
+                    InventoryImportService::importFlexWithExplicitProductId(
+                        $companyId,
+                        $user->id,
+                        $explicitProductId,
+                        $flexId,
+                        $quantity,
+                        $rentalOverride,
+                        $softwareCode,
+                        $details['imageUrls'] ?? []
+                    );
+                } catch (\Exception $e) {
+                    if ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate entry')) {
+                        return response()->json([
+                            'success' => false,
+                            'status' => 'already_in_inventory',
+                            'message' => 'Already imported',
+                        ], 409);
+                    }
+                    throw $e;
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Equipment imported and synced with Flex data',
+                ], 201);
+            }
+
             if (!$confirm) {
-                $dayRate = FlexService::getDayRentalRate($companyId, $flexId);
+                $dayRate = $rentalOverride !== null
+                    ? $rentalOverride
+                    : FlexService::getDayRentalRate($companyId, $flexId);
                 if ($existingProduct) {
                     return response()->json([
                         'status' => 'product_exists',
@@ -301,6 +376,7 @@ class FlexInventoryController extends Controller
                         'day_rate' => $dayRate,
                     ], 200);
                 }
+
                 return response()->json([
                     'status' => 'new_product',
                     'day_rate' => $dayRate,
@@ -315,7 +391,7 @@ class FlexInventoryController extends Controller
                     $flexId,
                     $softwareCode,
                     $quantity,
-                    $rentalRate,
+                    $rentalOverride,
                     $details['imageUrls'] ?? []
                 );
             }
@@ -328,7 +404,7 @@ class FlexInventoryController extends Controller
                 $parsed,
                 $softwareCode,
                 $quantity,
-                $rentalRate ?? FlexService::getDayRentalRate($companyId, $flexId)
+                $rentalOverride ?? FlexService::getDayRentalRate($companyId, $flexId)
             );
         } catch (\RuntimeException $e) {
             return response()->json([

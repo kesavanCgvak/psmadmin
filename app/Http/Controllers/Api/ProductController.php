@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Support\ProductNormalizer;
+use App\Support\ProductNameNormalizer;
 use App\Traits\NormalizesName;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -781,23 +782,7 @@ class ProductController extends Controller
      */
     protected function normalizeProductName(string $productName): string
     {
-        // Convert to lowercase
-        $normalized = strtolower($productName);
-
-        // Remove extra spaces and normalize whitespace
-        $normalized = preg_replace('/\s+/', ' ', trim($normalized));
-
-        // Split into words, sort them, and rejoin
-        $words = explode(' ', $normalized);
-        sort($words);
-
-        // Remove common words that don't add uniqueness
-        $commonWords = ['the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by'];
-        $words = array_filter($words, function ($word) use ($commonWords) {
-            return !in_array($word, $commonWords) && strlen($word) > 1;
-        });
-
-        return implode(' ', $words);
+        return ProductNameNormalizer::normalize($productName);
     }
 
     /**

@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Equipment;
 use App\Services\Import\ProductMatcherService;
 use App\Services\Import\TypeMatcherService;
+use App\Support\ProductNameNormalizer;
 use Illuminate\Support\Facades\DB;
 
 class ImportConfirmationService
@@ -94,15 +95,29 @@ class ImportConfirmationService
                 }
 
                 if ($rowData['action'] === 'create') {
-                    // ✅ PRE-CREATE VALIDATION: Check for high-confidence matches before creating
+                    // ✅ PRE-CREATE VALIDATION: Block only when a matcher hit is the *same* catalog name (incl. digit suffix),
+                    // not a sibling line like "Test Product 1" vs "Test Product 3" (matcher can still show 100% word_match).
                     $matches = $matcher->findMatches($item, 0.85);
 
-                    // If very high confidence match found (90%+), prevent creation
-                    $highConfidenceMatch = $matches->where('confidence', '>=', 0.90)->first();
-                    if ($highConfidenceMatch) {
-                        $confidencePercent = round($highConfidenceMatch['confidence'] * 100);
-                        $psmCode = $highConfidenceMatch['psm_code'] ?? 'N/A';
-                        $matchType = $highConfidenceMatch['match_type'] ?? 'unknown';
+                    $duplicateCatalogProduct = $matches->first(function (array $m) use ($item) {
+                        if (($m['confidence'] ?? 0) < 0.90) {
+                            return false;
+                        }
+                        $product = Product::query()->find($m['product_id'] ?? null);
+                        if (! $product) {
+                            return false;
+                        }
+
+                        return ProductNameNormalizer::isSameProductLabel(
+                            (string) ($item->original_description ?? ''),
+                            (string) ($product->model ?? '')
+                        );
+                    });
+
+                    if ($duplicateCatalogProduct) {
+                        $confidencePercent = round($duplicateCatalogProduct['confidence'] * 100);
+                        $psmCode = $duplicateCatalogProduct['psm_code'] ?? 'N/A';
+                        $matchType = $duplicateCatalogProduct['match_type'] ?? 'unknown';
 
                         $errors[] = [
                             'row' => $rowData['row'],
@@ -114,7 +129,7 @@ class ImportConfirmationService
                                 'psm_code' => $psmCode,
                                 'confidence' => $confidencePercent,
                                 'match_type' => $matchType,
-                                'product_id' => $highConfidenceMatch['product_id'] ?? null,
+                                'product_id' => $duplicateCatalogProduct['product_id'] ?? null,
                             ],
                         ];
                         continue;

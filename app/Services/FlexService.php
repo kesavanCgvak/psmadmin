@@ -588,12 +588,12 @@ class FlexService
             ]);
         }
 
-        // 2. Fetch pricing
+        // 2. Fetch pricing (payload override wins over Flex Day Rate)
         $dayRate = $overrideRentalRate;
-        // if ($dayRate === null) {
-        $currencyId = $service->getCurrencyId();
-        $dayRate = $currencyId ? $service->getDayRate($flexId, $currencyId) : null;
-        // }F
+        if ($dayRate === null) {
+            $currencyId = $service->getCurrencyId();
+            $dayRate = $currencyId ? $service->getDayRate($flexId, $currencyId) : null;
+        }
 
         // 3. Update inventory_master ONLY if values are empty (do not overwrite existing)
         $productUpdates = [];
