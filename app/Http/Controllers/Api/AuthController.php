@@ -21,6 +21,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\DB;
 use App\Jobs\SyncUserToHubSpot;
+use App\Models\Equipment;
+use App\Models\Product;
+use App\Support\ProviderRegistrationInventory;
 
 
 class AuthController extends Controller
@@ -169,6 +172,31 @@ class AuthController extends Controller
             $user->profile()->create($profileData);
 
             Log::info('Profile created', ['profile' => $user->profile]);
+
+            if ($request->account_type === 'provider') {
+                $defaultModels = ProviderRegistrationInventory::defaultProductModelNames();
+                $products = Product::whereIn('model', $defaultModels)->get(['id', 'model']);
+                foreach ($defaultModels as $modelName) {
+                    $product = $products->firstWhere('model', $modelName);
+                    if (!$product) {
+                        Log::warning('Provider registration: default inventory product missing in inventory_master', [
+                            'model' => $modelName,
+                            'company_id' => $company->id,
+                        ]);
+                        continue;
+                    }
+                    if (Equipment::where('company_id', $company->id)->where('product_id', $product->id)->exists()) {
+                        continue;
+                    }
+                    Equipment::create([
+                        'user_id' => $user->id,
+                        'company_id' => $company->id,
+                        'product_id' => $product->id,
+                        'quantity' => 1,
+                        'rental_price' => 0,
+                    ]);
+                }
+            }
 
             // Handle Stripe Subscription only if payment is enabled
             $subscription = null;
