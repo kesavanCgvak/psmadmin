@@ -3,9 +3,9 @@
 namespace App\Services;
 
 use App\Models\Equipment;
+use App\Models\EquipmentImage;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
-use Log;
 
 class InventoryImportService
 {
@@ -28,7 +28,7 @@ class InventoryImportService
      *
      * @param int $companyId Company ID
      * @param string $flexId Flex resource ID
-     * @return array{status: string, inventory_id?: int, product_id?: int, day_rate?: float|null, message?: string}
+     * @return array{status: string, flex?: array, inventory_id?: int, product_id?: int, day_rate?: float|null, message?: string}
      */
     public static function checkImportStatus(int $companyId, string $flexId): array
     {
@@ -39,15 +39,21 @@ class InventoryImportService
 
         if ($existingByFlex) {
             $product = $existingByFlex->product;
+            $flex = self::buildFlexImportCheckExtras($companyId, $flexId);
+
             return [
                 'status' => 'already_in_inventory',
                 'message' => 'Already imported',
                 'brand_name' => $product?->brand?->name ?? null,
                 'model' => $product?->model ?? null,
+                'flex' => $flex,
             ];
         }
 
         $details = FlexService::getInventoryDetails($companyId, $flexId);
+        $rentalQty = FlexService::getRentalQtySummary($companyId, $flexId);
+        $flex = FlexService::flexImportCheckFlexPayload($details, $rentalQty);
+
         $name = $details['name'] ?? '';
         $parsed = FlexService::parseBrandAndModel($name);
         $existingProduct = FlexService::findExistingProduct($parsed['brand_id'], $parsed['normalized_model'], $name);
@@ -66,6 +72,7 @@ class InventoryImportService
                     'inventory_id' => $existingInventory->id,
                     'brand_name' => $brandName,
                     'model' => $model,
+                    'flex' => $flex,
                 ];
             }
 
@@ -75,13 +82,121 @@ class InventoryImportService
                 'day_rate' => $dayRate,
                 'brand_name' => $brandName,
                 'model' => $model,
+                'flex' => $flex,
             ];
         }
 
         return [
             'status' => 'new_product',
             'day_rate' => $dayRate,
+            'flex' => $flex,
         ];
+    }
+
+    /**
+     * Flex name/sku/part/qty for import-check when getInventoryDetails may be called alone (already imported branch).
+     *
+     * @return array{name: string|null, sku: string|null, part_number: string|null, rental_qty_on_hand: int|null, rental_qty_allocated: int|null}
+     */
+    protected static function buildFlexImportCheckExtras(int $companyId, string $flexId): array
+    {
+        try {
+            $details = FlexService::getInventoryDetails($companyId, $flexId);
+            $rentalQty = FlexService::getRentalQtySummary($companyId, $flexId);
+
+            return FlexService::flexImportCheckFlexPayload($details, $rentalQty);
+        } catch (\Throwable $e) {
+            return FlexService::flexImportCheckFlexPayload([], [
+                'qty_on_hand' => null,
+                'qty_allocated' => null,
+            ]);
+        }
+    }
+
+    /**
+     * Append Flex image URLs to company_inventory (dedupe by URL).
+     */
+    public static function appendEquipmentImagesFromFlex(int $equipmentId, array $imageUrls): void
+    {
+        foreach ($imageUrls as $url) {
+            $url = trim((string) $url);
+            if ($url === '') {
+                continue;
+            }
+            if (EquipmentImage::where('equipment_id', $equipmentId)->where('image_path', $url)->exists()) {
+                continue;
+            }
+            EquipmentImage::create([
+                'equipment_id' => $equipmentId,
+                'image_path' => $url,
+            ]);
+        }
+    }
+
+    /**
+     * Import using an explicit inventory_master id: link to an unlinked row, create a new row, or update if already linked.
+     *
+     * @throws \RuntimeException On duplicate Flex for another product or link failure
+     */
+    public static function importFlexWithExplicitProductId(
+        int $companyId,
+        int $userId,
+        int $productId,
+        string $flexId,
+        int $quantity,
+        ?float $rentalOverride,
+        ?string $softwareCode,
+        array $imageUrls = []
+    ): Equipment {
+        $existingByFlex = Equipment::where('company_id', $companyId)
+            ->where('flex_resource_id', $flexId)
+            ->first();
+
+        if ($existingByFlex) {
+            if ((int) $existingByFlex->product_id !== (int) $productId) {
+                throw new \RuntimeException('This Flex resource is already imported for this company.');
+            }
+            $existingByFlex->update([
+                'quantity' => $quantity,
+                'rental_price' => $rentalOverride !== null ? $rentalOverride : $existingByFlex->rental_price,
+            ]);
+            self::appendEquipmentImagesFromFlex($existingByFlex->id, $imageUrls);
+
+            return $existingByFlex->fresh();
+        }
+
+        Product::findOrFail($productId);
+
+        $unlinked = Equipment::where('company_id', $companyId)
+            ->where('product_id', $productId)
+            ->where(function ($q) {
+                $q->whereNull('flex_resource_id')->orWhere('flex_resource_id', '');
+            })
+            ->first();
+
+        if ($unlinked) {
+            $result = self::linkFlexToExistingInventory($companyId, $unlinked->id, $flexId, $quantity, $rentalOverride);
+            if (!$result['success']) {
+                throw new \RuntimeException($result['message']);
+            }
+            $equipment = Equipment::where('company_id', $companyId)
+                ->where('flex_resource_id', $flexId)
+                ->firstOrFail();
+            self::appendEquipmentImagesFromFlex($equipment->id, $imageUrls);
+
+            return $equipment;
+        }
+
+        return FlexService::syncExistingProductWithFlexData(
+            $companyId,
+            $productId,
+            $flexId,
+            $softwareCode,
+            $quantity,
+            $userId,
+            $imageUrls,
+            $rentalOverride
+        );
     }
 
     /**
@@ -91,10 +206,17 @@ class InventoryImportService
      * @param int $companyId Company ID
      * @param int $inventoryId company_inventory (Equipment) ID
      * @param string $flexId Flex resource ID
+     * @param int|null $quantity When set, updates company_inventory.quantity
+     * @param float|null $rentalOverride When set, uses this instead of Flex Day Rate
      * @return array{success: bool, status?: string, message: string}
      */
-    public static function linkFlexToExistingInventory(int $companyId, int $inventoryId, string $flexId): array
-    {
+    public static function linkFlexToExistingInventory(
+        int $companyId,
+        int $inventoryId,
+        string $flexId,
+        ?int $quantity = null,
+        ?float $rentalOverride = null
+    ): array {
         $inventory = Equipment::where('id', $inventoryId)
             ->where('company_id', $companyId)
             ->first();
@@ -120,8 +242,26 @@ class InventoryImportService
             ];
         }
 
-        // If this inventory already has this flex_id, consider it already linked
+        // If this inventory already has this flex_id, allow quantity / rental updates when provided
         if ($inventory->flex_resource_id === $flexId) {
+            if ($quantity !== null || $rentalOverride !== null) {
+                $patch = [];
+                if ($quantity !== null) {
+                    $patch['quantity'] = $quantity;
+                }
+                if ($rentalOverride !== null) {
+                    $patch['rental_price'] = $rentalOverride;
+                }
+                if ($patch !== []) {
+                    $inventory->update($patch);
+                }
+
+                return [
+                    'success' => true,
+                    'message' => 'Flex inventory updated',
+                ];
+            }
+
             return [
                 'success' => false,
                 'status' => 'already_linked',
@@ -131,10 +271,12 @@ class InventoryImportService
 
         $service = new FlexService($companyId);
 
-        // 1. Get Flex pricing (Day Rate)
+        // 1. Get Flex pricing (Day Rate) unless overridden
         $currencyId = FlexService::getUsdCurrencyId($companyId);
-        $dayRate = $currencyId ? $service->getDayRate($flexId, $currencyId) : null;
-Log::info("day rate price".$dayRate);
+        $dayRate = $rentalOverride !== null
+            ? $rentalOverride
+            : ($currencyId ? $service->getDayRate($flexId, $currencyId) : null);
+
         // 2. Get Flex item details
         $details = FlexService::getInventoryDetails($companyId, $flexId);
         $replacementCost = $details['replacementCost'] ?? null;
@@ -142,17 +284,21 @@ Log::info("day rate price".$dayRate);
         $width = $details['width'] ?? null;
         $length = $details['modelLength'] ?? null;
         $weight = $details['weight'] ?? null;
-        $sku =  $details['sku'] ?? null;
+        $sku = $details['sku'] ?? null;
 
         DB::beginTransaction();
         try {
-            // 3. Update company_inventory (always update rental_price with Flex Day Rate when available)
-            $inventory->update([
+            // 3. Update company_inventory
+            $inventoryUpdates = [
                 'flex_resource_id' => $flexId,
                 'rental_price' => $dayRate !== null ? $dayRate : $inventory->rental_price,
                 'software_code' => $sku,
                 'replacement_price' => $replacementCost !== null && $replacementCost !== '' ? (float) $replacementCost : $inventory->replacement_price,
-            ]);
+            ];
+            if ($quantity !== null) {
+                $inventoryUpdates['quantity'] = $quantity;
+            }
+            $inventory->update($inventoryUpdates);
 
             // 4. Update inventory_master ONLY if values are empty
             $product = Product::find($inventory->product_id);

@@ -4,7 +4,7 @@ namespace App\Services\Import;
 
 use App\Models\Product;
 use App\Models\ImportSessionItem;
-use App\Support\ProductNormalizer;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class ProductMatcherService
@@ -17,10 +17,11 @@ class ProductMatcherService
      * Priority 3 – Cross-Brand: Include keyword matches from other brands at lower priority.
      *
      * - Limit applied AFTER brand filtering and relevance scoring.
+     * - No-brand: when 2+ search words exist, products must match every word (AND); if none, falls back to OR (legacy).
      * - Category/Sub-Category ignored. Word order, hyphens, extra spaces normalized.
      *
      * @param ImportSessionItem $item
-     * @param float $minConfidence Minimum confidence threshold (0.0 to 1.0)
+     * @param float $minConfidence When ≥0.80, filters with a higher floor (0.50); otherwise 0.32 for import analyze
      * @return Collection Collection of matches with product_id, psm_code, confidence, match_type
      */
     public function findMatches(ImportSessionItem $item, float $minConfidence = 0.70): Collection
@@ -47,10 +48,20 @@ class ProductMatcherService
                     return false;
                 }
                 foreach ($brandWords as $brandWord) {
-                    if ($wordLower === trim($brandWord)) {
+                    $bw = trim($brandWord);
+                    if ($bw === '') {
+                        continue;
+                    }
+                    if ($wordLower === $bw) {
+                        // Keep short tokens: "ma" in "Grand MA 2" must not be stripped when brand is "MA LIGHTING"
+                        if (strlen($bw) <= 3) {
+                            continue;
+                        }
+
                         return false;
                     }
                 }
+
                 return true;
             });
             // When brand is one word (VARILITE), remove "vari" and "lite" - they form the brand
@@ -87,22 +98,7 @@ class ProductMatcherService
             // PRIORITY 3: Add cross-brand products that match keywords (lower priority, limit to avoid dilution)
             if (!empty($searchWords)) {
                 $hasWordMatch = true;
-                $addWordConditions = function ($subQ) use ($searchWords) {
-                    foreach ($searchWords as $word) {
-                        $wordLower = strtolower($word);
-                        $wordLike = '%' . $wordLower . '%';
-                        $subQ->orWhereRaw('LOWER(model) LIKE ?', [$wordLike])
-                             ->orWhereRaw('LOWER(COALESCE(normalized_model, \'\')) LIKE ?', [$wordLike])
-                             ->orWhereRaw('LOWER(COALESCE(normalized_full_name, \'\')) LIKE ?', [$wordLike]);
-                    }
-                };
-                $crossBrandProducts = Product::query()->with('brand')
-                    ->where('brand_id', '!=', $extractedBrandId)
-                    ->where(function ($subQ) use ($addWordConditions) {
-                        $addWordConditions($subQ);
-                    })
-                    ->limit(50) // Cap cross-brand to avoid diluting brand results
-                    ->get();
+                $crossBrandProducts = $this->queryCrossBrandProducts($extractedBrandId, $searchWords);
                 // Merge, avoiding duplicates (brand products already included)
                 $existingIds = $products->pluck('id')->flip();
                 foreach ($crossBrandProducts as $p) {
@@ -123,21 +119,7 @@ class ProductMatcherService
                 return collect();
             }
             $hasWordMatch = true;
-            $addWordConditions = function ($subQ) use ($searchWords) {
-                foreach ($searchWords as $word) {
-                    $wordLower = strtolower($word);
-                    $wordLike = '%' . $wordLower . '%';
-                    $subQ->orWhereRaw('LOWER(model) LIKE ?', [$wordLike])
-                         ->orWhereRaw('LOWER(COALESCE(normalized_model, \'\')) LIKE ?', [$wordLike])
-                         ->orWhereRaw('LOWER(COALESCE(normalized_full_name, \'\')) LIKE ?', [$wordLike]);
-                }
-            };
-            $products = Product::query()->with('brand')
-                ->where(function ($subQ) use ($addWordConditions) {
-                    $addWordConditions($subQ);
-                })
-                ->limit(500)
-                ->get();
+            $products = $this->loadProductsForNoBrandKeywordSearch($searchWords);
         }
 
         if ($products->isEmpty()) {
@@ -145,7 +127,6 @@ class ProductMatcherService
         }
         
         // STEP 3: Calculate confidence for each product
-        $description = $item->original_description;
         $descriptionNormalized = strtolower(preg_replace('/[^a-z0-9\s]/', ' ', $description));
         $descriptionNormalized = preg_replace('/\s+/', ' ', trim($descriptionNormalized));
         $descriptionWords = $this->extractWordsForMatching($description);
@@ -175,7 +156,7 @@ class ProductMatcherService
             $matchingWords = [];
             foreach ($descriptionWordsLower as $dWord) {
                 foreach ($productModelWordsLower as $pWord) {
-                    if ($dWord === $pWord) {
+                    if ($dWord === $pWord || $this->tokensMatchAllowingTypo($dWord, $pWord)) {
                         $matchingWords[$dWord] = true;
                         break;
                     }
@@ -199,9 +180,10 @@ class ProductMatcherService
             $matchingKeyTerms = [];
             foreach ($keyTermsLower as $keyTerm) {
                 foreach ($productModelWordsLower as $pWord) {
-                    if ($keyTerm === $pWord ||
-                        (preg_match('/\d/', $keyTerm) && strpos($pWord, $keyTerm) === 0) ||
-                        (preg_match('/\d/', $pWord) && strpos($keyTerm, $pWord) === 0)
+                    if ($keyTerm === $pWord
+                        || $this->tokensMatchAllowingTypo($keyTerm, $pWord)
+                        || (preg_match('/\d/', $keyTerm) && strpos($pWord, $keyTerm) === 0)
+                        || (preg_match('/\d/', $pWord) && strpos($keyTerm, $pWord) === 0)
                     ) {
                         $matchingKeyTerms[$keyTerm] = true;
                         break;
@@ -244,7 +226,10 @@ class ProductMatcherService
             if ($totalDescriptionWords > 0) {
                 // Single key term match (e.g., model code "VL3500") - strong signal, allow through
                 if ($matchCount === 1 && $keyTermMatchCount === 1) {
-                    $wordScore = 0.70; // Model codes like VL3500 are highly specific
+                    $soloKey = array_key_first($matchingKeyTerms);
+                    $wordScore = ($soloKey !== null && $this->isLikelyGenericSingleMatchKey($soloKey))
+                        ? 0.28
+                        : 0.70; // Model codes like VL3500 are highly specific; "test"/"model" are not
                 } elseif ($matchCount === 1 && $keyTermMatchCount === 0 && $genericWordMatchCount === 1) {
                     // Single generic word match - very low confidence (likely false positive)
                     $wordScore = 0.20; // Heavily penalized
@@ -329,7 +314,7 @@ class ProductMatcherService
                     $confidence = max(0.40, $confidence);
                 }
             }
-            
+
             // Determine primary match type
             $matchType = 'unknown';
             if (in_array('exact_match', $matchTypes)) {
@@ -343,6 +328,8 @@ class ProductMatcherService
             } elseif (in_array('word_match', $matchTypes)) {
                 $matchType = 'word_match';
             }
+
+            $confidence = $this->adjustConfidenceForProductLineSemantics($description, $product, $confidence);
             
             return [
                 'product_id' => $product->id,
@@ -356,8 +343,8 @@ class ProductMatcherService
             ];
         });
         
-        // Filter by minimum confidence threshold
-        $effectiveThreshold = 0.40;
+        // Analyze (default 0.70): broad suggestions. Stricter callers (≥0.80): fewer weak rows.
+        $effectiveThreshold = $minConfidence >= 0.80 ? 0.50 : 0.32;
         $matches = $matches->where('confidence', '>=', $effectiveThreshold);
         
         // Sort STRICTLY by priority (enforced order):
@@ -365,11 +352,31 @@ class ProductMatcherService
         // 2. Within brand: model keyword matches (e.g. VL3500) ranked higher
         // 3. Cross-brand matches last
         $keyTermsLower = array_map('strtolower', $keyTerms);
-        $matches = $matches->sortByDesc(function ($match) use ($extractedBrandId, $products, $keyTermsLower) {
+        $numericSuffix = $this->extractStandaloneNumericSuffix($searchWords);
+
+        $matches = $matches->sortByDesc(function ($match) use ($extractedBrandId, $products, $keyTermsLower, $numericSuffix, $searchWords, $description) {
             $product = $products->firstWhere('id', $match['product_id']);
             $isBrandProduct = $product && $extractedBrandId && $product->brand_id === $extractedBrandId;
             // Tier 1: Brand products always rank above cross-brand
             $brandTier = $isBrandProduct ? 1000 : 0;
+            // Tier 1b: Same numeric suffix as import line (e.g. "Test Product 3" → prefer ... 3 over ... 1/2)
+            $suffixTier = 0;
+            if ($numericSuffix !== null && $product) {
+                $suffixTier = $this->productModelContainsNumericSuffix($product, $numericSuffix) ? 100 : 0;
+            }
+            // Tier 1c: How many non-digit search tokens appear in the catalog model (family / Grand MA / 2port)
+            $overlapTier = 0;
+            if ($product) {
+                $overlapTier = $this->searchWordOverlapScore($searchWords, $product);
+            }
+            // Tier 1d: Prefer true grandMA2 hardware when user asked for "Grand MA 2" / "grandma2"
+            $grandMa2Tier = 0;
+            if ($product && preg_match('/\bgrand\s*ma\s*2\b|\bgrandma2\b|\bma\s*2\b/i', $description)) {
+                $ml = strtolower((string) ($product->model ?? ''));
+                if (preg_match('/grandma2|grand\s*ma\s*2/i', $ml)) {
+                    $grandMa2Tier = 150;
+                }
+            }
             // Tier 2: Model keyword match (brand+word) > brand-only > word-only
             $matchTier = 0;
             if (in_array($match['match_type'], ['exact_match', 'near_exact_match'])) {
@@ -391,12 +398,237 @@ class ProductMatcherService
                     }
                 }
             }
-            return [$brandTier, $matchTier, $modelHasKeyTerm, $match['confidence']];
+            return [$brandTier, $grandMa2Tier, $suffixTier, $overlapTier, $matchTier, $modelHasKeyTerm, $match['confidence']];
         });
         
-        // Limit AFTER ranking: allow more results when brand match (show all relevant brand products)
-        $resultLimit = $extractedBrandId ? 25 : 10;
+        // Limit AFTER ranking: large enough to list grandMA2 + related grandMA3 SKUs for one import line
+        $resultLimit = $extractedBrandId ? 150 : 40;
         return $matches->take($resultLimit)->values();
+    }
+
+    /**
+     * No-brand keyword search: AND on 2+ words, but standalone digits are omitted from the SQL AND
+     * so "Test Product 3" still returns "Test Product 1/2" as family candidates; digits drive ranking.
+     */
+    protected function loadProductsForNoBrandKeywordSearch(array $searchWords): Collection
+    {
+        return $this->runKeywordAndThenOrFallbackWithBase(
+            fn () => Product::query()->with('brand'),
+            $searchWords,
+            2000,
+            500
+        );
+    }
+
+    /**
+     * Cross-brand supplement: same AND-vs-OR strategy with small cap.
+     */
+    protected function queryCrossBrandProducts(int $excludeBrandId, array $searchWords): Collection
+    {
+        return $this->runKeywordAndThenOrFallbackWithBase(
+            fn () => Product::query()->with('brand')->where('brand_id', '!=', $excludeBrandId),
+            $searchWords,
+            50,
+            50
+        );
+    }
+
+    /**
+     * AND (digit-stripped words first), then strict AND including digits, then OR fallback.
+     *
+     * @param  callable(): Builder  $baseQuery
+     */
+    protected function runKeywordAndThenOrFallbackWithBase(callable $baseQuery, array $searchWords, int $andLimit, int $orLimit): Collection
+    {
+        $andWords = $this->wordsForAndKeywordQuery($searchWords);
+
+        if (count($searchWords) >= 2) {
+            if (count($andWords) >= 2) {
+                $q = $baseQuery();
+                $this->applyWordLikeConditions($q, $andWords, true);
+                $found = $q->limit($andLimit)->get();
+                if ($found->isNotEmpty()) {
+                    return $found;
+                }
+            }
+            $q = $baseQuery();
+            $this->applyWordLikeConditions($q, $searchWords, true);
+            $found = $q->limit($andLimit)->get();
+            if ($found->isNotEmpty()) {
+                return $found;
+            }
+        }
+
+        $q = $baseQuery();
+        $this->applyWordLikeConditions($q, $searchWords, false);
+
+        return $q->limit($orLimit)->get();
+    }
+
+    /**
+     * Words for AND query: drop standalone 1–9 digits so family lines (… 1 / … 2 / … 3) share the same pool.
+     */
+    protected function wordsForAndKeywordQuery(array $searchWords): array
+    {
+        return array_values(array_filter($searchWords, function ($w) {
+            $w = (string) $w;
+
+            return !(strlen($w) === 1 && ctype_digit($w));
+        }));
+    }
+
+    protected function extractStandaloneNumericSuffix(array $searchWords): ?string
+    {
+        foreach ($searchWords as $w) {
+            $w = (string) $w;
+            if (strlen($w) === 1 && ctype_digit($w)) {
+                return $w;
+            }
+        }
+
+        return null;
+    }
+
+    protected function productModelContainsNumericSuffix(Product $product, string $digit): bool
+    {
+        $model = strtolower((string) ($product->model ?? ''));
+        $norm = strtolower((string) ($product->normalized_model ?? ''));
+
+        if (preg_match('/\b' . preg_quote($digit, '/') . '\b/', $model)
+            || preg_match('/\b' . preg_quote($digit, '/') . '\b/', $norm)) {
+            return true;
+        }
+
+        return str_ends_with(rtrim($model), $digit) || str_ends_with(rtrim($norm), $digit);
+    }
+
+    /**
+     * Apply OR (any word) or AND (every word) LIKE conditions on model / normalized fields.
+     */
+    protected function applyWordLikeConditions(Builder $query, array $searchWords, bool $requireAllWords): void
+    {
+        if ($requireAllWords && count($searchWords) >= 2) {
+            foreach ($searchWords as $word) {
+                $wordLower = strtolower($word);
+                $wordLike = '%' . $wordLower . '%';
+                $query->where(function ($subQ) use ($wordLike) {
+                    $subQ->whereRaw('LOWER(model) LIKE ?', [$wordLike])
+                        ->orWhereRaw('LOWER(COALESCE(normalized_model, \'\')) LIKE ?', [$wordLike])
+                        ->orWhereRaw('LOWER(COALESCE(normalized_full_name, \'\')) LIKE ?', [$wordLike]);
+                });
+            }
+
+            return;
+        }
+
+        $query->where(function ($subQ) use ($searchWords) {
+            foreach ($searchWords as $word) {
+                $wordLower = strtolower($word);
+                $wordLike = '%' . $wordLower . '%';
+                $subQ->orWhereRaw('LOWER(model) LIKE ?', [$wordLike])
+                    ->orWhereRaw('LOWER(COALESCE(normalized_model, \'\')) LIKE ?', [$wordLike])
+                    ->orWhereRaw('LOWER(COALESCE(normalized_full_name, \'\')) LIKE ?', [$wordLike]);
+            }
+        });
+    }
+
+    /**
+     * Words that match many unrelated products when used alone (do not treat like "VL3500").
+     */
+    protected function isLikelyGenericSingleMatchKey(string $word): bool
+    {
+        $generic = [
+            'test', 'model', 'new', 'pro', 'lite', 'led', 'audio', 'speaker', 'cable', 'power',
+            'rack', 'line', 'sound', 'light', 'unit', 'series', 'type', 'digital', 'wireless',
+        ];
+
+        return in_array(strtolower($word), $generic, true);
+    }
+
+    /**
+     * Light typo / alias bridge (produt → product).
+     */
+    protected function tokensMatchAllowingTypo(string $a, string $b): bool
+    {
+        if ($a === $b) {
+            return true;
+        }
+        $aliases = [
+            'produt' => ['product'],
+            'produkt' => ['product'],
+        ];
+        if (isset($aliases[$a]) && in_array($b, $aliases[$a], true)) {
+            return true;
+        }
+        if (isset($aliases[$b]) && in_array($a, $aliases[$b], true)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Nudge scores so "Test Product …" ranks above "Test Model …" when the line says Product/Produt,
+     * and lightly penalize obvious MA2 vs MA3 confusion when the user specified "2".
+     */
+    protected function adjustConfidenceForProductLineSemantics(string $description, Product $product, float $confidence): float
+    {
+        $desc = strtolower($description);
+        $modelLower = strtolower((string) ($product->model ?? ''));
+
+        $descMentionsProductLine = (bool) preg_match('/\b(produt|product)\b/', $desc);
+        $modelHasProduct = str_contains($modelLower, 'product');
+        $modelHasModelWord = (bool) preg_match('/\bmodel\b/', $modelLower);
+
+        if ($descMentionsProductLine && $modelHasModelWord && ! $modelHasProduct) {
+            $confidence = max(0.35, $confidence - 0.14);
+        }
+        if ($descMentionsProductLine && $modelHasProduct) {
+            $confidence = min(1.0, $confidence + 0.06);
+        }
+
+        // Grand MA line: surface all grandMA2 SKUs; keep grandMA3 relatives as lower-ranked alternatives
+        if (preg_match('/\bgrand\s*ma\s*2\b|\bgrandma2\b|\bma\s*2\b/i', $description)) {
+            if (preg_match('/grandma2|grand\s*ma\s*2/i', $modelLower)) {
+                $confidence = min(1.0, $confidence + 0.10);
+            } elseif (preg_match('/grandma3|grand\s*ma\s*3/i', $modelLower)
+                && ! preg_match('/grandma2|grand\s*ma\s*2/i', $modelLower)) {
+                // Soft nudge only — harsh penalty was removing most rows below the API threshold
+                $confidence = max(0.45, $confidence - 0.05);
+            }
+        }
+
+        return round(min(1.0, max(0.0, $confidence)), 2);
+    }
+
+    /**
+     * How many import search tokens (incl. digits) appear in model fields — boosts Grand MA / 2port style rows.
+     */
+    protected function searchWordOverlapScore(array $searchWords, Product $product): int
+    {
+        $hay = strtolower(
+            (string) ($product->model ?? '')
+            . ' ' . (string) ($product->normalized_model ?? '')
+            . ' ' . (string) ($product->normalized_full_name ?? '')
+        );
+        $score = 0;
+        foreach ($searchWords as $w) {
+            $w = strtolower((string) $w);
+            if ($w === '') {
+                continue;
+            }
+            if (strlen($w) === 1 && ctype_digit($w)) {
+                if (str_contains($hay, $w)) {
+                    $score += 3;
+                }
+                continue;
+            }
+            if (strlen($w) >= 2 && str_contains($hay, $w)) {
+                $score += 6;
+            }
+        }
+
+        return min(100, $score);
     }
     
     /**
@@ -445,8 +677,11 @@ class ProductMatcherService
                 continue;
             }
             
-            // Skip very short words (less than 2 chars)
+            // Skip very short words (less than 2 chars), except single digits (model suffixes: ... 1 vs ... 2)
             if (strlen($word) < 2) {
+                if (strlen($word) === 1 && ctype_digit($word)) {
+                    $words[] = strtolower($word);
+                }
                 continue;
             }
             

@@ -10,6 +10,7 @@ use App\Models\Brand;
 use App\Models\LinearUnit;
 use App\Models\WeightUnit;
 use App\Services\BulkDeletionService;
+use App\Support\ProductNameNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
@@ -350,6 +351,7 @@ class ProductController extends Controller
         $psmCode = $this->generateNextPsmCode();
 
         $productData = $this->prepareProductData($request->all());
+        $productData['is_verified'] = 1; // Automatically verify new products created via admin panel
         $productData['psm_code'] = $psmCode;
 
         Product::create($productData);
@@ -383,7 +385,7 @@ class ProductController extends Controller
 
         // Use old category_id if available (from validation errors), otherwise use product's category_id
         $categoryId = old('category_id', $product->category_id);
-        
+
         $subCategories = SubCategory::select(['id', 'name', 'category_id'])
             ->where('category_id', $categoryId)
             ->orderBy('name')
@@ -548,23 +550,7 @@ class ProductController extends Controller
      */
     protected function normalizeProductName(string $productName): string
     {
-        // Convert to lowercase
-        $normalized = strtolower($productName);
-
-        // Remove extra spaces and normalize whitespace
-        $normalized = preg_replace('/\s+/', ' ', trim($normalized));
-
-        // Split into words, sort them, and rejoin
-        $words = explode(' ', $normalized);
-        sort($words);
-
-        // Remove common words that don't add uniqueness
-        $commonWords = ['the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by'];
-        $words = array_filter($words, function ($word) use ($commonWords) {
-            return !in_array($word, $commonWords) && strlen($word) > 1;
-        });
-
-        return implode(' ', $words);
+        return ProductNameNormalizer::normalize($productName);
     }
 
     /**
