@@ -88,7 +88,7 @@
             </div>
 
             <div class="table-responsive">
-                <table class="table table-bordered table-striped table-hover table-sm">
+                <table id="userAuthEventsTable" class="table table-bordered table-striped table-hover">
                     <thead>
                         <tr>
                             <th>Time</th>
@@ -127,7 +127,50 @@
                                 <td>{{ $event->identifier ?? '—' }}</td>
                                 <td><code>{{ $event->ip_address ?? '—' }}</code></td>
                                 <td>
-                                    <small class="text-muted text-break">{{ \Illuminate\Support\Str::limit($event->user_agent ?? '', 80) }}</small>
+                                    @php
+                                        $ua = (string) ($event->user_agent ?? '');
+                                        $browser = 'Unknown browser';
+                                        $os = 'Unknown OS';
+                                        $device = 'Desktop';
+
+                                        if (preg_match('/Edg\//i', $ua)) {
+                                            $browser = 'Microsoft Edge';
+                                        } elseif (preg_match('/OPR\/|Opera/i', $ua)) {
+                                            $browser = 'Opera';
+                                        } elseif (preg_match('/Chrome\//i', $ua) && !preg_match('/Edg\//i', $ua)) {
+                                            $browser = 'Chrome';
+                                        } elseif (preg_match('/Safari\//i', $ua) && !preg_match('/Chrome\//i', $ua)) {
+                                            $browser = 'Safari';
+                                        } elseif (preg_match('/Firefox\//i', $ua)) {
+                                            $browser = 'Firefox';
+                                        }
+
+                                        if (preg_match('/Windows/i', $ua)) {
+                                            $os = 'Windows';
+                                        } elseif (preg_match('/Android/i', $ua)) {
+                                            $os = 'Android';
+                                        } elseif (preg_match('/iPhone|iPad|iPod/i', $ua)) {
+                                            $os = 'iOS';
+                                        } elseif (preg_match('/Mac OS X|Macintosh/i', $ua)) {
+                                            $os = 'macOS';
+                                        } elseif (preg_match('/Linux/i', $ua)) {
+                                            $os = 'Linux';
+                                        }
+
+                                        if (preg_match('/iPad/i', $ua)) {
+                                            $device = 'Tablet';
+                                        } elseif (preg_match('/Mobile|iPhone|Android/i', $ua)) {
+                                            $device = 'Mobile';
+                                        }
+
+                                        $uaSummary = $browser . ' on ' . $os . ' (' . $device . ')';
+                                    @endphp
+                                    <small class="text-muted d-block" title="{{ $ua }}">
+                                        {{ $uaSummary }}
+                                    </small>
+                                    @if($ua !== '')
+                                        <small class="text-muted d-block">{{ \Illuminate\Support\Str::limit($ua, 55) }}</small>
+                                    @endif
                                 </td>
                             </tr>
                         @empty
@@ -144,4 +187,25 @@
             </div>
         </div>
     </div>
+@stop
+
+@section('js')
+    @include('partials.responsive-js')
+    <script>
+        $(document).ready(function() {
+            initResponsiveDataTable('userAuthEventsTable', {
+                paging: false,
+                searching: false,
+                info: false,
+                lengthChange: false,
+                ordering: true,
+                columnDefs: [
+                    { orderable: false, targets: [6] },
+                    { responsivePriority: 1, targets: 0 },
+                    { responsivePriority: 2, targets: 3 },
+                    { responsivePriority: 3, targets: 1 }
+                ]
+            });
+        });
+    </script>
 @stop
