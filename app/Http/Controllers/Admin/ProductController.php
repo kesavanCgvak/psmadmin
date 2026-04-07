@@ -11,6 +11,7 @@ use App\Models\LinearUnit;
 use App\Models\WeightUnit;
 use App\Services\BulkDeletionService;
 use App\Support\ProductNameNormalizer;
+use App\Support\InventoryProductSearch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
@@ -74,7 +75,7 @@ class ProductController extends Controller
             $start = $request->get('start', 0);
             $length = $request->get('length', 25);
             $search = $request->get('search', []);
-            $searchValue = is_array($search) && isset($search['value']) ? $search['value'] : '';
+            $searchValue = is_array($search) && isset($search['value']) ? trim((string) $search['value']) : '';
             $order = $request->get('order', []);
             $orderColumn = (is_array($order) && isset($order[0]['column'])) ? $order[0]['column'] : 0;
             $orderDir = (is_array($order) && isset($order[0]['dir'])) ? $order[0]['dir'] : 'desc';
@@ -95,21 +96,9 @@ class ProductController extends Controller
                 $query->where('is_verified', 0);
             }
 
-            // Apply search filter
-            if (!empty($searchValue)) {
-                $query->where(function ($q) use ($searchValue) {
-                    $q->where('model', 'like', "%{$searchValue}%")
-                        ->orWhere('psm_code', 'like', "%{$searchValue}%")
-                        ->orWhereHas('brand', function ($brandQuery) use ($searchValue) {
-                            $brandQuery->where('name', 'like', "%{$searchValue}%");
-                        })
-                        ->orWhereHas('category', function ($categoryQuery) use ($searchValue) {
-                            $categoryQuery->where('name', 'like', "%{$searchValue}%");
-                        })
-                        ->orWhereHas('subCategory', function ($subCategoryQuery) use ($searchValue) {
-                            $subCategoryQuery->where('name', 'like', "%{$searchValue}%");
-                        });
-                });
+            // Apply search filter (AND across whitespace-separated keywords; OR across fields)
+            if ($searchValue !== '') {
+                InventoryProductSearch::applyToProductQuery($query, $searchValue, true);
             }
 
             // Get total count before filtering
@@ -118,9 +107,14 @@ class ProductController extends Controller
             // Get filtered count
             $filteredRecords = $query->count();
 
-            // Apply ordering and pagination (use table-qualified column for clarity)
-            $products = $query->orderBy('inventory_master.' . $orderColumnName, $orderDir)
-                ->skip($start)
+            // Ordering: relevance when searching; otherwise DataTables column sort
+            if ($searchValue !== '') {
+                InventoryProductSearch::applyRelevanceOrderToProductQuery($query, $searchValue);
+            } else {
+                $query->orderBy('inventory_master.' . $orderColumnName, $orderDir);
+            }
+
+            $products = $query->skip($start)
                 ->take($length)
                 ->get();
 
@@ -696,14 +690,15 @@ class ProductController extends Controller
             $query->where('id', '!=', $excludeId);
         }
 
-        if (!empty($search)) {
-            $query->where(function ($q) use ($search) {
-                $q->where('model', 'like', "%{$search}%")
-                    ->orWhere('psm_code', 'like', "%{$search}%");
-            });
+        $searchTrim = trim((string) $search);
+        if ($searchTrim !== '') {
+            InventoryProductSearch::applyToProductQuery($query, $searchTrim, true);
+            InventoryProductSearch::applyRelevanceOrderToProductQuery($query, $searchTrim);
+        } else {
+            $query->orderBy('model');
         }
 
-        $products = $query->orderBy('model')->limit(20)->get();
+        $products = $query->limit(20)->get();
 
         $results = [];
         foreach ($products as $product) {

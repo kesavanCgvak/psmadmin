@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Services\InventoryImportService;
+use App\Support\InventoryProductSearch;
 
 class CompanyManagementController extends Controller
 {
@@ -494,22 +495,20 @@ class CompanyManagementController extends Controller
                 ->select('company_inventory.*');
 
             if ($searchValue !== '') {
-                $escaped = addcslashes($searchValue, '%_\\');
-                $term = '%' . $escaped . '%';
-                $base->where(function ($q) use ($term) {
-                    $q->where('inventory_master.model', 'like', $term)
-                        ->orWhere('inventory_master.psm_code', 'like', $term)
-                        ->orWhere('brands.name', 'like', $term)
-                        ->orWhere('company_inventory.software_code', 'like', $term);
-                });
+                InventoryProductSearch::applyToCompanyInventoryJoinedQuery($base, $searchValue);
             }
 
             $totalRecords = Equipment::where('company_id', $company->id)->count();
             $filteredRecords = (clone $base)->count();
 
-            $rows = (clone $base)
-                ->orderBy($orderBy, $orderDir)
-                ->skip($start)
+            $rowsQuery = clone $base;
+            if ($searchValue !== '') {
+                InventoryProductSearch::applyRelevanceOrderToCompanyInventoryJoinedQuery($rowsQuery, $searchValue);
+            } else {
+                $rowsQuery->orderBy($orderBy, $orderDir);
+            }
+
+            $rows = $rowsQuery->skip($start)
                 ->take($length)
                 ->get();
 
@@ -577,16 +576,13 @@ class CompanyManagementController extends Controller
         }
 
         if ($search !== '') {
-            $query->where(function ($q) use ($search) {
-                $q->where('model', 'like', '%' . addcslashes($search, '%_\\') . '%')
-                    ->orWhere('psm_code', 'like', '%' . addcslashes($search, '%_\\') . '%')
-                    ->orWhereHas('brand', function ($bq) use ($search) {
-                        $bq->where('name', 'like', '%' . addcslashes($search, '%_\\') . '%');
-                    });
-            });
+            InventoryProductSearch::applyToProductQuery($query, $search, true);
+            InventoryProductSearch::applyRelevanceOrderToProductQuery($query, $search);
+        } else {
+            $query->orderBy('model');
         }
 
-        $products = $query->orderBy('model')->limit(40)->get();
+        $products = $query->limit(40)->get();
 
         $results = [];
         foreach ($products as $product) {
