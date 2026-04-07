@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AdminUserManagementController;
 use App\Http\Controllers\Admin\BrandController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\CityController;
+use App\Http\Controllers\Admin\CmsPageController as AdminCmsPageController;
 use App\Http\Controllers\Admin\CompanyManagementController;
 use App\Http\Controllers\Admin\ContactSalesController;
 use App\Http\Controllers\Admin\CountryController;
@@ -30,6 +31,7 @@ use App\Http\Controllers\Admin\UserAuthEventController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\UserRestrictionsController;
 use App\Http\Controllers\Admin\WeightUnitController;
+use App\Http\Controllers\CmsPageController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
@@ -40,6 +42,9 @@ Route::get('/', function () {
 
     return redirect()->route('login');
 });
+
+/** Public CMS pages (HTML from admin WYSIWYG; content is sanitized on save). */
+Route::get('/page/{cmsPage:slug}', [CmsPageController::class, 'show'])->name('cms.page.show');
 
 Route::get('/dashboard', function () {
     return view('dashboard');
@@ -221,6 +226,9 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     Route::resource('contact-sales', ContactSalesController::class)
         ->only(['index', 'show', 'update', 'destroy'])
         ->parameters(['contact-sales' => 'contactSales']);
+
+    // CMS pages (WordPress-like HTML content)
+    Route::resource('cms-pages', AdminCmsPageController::class)->except(['show']);
 
     // Terms and Conditions Management
     Route::get('/terms-and-conditions', [TermsAndConditionsController::class, 'index'])

@@ -475,6 +475,12 @@ return [
             'icon_color' => 'success',
         ],
         [
+            'text' => 'CMS Pages',
+            'route' => 'admin.cms-pages.index',
+            'icon' => 'fas fa-fw fa-file-alt',
+            'icon_color' => 'primary',
+        ],
+        [
             'text' => 'Terms and Conditions',
             'route' => 'admin.terms-and-conditions.index',
             'icon' => 'fas fa-fw fa-file-contract',

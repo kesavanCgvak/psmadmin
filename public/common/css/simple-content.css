@@ -1,0 +1,109 @@
+/**
+ * Public CMS pages (/page/{slug}) — no Vite; safe when manifest.json is missing.
+ */
+.simple-content-body {
+    font-family: "Figtree", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background-color: #f9fafb;
+    color: #111827;
+    margin: 0;
+}
+
+.simple-content-main {
+    box-sizing: border-box;
+    max-width: 56rem;
+    margin-left: auto;
+    margin-right: auto;
+    overflow-x: auto;
+    padding: 2rem 1rem;
+}
+
+@media (min-width: 640px) {
+    .simple-content-main {
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+    }
+}
+
+@media (min-width: 1024px) {
+    .simple-content-main {
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+}
+
+.cms-page-header {
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.cms-page-title {
+    font-size: 1.875rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: #111827;
+    margin: 0;
+}
+
+@media (min-width: 640px) {
+    .cms-page-title {
+        font-size: 2.25rem;
+    }
+}
+
+.cms-page-updated {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: #6b7280;
+}
+
+.cms-page-body {
+    line-height: 1.75;
+    color: #111827;
+    font-size: 1rem;
+}
+
+.cms-page-body h1,
+.cms-page-body h2,
+.cms-page-body h3,
+.cms-page-body h4 {
+    margin-top: 1.25em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+}
+
+.cms-page-body h1 {
+    font-size: 1.875rem;
+}
+
+.cms-page-body h2 {
+    font-size: 1.5rem;
+}
+
+.cms-page-body h3 {
+    font-size: 1.25rem;
+}
+
+.cms-page-body p {
+    margin-bottom: 1em;
+}
+
+.cms-page-body ul,
+.cms-page-body ol {
+    margin-bottom: 1em;
+    padding-left: 1.5rem;
+}
+
+.cms-page-body table {
+    width: 100%;
+    max-width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1em;
+}
+
+.cms-page-body th,
+.cms-page-body td {
+    border: 1px solid #e5e7eb;
+    padding: 0.5rem 0.75rem;
+}
