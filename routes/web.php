@@ -125,6 +125,15 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
         ->name('ajax.subcategories-by-category');
 
     // Companies
+    Route::get('/companies/{company}/inventory/data', [CompanyManagementController::class, 'inventoryData'])
+        ->name('companies.inventory.data');
+    Route::get('/companies/{company}/inventory/search-master', [CompanyManagementController::class, 'searchInventoryMaster'])
+        ->name('companies.inventory.search-master');
+    Route::post('/companies/{company}/inventory', [CompanyManagementController::class, 'storeInventory'])
+        ->name('companies.inventory.store');
+    Route::delete('/companies/{company}/inventory/{equipment}', [CompanyManagementController::class, 'destroyInventory'])
+        ->name('companies.inventory.destroy');
+
     Route::resource('companies', CompanyManagementController::class);
     Route::post('/companies/bulk-delete', [CompanyManagementController::class, 'bulkDelete'])
         ->name('companies.bulk-delete');
