@@ -292,7 +292,19 @@ class FlexService
      *
      * @param array $details Output of getInventoryDetails
      * @param array $rentalQty Output of getRentalQtySummary
-     * @return array{name: string|null, sku: string|null, part_number: string|null, rental_qty_on_hand: int|null, rental_qty_allocated: int|null}
+     * @return array{
+     *   name: string|null,
+     *   sku: string|null,
+     *   part_number: string|null,
+     *   rental_qty_on_hand: int|null,
+     *   rental_qty_allocated: int|null,
+     *   linear_unit: string|null,
+     *   weight_unit: string|null,
+     *   height: mixed,
+     *   width: mixed,
+     *   modelLength: mixed,
+     *   weight: mixed
+     * }
      */
     public static function flexImportCheckFlexPayload(array $details, array $rentalQty): array
     {
@@ -302,6 +314,12 @@ class FlexService
             'part_number' => $details['partNumber'] ?? null,
             'rental_qty_on_hand' => $rentalQty['qty_on_hand'] ?? null,
             'rental_qty_allocated' => $rentalQty['qty_allocated'] ?? null,
+            'linear_unit' => $details['linearUnit'] ?? null,
+            'weight_unit' => $details['weightUnit'] ?? null,
+            'height' => $details['height'] ?? null,
+            'width' => $details['width'] ?? null,
+            'modelLength' => $details['modelLength'] ?? null,
+            'weight' => $details['weight'] ?? null,
         ];
     }
 
@@ -663,8 +681,69 @@ class FlexService
     /**
      * Minimum length for substring/LIKE matching on normalized_model.
      * Shorter values (e.g. "ss") must not match inside longer Flex names (e.g. "debbiessubaru").
+     * Codes that include a digit (e.g. "ae3" from "AE-3") are allowed at 3 chars — they rarely
+     * produce the same false positives as 3-letter-only fragments.
      */
     protected const MIN_NORMALIZED_SUBSTRING_MATCH_LEN = 4;
+
+    protected const MIN_NORMALIZED_SUBSTRING_MATCH_LEN_WITH_DIGIT = 3;
+
+    /**
+     * Compare leading characters of two normalized model strings (Flex vs inventory_master).
+     * Catches cases like Flex "ae3smallspeaker" vs PSM "ae3s2loudspeaker" where neither
+     * full string is a substring of the other but the model root matches.
+     */
+    protected static function minPrefixMatchLength(string $normalized): int
+    {
+        $len = strlen($normalized);
+        if ($len >= 4) {
+            return 4;
+        }
+        if ($len >= 3 && preg_match('/\d/', $normalized)) {
+            return 3;
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder  $q
+     */
+    protected static function applyPrefixMatchOnNormalizedModel($q, ?string $normalizedModel): void
+    {
+        if ($normalizedModel === null || $normalizedModel === '') {
+            return;
+        }
+
+        $prefixLen = self::minPrefixMatchLength($normalizedModel);
+        if ($prefixLen < 3) {
+            return;
+        }
+
+        $prefix = substr($normalizedModel, 0, $prefixLen);
+        $q->orWhere(function ($sub) use ($prefix, $prefixLen) {
+            $sub->whereRaw('LENGTH(COALESCE(normalized_model, \'\')) >= ?', [$prefixLen])
+                ->whereRaw('LEFT(COALESCE(normalized_model, \'\'), ?) = ?', [$prefixLen, $prefix]);
+        });
+    }
+
+    /**
+     * Effective minimum length for LIKE-based substring matching for this token.
+     */
+    protected static function effectiveSubstringMinLen(string $normalizedModel): int
+    {
+        if (strlen($normalizedModel) >= self::MIN_NORMALIZED_SUBSTRING_MATCH_LEN) {
+            return self::MIN_NORMALIZED_SUBSTRING_MATCH_LEN;
+        }
+        if (
+            strlen($normalizedModel) >= self::MIN_NORMALIZED_SUBSTRING_MATCH_LEN_WITH_DIGIT
+            && preg_match('/\d/', $normalizedModel)
+        ) {
+            return self::MIN_NORMALIZED_SUBSTRING_MATCH_LEN_WITH_DIGIT;
+        }
+
+        return self::MIN_NORMALIZED_SUBSTRING_MATCH_LEN;
+    }
 
     /**
      * Find existing product in inventory_master by brand_id + normalized model.
@@ -681,11 +760,11 @@ class FlexService
             return null;
         }
 
-        $minLen = self::MIN_NORMALIZED_SUBSTRING_MATCH_LEN;
-
-        $baseQuery = function ($q) use ($normalizedModel, $rawModelOrFullName, $minLen) {
+        $baseQuery = function ($q) use ($normalizedModel, $rawModelOrFullName) {
             if ($normalizedModel && ProductNormalizer::isValidNormalizedCode($normalizedModel)) {
                 $q->where('normalized_model', $normalizedModel);
+
+                $minLen = self::effectiveSubstringMinLen($normalizedModel);
 
                 // Substring matching only when both sides are long enough to avoid false positives
                 // (e.g. "debbiessubaru" must not match inventory row "ss" via LIKE '%ss%').
@@ -699,6 +778,8 @@ class FlexService
                             ->whereRaw('COALESCE(normalized_model, \'\') LIKE CONCAT(\'%\', ?, \'%\')', [$normalizedModel]);
                     });
                 }
+
+                self::applyPrefixMatchOnNormalizedModel($q, $normalizedModel);
             }
 
             if ($rawModelOrFullName) {
@@ -708,16 +789,19 @@ class FlexService
                     if ($extractedNormalized && ProductNormalizer::isValidNormalizedCode($extractedNormalized)) {
                         $q->orWhere('normalized_model', $extractedNormalized);
 
-                        if (strlen($extractedNormalized) >= $minLen) {
-                            $q->orWhere(function ($sub) use ($extractedNormalized, $minLen) {
-                                $sub->whereRaw('LENGTH(COALESCE(normalized_model, \'\')) >= ?', [$minLen])
+                        $extMinLen = self::effectiveSubstringMinLen($extractedNormalized);
+                        if (strlen($extractedNormalized) >= $extMinLen) {
+                            $q->orWhere(function ($sub) use ($extractedNormalized, $extMinLen) {
+                                $sub->whereRaw('LENGTH(COALESCE(normalized_model, \'\')) >= ?', [$extMinLen])
                                     ->whereRaw('? LIKE CONCAT(\'%\', COALESCE(normalized_model, \'\'), \'%\')', [$extractedNormalized]);
                             });
-                            $q->orWhere(function ($sub) use ($extractedNormalized, $minLen) {
-                                $sub->whereRaw('LENGTH(COALESCE(normalized_model, \'\')) >= ?', [$minLen])
+                            $q->orWhere(function ($sub) use ($extractedNormalized, $extMinLen) {
+                                $sub->whereRaw('LENGTH(COALESCE(normalized_model, \'\')) >= ?', [$extMinLen])
                                     ->whereRaw('COALESCE(normalized_model, \'\') LIKE CONCAT(\'%\', ?, \'%\')', [$extractedNormalized]);
                             });
                         }
+
+                        self::applyPrefixMatchOnNormalizedModel($q, $extractedNormalized);
                     }
                 }
             }
@@ -738,5 +822,270 @@ class FlexService
         }
 
         return $query->first();
+    }
+
+    /** Flex custom field group name that holds PSM marketplace fields */
+    protected const PRO_SUBRENTAL_MARKETPLACE_GROUP_NAME = 'Pro Subrental Marketplace';
+
+    protected const PSM_CODE_FIELD_CAPTION = 'PSM Code';
+
+    protected const PUBLISH_TO_PSM_FIELD_CAPTION = 'Publish to PSM';
+
+    /**
+     * GET /f5/api/custom-field-group/inventory-model/groups?resourceId=…
+     * Returns the "Pro Subrental Marketplace" group id, or null if missing / API failure.
+     */
+    protected static function getProSubrentalMarketplaceGroupId(int $companyId, string $resourceId): ?string
+    {
+        try {
+            $service = new self($companyId);
+            $path = config(
+                'flex.custom_field_inventory_model_groups_path',
+                '/f5/api/custom-field-group/inventory-model/groups'
+            );
+            $url = $service->baseUrl . $path;
+            $response = Http::timeout($service->timeout)
+                ->withHeaders(array_merge(
+                    $service->getAuthHeaders(),
+                    ['Content-Type' => 'application/json']
+                ))
+                ->get($url, ['resourceId' => $resourceId]);
+
+            if (!$response->successful()) {
+                Log::debug('Flex custom-field-group groups non-success', [
+                    'url' => $url,
+                    'resource_id' => $resourceId,
+                    'status' => $response->status(),
+                    'body_preview' => substr($response->body(), 0, 400),
+                ]);
+
+                return null;
+            }
+
+            $data = $response->json();
+            $groups = self::normalizeFlexListPayload($data);
+            foreach ($groups as $group) {
+                if (!is_array($group)) {
+                    continue;
+                }
+                $name = isset($group['name']) ? trim((string) $group['name']) : '';
+                if ($name === self::PRO_SUBRENTAL_MARKETPLACE_GROUP_NAME) {
+                    $id = $group['id'] ?? null;
+                    if ($id !== null && $id !== '') {
+                        return (string) $id;
+                    }
+                }
+            }
+
+            Log::debug('Flex custom-field-group: Pro Subrental Marketplace group not found', [
+                'resource_id' => $resourceId,
+            ]);
+
+            return null;
+        } catch (\Throwable $e) {
+            Log::debug('Flex custom-field-group groups request failed', [
+                'resource_id' => $resourceId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Normalize Flex responses that may be a bare array or wrapped in content/data.
+     *
+     * @param  mixed  $data
+     * @return array<int, mixed>
+     */
+    protected static function normalizeFlexListPayload($data): array
+    {
+        if (is_array($data) && array_key_exists(0, $data) && is_array($data[0] ?? null)) {
+            return $data;
+        }
+        if (is_array($data)) {
+            $nested = $data['content'] ?? $data['data'] ?? $data['items'] ?? $data['fields'] ?? null;
+            if (is_array($nested)) {
+                return $nested;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Parse boolean-ish values from Flex custom field storedValue / value.
+     */
+    protected static function parseFlexBooleanish($value): ?bool
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_numeric($value)) {
+            return ((int) $value) === 1;
+        }
+        $s = strtolower(trim((string) $value));
+        if ($s === '' || $s === 'null') {
+            return null;
+        }
+        if (in_array($s, ['true', 'yes', '1', 'on'], true)) {
+            return true;
+        }
+        if (in_array($s, ['false', 'no', '0', 'off'], true)) {
+            return false;
+        }
+
+        return null;
+    }
+
+    /**
+     * GET …/custom-field-value/{groupId}/resource-values?resourceId=…
+     *
+     * @return array{psm_code: string|null, publish_to_psm: bool|null}|null
+     */
+    protected static function parseProSubrentalFieldsFromResourceValuesResponse($json): ?array
+    {
+        $rows = self::normalizeFlexListPayload($json);
+        if ($rows === []) {
+            $rows = is_array($json) ? [$json] : [];
+        }
+
+        $psmCode = null;
+        $publishToPsm = null;
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $caption = isset($row['caption']) ? trim((string) $row['caption']) : '';
+            if ($caption === self::PSM_CODE_FIELD_CAPTION) {
+                $raw = $row['storedValue'] ?? $row['value'] ?? null;
+                if ($raw !== null && $raw !== '') {
+                    $psmCode = trim((string) $raw);
+                }
+            }
+            if ($caption === self::PUBLISH_TO_PSM_FIELD_CAPTION) {
+                $raw = $row['storedValue'] ?? $row['value'] ?? null;
+                $publishToPsm = self::parseFlexBooleanish($raw);
+            }
+        }
+
+        return [
+            'psm_code' => $psmCode !== null && $psmCode !== '' ? $psmCode : null,
+            'publish_to_psm' => $publishToPsm,
+        ];
+    }
+
+    /**
+     * Fetch PSM Code and Publish to PSM from Flex "Pro Subrental Marketplace" custom fields.
+     * Returns null if the group is absent, HTTP fails, or response cannot be parsed (caller should fallback).
+     *
+     * @return array{psm_code: string|null, publish_to_psm: bool|null}|null
+     */
+    public static function getProSubrentalMarketplaceCustomFields(int $companyId, string $resourceId): ?array
+    {
+        $groupId = self::getProSubrentalMarketplaceGroupId($companyId, $resourceId);
+        if ($groupId === null) {
+            return null;
+        }
+
+        try {
+            $service = new self($companyId);
+            $pattern = config(
+                'flex.custom_field_resource_values_path_pattern',
+                '/f5/api/custom-field-value/%s/resource-values'
+            );
+            $path = sprintf($pattern, $groupId);
+            $url = $service->baseUrl . $path;
+            $response = Http::timeout($service->timeout)
+                ->withHeaders(array_merge(
+                    $service->getAuthHeaders(),
+                    ['Content-Type' => 'application/json']
+                ))
+                ->get($url, ['resourceId' => $resourceId]);
+
+            if (!$response->successful()) {
+                Log::debug('Flex custom-field resource-values non-success', [
+                    'url' => $url,
+                    'group_id' => $groupId,
+                    'resource_id' => $resourceId,
+                    'status' => $response->status(),
+                    'body_preview' => substr($response->body(), 0, 400),
+                ]);
+
+                return null;
+            }
+
+            $json = $response->json();
+            $parsed = self::parseProSubrentalFieldsFromResourceValuesResponse($json);
+
+            Log::debug('Flex Pro Subrental custom fields parsed', [
+                'resource_id' => $resourceId,
+                'group_id' => $groupId,
+                'has_psm_code' => !empty($parsed['psm_code']),
+                'publish_to_psm' => $parsed['publish_to_psm'],
+            ]);
+
+            return $parsed;
+        } catch (\Throwable $e) {
+            Log::debug('Flex custom-field resource-values request failed', [
+                'resource_id' => $resourceId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Match inventory_master row by Flex "PSM Code" custom field (exact psm_code).
+     * With two arguments, custom fields are fetched once. With three arguments, the third value must be
+     * the result of getProSubrentalMarketplaceCustomFields() (even if null) to avoid duplicate HTTP.
+     *
+     * @param  array{psm_code: string|null, publish_to_psm: bool|null}|null  $resolvedCustomFields
+     */
+    public static function matchUsingPSMCode(int $companyId, string $resourceId, ?array $resolvedCustomFields = null): ?Product
+    {
+        if (func_num_args() < 3) {
+            $resolvedCustomFields = self::getProSubrentalMarketplaceCustomFields($companyId, $resourceId);
+        }
+
+        if ($resolvedCustomFields === null) {
+            return null;
+        }
+
+        $publishToPsm = $resolvedCustomFields['publish_to_psm'] ?? null;
+        if ($publishToPsm === false) {
+            Log::info('Flex matchUsingPSMCode: Publish to PSM is false (matching still allowed)', [
+                'resource_id' => $resourceId,
+                'company_id' => $companyId,
+            ]);
+        }
+
+        $code = isset($resolvedCustomFields['psm_code']) ? trim((string) $resolvedCustomFields['psm_code']) : '';
+        if ($code === '') {
+            return null;
+        }
+
+        $product = Product::where('psm_code', $code)->first();
+        if ($product) {
+            Log::info('Flex matchUsingPSMCode: matched inventory_master by psm_code', [
+                'resource_id' => $resourceId,
+                'company_id' => $companyId,
+                'psm_code' => $code,
+                'product_id' => $product->id,
+            ]);
+        } else {
+            Log::debug('Flex matchUsingPSMCode: no inventory_master row for psm_code (fallback to brand/model)', [
+                'resource_id' => $resourceId,
+                'company_id' => $companyId,
+                'psm_code' => $code,
+            ]);
+        }
+
+        return $product;
     }
 }

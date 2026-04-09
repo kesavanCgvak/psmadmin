@@ -39,6 +39,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Inventory model custom fields (Pro Subrental Marketplace — PSM Code, etc.)
+    |--------------------------------------------------------------------------
+    | GET groups: ?resourceId= — then GET …/custom-field-value/{groupId}/resource-values?resourceId=
+    */
+    'custom_field_inventory_model_groups_path' => env(
+        'FLEX_CUSTOM_FIELD_INVENTORY_MODEL_GROUPS_PATH',
+        '/f5/api/custom-field-group/inventory-model/groups'
+    ),
+    /** sprintf: first %s = groupId (UUID) */
+    'custom_field_resource_values_path_pattern' => env(
+        'FLEX_CUSTOM_FIELD_RESOURCE_VALUES_PATH_PATTERN',
+        '/f5/api/custom-field-value/%s/resource-values'
+    ),
+
+    /*
+    |--------------------------------------------------------------------------
     | Sales quote & contact (rental request → Flex quote)
     |--------------------------------------------------------------------------
     | Optional env defaults; per-company overrides live in
