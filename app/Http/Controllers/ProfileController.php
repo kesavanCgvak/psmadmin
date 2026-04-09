@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
+use App\Services\AuthEventLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -38,7 +39,7 @@ class ProfileController extends Controller
         if ($user->profile) {
             $firstName = $validated['first_name'] ?? null;
             $lastName = $validated['last_name'] ?? null;
-            if ($firstName === null && $lastName === null && !empty($validated['name'] ?? '')) {
+            if ($firstName === null && $lastName === null && ! empty($validated['name'] ?? '')) {
                 $parts = preg_split('/\s+/', trim($validated['name']), 2);
                 $firstName = $parts[0] ?? null;
                 $lastName = $parts[1] ?? null;
@@ -47,7 +48,7 @@ class ProfileController extends Controller
                 $user->profile->update([
                     'first_name' => $firstName,
                     'last_name' => $lastName,
-                    'full_name' => trim(($firstName ?? '') . ' ' . ($lastName ?? '')),
+                    'full_name' => trim(($firstName ?? '').' '.($lastName ?? '')),
                 ]);
             }
         }
@@ -65,6 +66,8 @@ class ProfileController extends Controller
         ]);
 
         $user = $request->user();
+
+        AuthEventLogger::logLogout($user, $request, 'web');
 
         Auth::logout();
 

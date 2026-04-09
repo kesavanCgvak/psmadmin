@@ -328,11 +328,9 @@ class ImportController extends Controller
             $stage = $this->determineSessionStage($session);
 
             // ✅ FILTER ITEMS:
-            // - Always hide explicitly removed/skipped rows
+            // - Skipped rows stay in the list (is_skipped is a draft state, not removal; use removeItem/delete to drop a row)
             // - By default, also hide confirmed rows so user only sees remaining work
-            $items = $session->items->filter(function ($item) {
-                return !$item->is_skipped;
-            });
+            $items = $session->items;
             if (!$showAll) {
                 $items = $items->filter(function ($item) {
                     return $item->status !== 'confirmed';
@@ -496,7 +494,7 @@ class ImportController extends Controller
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.id' => 'required|exists:import_session_items,id',
-            // attach/create = include in import; remove = permanently delete row (exclude from import)
+            // attach/create = include in import; skip = mark row skipped (keeps row); remove = permanently delete row
             'items.*.action' => 'nullable|in:attach,create,skip,remove',
             'items.*.is_skipped' => 'sometimes|boolean',
             'items.*.product_id' => [
@@ -515,17 +513,8 @@ class ImportController extends Controller
 
                 // Only update if item is not already confirmed
                 if ($item->status !== 'confirmed') {
-                    // If the user chose to remove this row, hard-delete it from the import.
-                    $shouldRemove = false;
-                    if (array_key_exists('action', $itemData) && in_array($itemData['action'], ['skip', 'remove'], true)) {
-                        $shouldRemove = true;
-                    }
-                    if (array_key_exists('is_skipped', $itemData) && $itemData['is_skipped']) {
-                        $shouldRemove = true;
-                    }
-
-                    if ($shouldRemove) {
-                        // Remove all matches for this row, then delete the row itself.
+                    // Only explicit "remove" deletes the row; skipping persists is_skipped (matches stay for resume)
+                    if (array_key_exists('action', $itemData) && $itemData['action'] === 'remove') {
                         ImportSessionMatch::where('import_session_item_id', $item->id)->delete();
                         $item->delete();
                         continue;
@@ -533,14 +522,25 @@ class ImportController extends Controller
 
                     $updates = [];
 
-                    if (array_key_exists('action', $itemData) && !in_array($itemData['action'], ['skip', 'remove'], true)) {
+                    $hasAttachOrCreate = isset($itemData['action'])
+                        && in_array($itemData['action'], ['attach', 'create'], true);
+
+                    if ($hasAttachOrCreate) {
                         $updates['action'] = $itemData['action'];
                         $updates['selected_product_id'] = $itemData['action'] === 'attach'
                             ? ($itemData['product_id'] ?? null)
                             : null;
+                        $updates['is_skipped'] = false;
+                    } elseif (($itemData['action'] ?? null) === 'skip'
+                        || (array_key_exists('is_skipped', $itemData) && $itemData['is_skipped'])) {
+                        $updates['is_skipped'] = true;
+                        $updates['action'] = null;
+                        $updates['selected_product_id'] = null;
+                    } elseif (array_key_exists('is_skipped', $itemData) && ! $itemData['is_skipped']) {
+                        $updates['is_skipped'] = false;
                     }
 
-                    if (!empty($updates)) {
+                    if (! empty($updates)) {
                         $item->update($updates);
                     }
                 }
@@ -734,7 +734,7 @@ class ImportController extends Controller
             $session->load('items');
         }
 
-        // Ignore skipped rows when determining overall stage
+        // Ignore skipped rows when counting "remaining work" (analyze/confirm), but an all-skipped session still has items
         $effectiveItems = $session->items->filter(function ($item) {
             return !$item->is_skipped;
         });
@@ -745,8 +745,8 @@ class ImportController extends Controller
         $pendingItems = $effectiveItems->where('status', 'pending')->count();
         $rejectedItems = $effectiveItems->where('status', 'rejected')->count();
 
-        // Step 1: Start - No items uploaded yet
-        if ($totalItems === 0) {
+        // Step 1: Start - No items uploaded yet (skipped rows still count as uploaded)
+        if ($session->items->isEmpty()) {
             return [
                 'step' => 1,
                 'name' => 'start',

@@ -3,26 +3,18 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Notifications\CustomEmailVerification;
+use App\Notifications\CustomResetPassword;
+use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Tymon\JWTAuth\Contracts\JWTSubject;
-use App\Notifications\CustomResetPassword;
-use App\Notifications\CustomEmailVerification;
-use App\Models\UserProfile;
-use App\Models\Company;
-use Filament\Panel;
 use Illuminate\Support\Facades\Log;
-use App\Models\RentalJob;
-use App\Models\SupplyJob;
-use App\Models\RentalJobComment;
-
-
+use Tymon\JWTAuth\Contracts\JWTSubject;
 
 class User extends Authenticatable implements JWTSubject
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
     /**
@@ -45,9 +37,8 @@ class User extends Authenticatable implements JWTSubject
         'token',
         'stripe_customer_id',
         'subscription_status',
-        'subscription_ends_at'
+        'subscription_ends_at',
     ];
-
 
     /**
      * The attributes that should be hidden for serialization.
@@ -76,6 +67,11 @@ class User extends Authenticatable implements JWTSubject
     public function profile()
     {
         return $this->hasOne(UserProfile::class);
+    }
+
+    public function authEvents()
+    {
+        return $this->hasMany(UserAuthEvent::class);
     }
 
     public function company()
@@ -144,13 +140,11 @@ class User extends Authenticatable implements JWTSubject
 
     /**
      * Get the user's display name for Filament.
-     *
-     * @return string
      */
     public function getName(): string
     {
         // Ensure we always return a string
-        $name = $this->username ?? 'User ' . ($this->id ?? 'Unknown');
+        $name = $this->username ?? 'User '.($this->id ?? 'Unknown');
 
         return (string) $name;
     }
@@ -165,12 +159,10 @@ class User extends Authenticatable implements JWTSubject
 
     /**
      * Get the username, ensuring it's never null.
-     *
-     * @return string
      */
     public function getUsername(): string
     {
-        return $this->username ?? 'user_' . $this->id;
+        return $this->username ?? 'user_'.$this->id;
     }
 
     /**
@@ -216,12 +208,12 @@ class User extends Authenticatable implements JWTSubject
     public function getEffectiveSubscription()
     {
         // If user belongs to provider company, use company subscription
-        if ($this->company && 
-            $this->company->account_type === 'provider' && 
+        if ($this->company &&
+            $this->company->account_type === 'provider' &&
             $this->company->subscription) {
             return $this->company->subscription;
         }
-        
+
         // Otherwise, use individual subscription (for regular users)
         return $this->subscription;
     }
@@ -229,6 +221,7 @@ class User extends Authenticatable implements JWTSubject
     public function hasActiveSubscription(): bool
     {
         $subscription = $this->getEffectiveSubscription();
+
         return $subscription && $subscription->isActive();
     }
 
@@ -272,5 +265,4 @@ class User extends Authenticatable implements JWTSubject
     {
         return $this->company->account_type ?? null;
     }
-
 }

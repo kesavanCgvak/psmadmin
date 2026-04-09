@@ -115,16 +115,29 @@
                         <dt class="col-sm-3">Rating</dt>
                         <dd class="col-sm-9">
                             @php
-                                $rating = $company->rating ?? 0;
+                                $rating = $displayRating ?? 0;
+                                $fullStars = (int) floor($rating);
+                                $hasHalfStar = ($rating - $fullStars) >= 0.5 && $fullStars < 5;
                             @endphp
                             @for($i = 1; $i <= 5; $i++)
-                                @if($i <= $rating)
+                                @if($i <= $fullStars)
                                     <i class="fas fa-star text-warning"></i>
+                                @elseif($hasHalfStar && $i === $fullStars + 1)
+                                    <i class="fas fa-star-half-alt text-warning"></i>
                                 @else
                                     <i class="far fa-star text-muted"></i>
                                 @endif
                             @endfor
-                            ({{ number_format($rating, 1) }})
+                            ({{ number_format((float) $rating, 1) }})
+                            @if(($overrideRating ?? null) !== null)
+                                <span class="badge badge-dark ml-1">Override</span>
+                            @endif
+                            <div>
+                                <small class="text-muted">
+                                    User avg: {{ number_format((float) ($userAvg ?? 0), 1) }}
+                                    ({{ (int) ($userCount ?? 0) }} users)
+                                </small>
+                            </div>
                         </dd>
 
                         <dt class="col-sm-3">Created At</dt>
@@ -165,7 +178,7 @@
                         </div>
                         <div class="col-sm-6">
                             <div class="description-block">
-                                <h5 class="description-header">{{ $company->equipments->count() }}</h5>
+                                <h5 class="description-header" id="companyEquipmentCount">{{ $company->equipments_count }}</h5>
                                 <span class="description-text">EQUIPMENT</span>
                             </div>
                         </div>
@@ -202,43 +215,263 @@
         </div>
     </div>
 
-    <!-- Equipment List -->
+    <!-- Marketplace inventory (company_inventory ↔ inventory_master) -->
     <div class="row">
         <div class="col-md-12">
             <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Company Equipment</h3>
+                <div class="card-header d-flex flex-wrap align-items-center justify-content-between">
+                    <h3 class="card-title mb-2 mb-md-0">Marketplace inventory</h3>
+                    <div class="card-tools">
+                        <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addCompanyInventoryModal">
+                            <i class="fas fa-plus"></i> Add product from catalog
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body">
-                    @if($company->equipments->count() > 0)
-                        <table class="table table-sm table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Product</th>
-                                    <th>Brand</th>
-                                    <th>Quantity</th>
-                                    <th>Price</th>
-                                    <th>Software Code</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach($company->equipments as $equipment)
-                                    <tr>
-                                        <td>{{ $equipment->product->model }}</td>
-                                        <td><span class="badge badge-success">{{ $equipment->product->brand?->name ?? 'N/A' }}</span></td>
-                                        <td><span class="badge badge-primary">{{ $equipment->quantity }}</span></td>
-                                        <td>${{ number_format($equipment->price, 2) }}</td>
-                                        <td>{{ $equipment->software_code ?? 'N/A' }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    @else
-                        <p class="text-muted">No equipment added yet.</p>
-                    @endif
+                    <p class="text-muted small mb-3">
+                        Products listed here are available in this company’s marketplace (<code>company_inventory</code> linked to <code>inventory_master</code>).
+                        Use search to find rows; add or remove links without leaving this page.
+                    </p>
+                    <table id="companyInventoryTable" class="table table-bordered table-striped table-sm" style="width:100%">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Model</th>
+                                <th>Brand</th>
+                                <th>PSM Code</th>
+                                <th>Qty</th>
+                                <th>Rental price</th>
+                                <th>Software code</th>
+                                <th style="width:90px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- Add product from inventory_master -->
+    <div class="modal fade" id="addCompanyInventoryModal" tabindex="-1" role="dialog" aria-labelledby="addCompanyInventoryModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addCompanyInventoryModalLabel">Add product to company inventory</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="inventoryMasterSearch">Search catalog (model, PSM code, brand)</label>
+                        <input type="text" class="form-control" id="inventoryMasterSearch" placeholder="Type at least 2 characters…" autocomplete="off">
+                    </div>
+                    <input type="hidden" id="selectedProductId" value="">
+                    <div id="inventoryMasterSearchHint" class="small text-muted mb-2">Only products not already linked to this company are shown.</div>
+                    <div id="inventoryMasterSearchResults" class="list-group mb-3" style="max-height: 300px; overflow-y: auto;"></div>
+                    <div id="selectedProductSummary" class="alert alert-secondary py-2 d-none" role="alert"></div>
+                    <div class="form-row">
+                        <div class="form-group col-md-4">
+                            <label for="addInvQuantity">Quantity</label>
+                            <input type="number" class="form-control" id="addInvQuantity" value="1" min="1">
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="addInvRental">Rental price (optional)</label>
+                            <input type="number" class="form-control" id="addInvRental" min="0" step="0.01" placeholder="Leave blank for unset">
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="addInvSoftware">Software code (optional)</label>
+                            <input type="text" class="form-control" id="addInvSoftware" maxlength="255">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirmAddInventoryBtn" disabled>
+                        <i class="fas fa-link"></i> Link product
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+@stop
+
+@section('js')
+    @include('partials.responsive-js')
+    <script>
+        $(function () {
+            $.ajaxSetup({
+                headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') }
+            });
+
+            var inventoryTable = initResponsiveDataTable('companyInventoryTable', {
+                processing: true,
+                serverSide: true,
+                stateSave: false,
+                order: [[0, 'desc']],
+                ajax: {
+                    url: "{{ route('admin.companies.inventory.data', $company) }}",
+                    type: 'GET',
+                    error: function () {
+                        alert('Could not load marketplace inventory. Please refresh.');
+                    }
+                },
+                columns: [
+                    { data: 'id', name: 'id' },
+                    {
+                        data: 'model',
+                        name: 'model',
+                        render: function (data, type, row) {
+                            if (row.product_id) {
+                                return '<a href="{{ url('/admin/products') }}/' + row.product_id + '">' + $('<div/>').text(data).html() + '</a>';
+                            }
+                            return $('<div/>').text(data).html();
+                        }
+                    },
+                    {
+                        data: 'brand',
+                        name: 'brand',
+                        render: function (data) {
+                            return '<span class="badge badge-success">' + $('<div/>').text(data).html() + '</span>';
+                        }
+                    },
+                    { data: 'psm_code', name: 'psm_code' },
+                    {
+                        data: 'quantity',
+                        name: 'quantity',
+                        render: function (data) {
+                            return '<span class="badge badge-primary">' + data + '</span>';
+                        }
+                    },
+                    { data: 'rental_price', name: 'rental_price', orderable: false },
+                    { data: 'software_code', name: 'software_code', orderable: false },
+                    { data: 'actions', name: 'actions', orderable: false, searchable: false }
+                ]
+            });
+
+            $('#companyInventoryTable').on('click', '.btn-remove-inventory', function () {
+                var url = $(this).data('url');
+                if (!url || !confirm('Remove this product from the company’s marketplace inventory?')) {
+                    return;
+                }
+                $.ajax({
+                    url: url,
+                    type: 'DELETE',
+                    success: function (res) {
+                        if (res.success) {
+                            inventoryTable.ajax.reload(null, false);
+                            var n = parseInt($('#companyEquipmentCount').text(), 10);
+                            if (!isNaN(n) && n > 0) {
+                                $('#companyEquipmentCount').text(n - 1);
+                            }
+                        } else {
+                            alert(res.message || 'Remove failed.');
+                        }
+                    },
+                    error: function (xhr) {
+                        var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Remove failed.';
+                        alert(msg);
+                    }
+                });
+            });
+
+            var searchTimer = null;
+            window.resetAddInventoryModal = function () {
+                $('#inventoryMasterSearch').val('');
+                $('#selectedProductId').val('');
+                $('#inventoryMasterSearchResults').empty();
+                $('#selectedProductSummary').addClass('d-none').text('');
+                $('#addInvQuantity').val('1');
+                $('#addInvRental').val('');
+                $('#addInvSoftware').val('');
+                $('#confirmAddInventoryBtn').prop('disabled', true);
+            };
+
+            $('#addCompanyInventoryModal').on('hidden.bs.modal', function () {
+                resetAddInventoryModal();
+            });
+
+            $('#inventoryMasterSearch').on('input', function () {
+                var q = $(this).val().trim();
+                clearTimeout(searchTimer);
+                var $results = $('#inventoryMasterSearchResults');
+                if (q.length < 2) {
+                    $results.empty();
+                    return;
+                }
+                searchTimer = setTimeout(function () {
+                    $.get("{{ route('admin.companies.inventory.search-master', $company) }}", { search: q, exclude_linked: 1 }, function (items) {
+                        $results.empty();
+                        if (!items.length) {
+                            $results.append('<div class="list-group-item text-muted">No products found (or all matches are already linked).</div>');
+                            return;
+                        }
+                        items.forEach(function (p) {
+                            var $item = $('<a href="#" class="list-group-item list-group-item-action"></a>');
+                            $item.append(
+                                $('<div class="d-flex w-100 justify-content-between"></div>')
+                                    .append($('<strong></strong>').text(p.model))
+                                    .append($('<small class="text-muted"></small>').text(p.psm_code))
+                            );
+                            $item.append($('<small></small>').text((p.brand || '') + ' · ' + (p.category || '')));
+                            $item.data('product', p);
+                            $item.on('click', function (e) {
+                                e.preventDefault();
+                                $('#selectedProductId').val(p.id);
+                                $('#selectedProductSummary')
+                                    .removeClass('d-none')
+                                    .text('Selected: ' + p.model + ' (' + p.psm_code + ') — ' + p.brand);
+                                $('#confirmAddInventoryBtn').prop('disabled', false);
+                                $results.find('.list-group-item').removeClass('active');
+                                $item.addClass('active');
+                            });
+                            $results.append($item);
+                        });
+                    });
+                }, 300);
+            });
+
+            $('#confirmAddInventoryBtn').on('click', function () {
+                var productId = $('#selectedProductId').val();
+                if (!productId) {
+                    return;
+                }
+                var payload = {
+                    product_id: productId,
+                    quantity: $('#addInvQuantity').val() || 1,
+                    rental_price: $('#addInvRental').val() === '' ? null : $('#addInvRental').val(),
+                    software_code: $('#addInvSoftware').val() || null
+                };
+                $.ajax({
+                    url: "{{ route('admin.companies.inventory.store', $company) }}",
+                    type: 'POST',
+                    data: payload,
+                    success: function (res) {
+                        if (res.success) {
+                            $('#addCompanyInventoryModal').modal('hide');
+                            inventoryTable.ajax.reload(null, false);
+                            var n = parseInt($('#companyEquipmentCount').text(), 10);
+                            if (!isNaN(n)) {
+                                $('#companyEquipmentCount').text(n + 1);
+                            }
+                        } else {
+                            alert(res.message || 'Could not add product.');
+                        }
+                    },
+                    error: function (xhr) {
+                        var msg = 'Could not add product.';
+                        if (xhr.responseJSON) {
+                            if (xhr.responseJSON.message) msg = xhr.responseJSON.message;
+                            else if (xhr.responseJSON.errors) {
+                                msg = Object.values(xhr.responseJSON.errors).flat().join(' ');
+                            }
+                        }
+                        alert(msg);
+                    }
+                });
+            });
+        });
+    </script>
 @stop
 

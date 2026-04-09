@@ -1,5 +1,13 @@
 <?php
 
+use JeroenNoten\LaravelAdminLte\Menu\Filters\ActiveFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\ClassesFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\DataFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\GateFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\HrefFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\LangFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\SearchFilter;
+
 return [
 
     /*
@@ -467,6 +475,12 @@ return [
             'icon_color' => 'success',
         ],
         [
+            'text' => 'CMS Pages',
+            'route' => 'admin.cms-pages.index',
+            'icon' => 'fas fa-fw fa-file-alt',
+            'icon_color' => 'primary',
+        ],
+        [
             'text' => 'Terms and Conditions',
             'route' => 'admin.terms-and-conditions.index',
             'icon' => 'fas fa-fw fa-file-contract',
@@ -483,6 +497,12 @@ return [
             'route' => 'admin.email-logs.index',
             'icon' => 'fas fa-fw fa-inbox',
             'icon_color' => 'info',
+        ],
+        [
+            'text' => 'User Login Activity',
+            'route' => 'admin.user-auth-events.index',
+            'icon' => 'fas fa-fw fa-user-clock',
+            'icon_color' => 'secondary',
         ],
         [
             'text' => 'User Restrictions',
@@ -535,13 +555,13 @@ return [
     */
 
     'filters' => [
-        JeroenNoten\LaravelAdminLte\Menu\Filters\GateFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\HrefFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\SearchFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\ActiveFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\ClassesFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\LangFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\DataFilter::class,
+        GateFilter::class,
+        HrefFilter::class,
+        SearchFilter::class,
+        ActiveFilter::class,
+        ClassesFilter::class,
+        LangFilter::class,
+        DataFilter::class,
     ],
 
     /*
