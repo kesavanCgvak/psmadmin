@@ -1042,6 +1042,10 @@ class FlexService
 
     /**
      * Match inventory_master row by Flex "PSM Code" custom field (exact psm_code).
+     * Only when Flex "Publish to PSM" is explicitly yes/true: then the PSM Code field is authoritative.
+     * If Publish to PSM is no/false, unknown (null), or custom fields could not be loaded, returns null
+     * so callers use brand/model matching instead.
+     *
      * With two arguments, custom fields are fetched once. With three arguments, the third value must be
      * the result of getProSubrentalMarketplaceCustomFields() (even if null) to avoid duplicate HTTP.
      *
@@ -1058,15 +1062,23 @@ class FlexService
         }
 
         $publishToPsm = $resolvedCustomFields['publish_to_psm'] ?? null;
-        if ($publishToPsm === false) {
-            Log::info('Flex matchUsingPSMCode: Publish to PSM is false (matching still allowed)', [
+        if ($publishToPsm !== true) {
+            Log::debug('Flex matchUsingPSMCode: skipping PSM Code match (Publish to PSM is not yes)', [
                 'resource_id' => $resourceId,
                 'company_id' => $companyId,
+                'publish_to_psm' => $publishToPsm,
             ]);
+
+            return null;
         }
 
         $code = isset($resolvedCustomFields['psm_code']) ? trim((string) $resolvedCustomFields['psm_code']) : '';
         if ($code === '') {
+            Log::debug('Flex matchUsingPSMCode: Publish to PSM is yes but PSM Code is empty (fallback to brand/model)', [
+                'resource_id' => $resourceId,
+                'company_id' => $companyId,
+            ]);
+
             return null;
         }
 

@@ -231,6 +231,7 @@ class FlexInventoryController extends Controller
      * POST /api/flex/import
      * Payload: { flex_id, quantity, rental_rate?, rental_price?, confirm?, product_id? }
      * When product_id is set, that inventory_master row is used (link unlinked row or add company_inventory).
+     * When product_id is omitted, a new inventory_master row is always created (no sync to catalog-matched products).
      * rental_price overrides Flex Day Rate when present; otherwise rental_rate is used as override.
      */
     public function import(Request $request): JsonResponse
@@ -302,20 +303,12 @@ class FlexInventoryController extends Controller
                 }
             }
 
-            if ($checkResult['status'] === 'inventory_exists' && !$explicitProductId) {
-                return response()->json([
-                    'status' => 'inventory_exists',
-                    'inventory_id' => $checkResult['inventory_id'],
-                ], 200);
-            }
-
             $details = FlexService::getInventoryDetails($companyId, $flexId);
             $name = $details['name'] ?? $request->input('name', '');
             $softwareCode = $details['sku'] ?? $details['partNumber'] ?? $flexId;
             $parsed = FlexService::parseBrandAndModel($name);
-            $existingProduct = ($checkResult['status'] === 'product_exists')
-                ? Product::find($checkResult['product_id'])
-                : null;
+            // Without product_id: never import into a catalog-matched row; always create new inventory_master below.
+            $existingProduct = null;
 
             if ($explicitProductId) {
                 if (!Product::whereKey($explicitProductId)->exists()) {
@@ -369,31 +362,11 @@ class FlexInventoryController extends Controller
                 $dayRate = $rentalOverride !== null
                     ? $rentalOverride
                     : FlexService::getDayRentalRate($companyId, $flexId);
-                if ($existingProduct) {
-                    return response()->json([
-                        'status' => 'product_exists',
-                        'product_id' => $existingProduct->id,
-                        'day_rate' => $dayRate,
-                    ], 200);
-                }
 
                 return response()->json([
                     'status' => 'new_product',
                     'day_rate' => $dayRate,
                 ], 200);
-            }
-
-            if ($existingProduct) {
-                return $this->importExistingProduct(
-                    $user,
-                    $companyId,
-                    $existingProduct->id,
-                    $flexId,
-                    $softwareCode,
-                    $quantity,
-                    $rentalOverride,
-                    $details['imageUrls'] ?? []
-                );
             }
 
             return $this->createProductAndInventory(
@@ -420,51 +393,6 @@ class FlexInventoryController extends Controller
                 'success' => false,
                 'message' => 'An unexpected error occurred during import.',
             ], 500);
-        }
-    }
-
-    /**
-     * Import equipment when product already exists in inventory_master.
-     * Syncs Flex data (dimensions, replacement_price, Day Rate) and creates company_inventory.
-     */
-    protected function importExistingProduct(
-        $user,
-        int $companyId,
-        int $productId,
-        string $flexResourceId,
-        ?string $softwareCode,
-        int $quantity,
-        ?float $overrideRentalRate,
-        array $imageUrls = []
-    ): JsonResponse {
-        DB::beginTransaction();
-        try {
-            FlexService::syncExistingProductWithFlexData(
-                $companyId,
-                $productId,
-                $flexResourceId,
-                $softwareCode,
-                $quantity,
-                $user->id,
-                $imageUrls,
-                $overrideRentalRate
-            );
-
-            DB::commit();
-            return response()->json([
-                'success' => true,
-                'message' => 'Equipment imported and synced with Flex data',
-            ], 201);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            if ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate entry')) {
-                return response()->json([
-                    'success' => false,
-                    'status' => 'already_in_inventory',
-                    'message' => 'Already imported',
-                ], 409);
-            }
-            throw $e;
         }
     }
 
