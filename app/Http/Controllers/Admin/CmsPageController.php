@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\CmsPage;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use Stevebauman\Purify\Facades\Purify;
 
 class CmsPageController extends Controller
@@ -86,5 +89,26 @@ class CmsPageController extends Controller
         return redirect()
             ->route('admin.cms-pages.index')
             ->with('success', 'Page deleted successfully.');
+    }
+
+    /**
+     * Upload image from TinyMCE and return a permanent URL.
+     */
+    public function uploadImage(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file' => 'required|image|mimes:jpg,jpeg,png,gif,webp|max:5120',
+        ]);
+
+        $file = $request->file('file');
+        $directory = public_path('uploads/cms-pages');
+        File::ensureDirectoryExists($directory);
+
+        $filename = Str::uuid()->toString().'.'.$file->getClientOriginalExtension();
+        $file->move($directory, $filename);
+
+        return response()->json([
+            'location' => asset('uploads/cms-pages/'.$filename),
+        ]);
     }
 }
