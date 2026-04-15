@@ -7,9 +7,9 @@ namespace App\Support;
  */
 final class ProviderRegistrationInventory
 {
-    public const TEST_PRODUCT_1_NAME = 'Test Product 1';
+    public const TEST_PRODUCT_1_NAME = 'TEST PRODUCT 1';
 
-    public const TEST_PRODUCT_2_NAME = 'Test Product 2';
+    public const TEST_PRODUCT_2_NAME = 'TEST PRODUCT 2';
 
     /** @return list<string> */
     public static function defaultProductModelNames(): array

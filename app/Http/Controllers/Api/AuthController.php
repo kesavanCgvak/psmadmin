@@ -190,7 +190,28 @@ class AuthController extends Controller
             Log::info('Profile created', ['profile' => $user->profile]);
 
             if ($request->account_type === 'provider') {
+                Log::info('Provider registration: resolving default inventory models', [
+                    'company_id' => $company->id,
+                    'user_id' => $user->id,
+                    'environment' => app()->environment(),
+                ]);
                 $defaultModels = ProviderRegistrationInventory::defaultProductModelNames();
+                Log::info('Provider registration: resolved default inventory models', [
+                    'company_id' => $company->id,
+                    'user_id' => $user->id,
+                    'default_models' => $defaultModels,
+                    'default_model_count' => is_array($defaultModels) ? count($defaultModels) : null,
+                    'default_models_type' => gettype($defaultModels),
+                ]);
+
+                if (!is_array($defaultModels) || empty($defaultModels)) {
+                    Log::warning('Provider registration: default inventory models are empty or invalid', [
+                        'company_id' => $company->id,
+                        'user_id' => $user->id,
+                        'default_models' => $defaultModels,
+                    ]);
+                }
+
                 $products = Product::whereIn('model', $defaultModels)->get(['id', 'model']);
                 foreach ($defaultModels as $modelName) {
                     $product = $products->firstWhere('model', $modelName);
