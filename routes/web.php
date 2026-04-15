@@ -187,6 +187,8 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     // Job Management (Read-only)
     Route::resource('rental-jobs', RentalJobController::class)->only(['index', 'show']);
     Route::resource('supply-jobs', SupplyJobController::class)->only(['index', 'show']);
+    Route::post('/supply-jobs/{supplyJob}/admin-cancel', [SupplyJobController::class, 'adminCancel'])
+        ->name('supply-jobs.admin-cancel');
     Route::get('/job-ratings', [JobRatingsController::class, 'index'])->name('job-ratings.index');
     Route::post('/job-ratings/block-company/{company}', [JobRatingsController::class, 'blockCompany'])->name('job-ratings.block-company');
     Route::post('/job-ratings/unblock-company/{company}', [JobRatingsController::class, 'unblockCompany'])->name('job-ratings.unblock-company');

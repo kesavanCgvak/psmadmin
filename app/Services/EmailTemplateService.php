@@ -217,6 +217,7 @@ class EmailTemplateService
             'supplyNewOffer' => 'New Supply Offer Received',
             'rentalJobCancelled' => 'Rental Job Cancelled',
             'supplyJobCancelled' => 'Supply Job Cancelled',
+            'supplyJobDeletedByAdmin' => 'Supply Job Deleted by Admin',
             'jobHandshakeAccepted' => 'Job Handshake Accepted',
             'subscriptionCreated' => 'Subscription Created',
             'subscriptionCanceled' => 'Subscription Cancelled',

@@ -54,6 +54,7 @@ class RentalJobController extends Controller
                     'products.product.brand',
                     'supplyJobs:id,rental_job_id,provider_id,status',
                     'supplyJobs.providerCompany:id,name',
+                    'supplyJobs.cancelledByUser:id,is_admin',
                     'supplyJobs.jobRating',
                     'supplyJobs.ratingReply',
                     'supplyJobs.renterRating',
@@ -89,7 +90,7 @@ class RentalJobController extends Controller
                         'supply_job_id' => $sj->id,
                         'company_id' => $sj->provider_id ?? $sj->providerCompany->id ?? null,
                         'company_name' => $sj->providerCompany->name ?? 'Unknown',
-                        'status' => $this->effectiveSupplyJobStatus($sj->status, $sj->jobRating),
+                        'status' => $this->effectiveSupplyJobStatus($sj),
                     ];
                     if ($sj->jobRating && $sj->jobRating->rated_at) {
                         $reply = $sj->ratingReply;
@@ -197,6 +198,7 @@ class RentalJobController extends Controller
                 'user:id,company_id',
                 'supplyJobs:id,rental_job_id,provider_id,status',
                 'supplyJobs.providerCompany:id,name',
+                'supplyJobs.cancelledByUser:id,is_admin',
                 'supplyJobs.jobRating',
                 'supplyJobs.ratingReply',
                 'supplyJobs.renterRating',
@@ -219,7 +221,7 @@ class RentalJobController extends Controller
                     'rental_job_id' => $sj->rental_job_id,
                     'company_id' => $sj->providerCompany->id ?? null,
                     'company_name' => $sj->providerCompany->name ?? 'Unknown',
-                    'status' => $this->effectiveSupplyJobStatus($sj->status, $sj->jobRating),
+                    'status' => $this->effectiveSupplyJobStatus($sj),
                 ];
                 if ($sj->jobRating && $sj->jobRating->rated_at) {
                     $reply = $sj->ratingReply;
@@ -399,7 +401,7 @@ class RentalJobController extends Controller
                     'code' => $currency->code,
                     'symbol' => $currency->symbol,
                 ] : null,
-                'status' => $this->effectiveSupplyJobStatus($supplyJob->status, $supplyJob->jobRating),
+                'status' => $this->effectiveSupplyJobStatus($supplyJob),
                 'rating_skipped' => $supplyJob->jobRating && $supplyJob->jobRating->skipped_at,
                 'equipment_details' => $equipmentDetails,
                 'latest_offer' => $latestOffer ? [
@@ -453,8 +455,19 @@ class RentalJobController extends Controller
      * "rated" is only shown when the renter has actually submitted a rating or skipped (job_rating has rated_at or skipped_at).
      * Fixes inconsistency where status could be "rated" in DB but no rating was given.
      */
-    private function effectiveSupplyJobStatus(string $status, ?JobRating $jobRating): string
+    private function effectiveSupplyJobStatus(SupplyJob $supplyJob): string
     {
+        if (
+            $supplyJob->status === 'cancelled'
+            && $supplyJob->cancelledByUser
+            && (bool) $supplyJob->cancelledByUser->is_admin
+        ) {
+            return 'admin_cancelled';
+        }
+
+        $status = $supplyJob->status;
+        $jobRating = $supplyJob->jobRating;
+
         if ($status !== 'rated') {
             return $status;
         }
