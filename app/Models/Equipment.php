@@ -7,16 +7,18 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 class Equipment extends Model
 {
     use HasFactory;
-    protected $table = 'equipments';
+    protected $table = 'company_inventory';
 
     protected $fillable = [
         'user_id',
         'product_id',
         'quantity',
-        'price',
+        'rental_price',
+        'replacement_price',
         'description',
         'software_code',
-        'company_id'
+        'company_id',
+        'flex_resource_id',
     ];
 
     public function user()

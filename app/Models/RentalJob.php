@@ -24,8 +24,16 @@ class RentalJob extends Model
         'offer_requirements',
         'global_message',
         'status',
+        'flex_sales_quote_id',
+        'flex_sales_quote_number',
+        'flex_sync_status',
         'cancelled_by',
         'notes',
+    ];
+
+    protected $casts = [
+        'from_date' => 'date',
+        'to_date' => 'date',
     ];
 
     public function user()
@@ -53,6 +61,18 @@ class RentalJob extends Model
         return $this->hasMany(JobOffer::class, 'rental_job_id');
     }
 
+    /** One rating per supply job (per provider). */
+    public function jobRatings()
+    {
+        return $this->hasMany(JobRating::class, 'rental_job_id');
+    }
+
+    /** Legacy: first rating when only one supplier (for backward compatibility). */
+    public function jobRating()
+    {
+        return $this->hasOne(JobRating::class, 'rental_job_id');
+    }
+
     public function getTotalRequestedQuantityAttribute()
     {
         return $this->products->sum('requested_quantity');
@@ -66,6 +86,16 @@ class RentalJob extends Model
     public function requesterCompany()
     {
         return $this->belongsTo(Company::class, 'requester_company_id');
+    }
+
+    public function flexIntegrationLogs()
+    {
+        return $this->hasMany(FlexIntegrationLog::class, 'rental_request_id');
+    }
+
+    public function rentalRequestProviderQuotes()
+    {
+        return $this->hasMany(RentalRequestProviderQuote::class, 'rental_request_id');
     }
 
 }

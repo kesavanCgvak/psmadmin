@@ -11,6 +11,7 @@ use App\Models\Company;
 use App\Models\User;
 use App\Models\UserProfile;
 use App\Models\JobOffer;
+use App\Models\JobRating;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\RentalJobBasicsUpdated;
 use App\Mail\RentalJobQuantityUpdated;
@@ -120,7 +121,7 @@ class RentalJobActionsController extends Controller
 
             // Prepare receiver details
             $receiver = (object) [
-                'contact_name' => $contactUser->name ?? 'there',
+                'contact_name' => $profile->full_name ?? $contactUser->username ?? 'there',
                 'email' => $profile->email,
                 'company_name' => $company->name ?? '-',
             ];
@@ -372,7 +373,7 @@ class RentalJobActionsController extends Controller
         }
 
         $receiver = (object) [
-            'contact_name' => $contactUser->name ?? 'there',
+            'contact_name' => $profile->full_name ?? $contactUser->username ?? 'there',
             'email' => $profile->email,
             'company_name' => $company->name ?? '',
         ];
@@ -483,7 +484,7 @@ class RentalJobActionsController extends Controller
                 continue;
 
             $receiver = (object) [
-                'contact_name' => $contactUser->name ?? 'there',
+                'contact_name' => $profile->full_name ?? $contactUser->username ?? 'there',
                 'email' => $profile->email,
                 'company_name' => $company->name ?? '',
             ];
@@ -626,21 +627,32 @@ class RentalJobActionsController extends Controller
 
                     if ($email) {
 
-                        $mailData = [
-                            'receiver_contact_name' => $providerContact->name ?? 'there',
-                            'requester_company_name' => $requesterCompany->name ?? '-',
-                            'rental_job_name' => $rentalJob->name,
-                            'supply_job_name' => $supplyJob->name,
-                            'status' => 'Cancelled by User',
-                            'reason' => $request->reason ?? 'No reason provided.',
-                            'date' => now()->format('d M Y, h:i A'),
-                            'products' => $products,
-                            'currency' => $requesterCompany->currency->symbol ?? '₹',
-                        ];
+                            $currencySym = $requesterCompany->currency->symbol ?? '₹';
+                            $productsSection = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3>';
+                            if (!empty($products)) {
+                                $productsSection .= '<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px;">';
+                                $productsSection .= '<thead><tr style="background:#e8f0fe; text-align:left;">';
+                                $productsSection .= '<th style="border-bottom:1px solid #ccc;">PSM Code</th><th style="border-bottom:1px solid #ccc;">Model</th><th style="border-bottom:1px solid #ccc;">Software Code</th><th style="border-bottom:1px solid #ccc;">Qty</th><th style="border-bottom:1px solid #ccc;">Price</th><th style="border-bottom:1px solid #ccc;">Total</th></tr></thead><tbody>';
+                                foreach ($products as $p) {
+                                    $productsSection .= '<tr><td>' . e($p['psm_code'] ?? '—') . '</td><td>' . e($p['model'] ?? '-') . '</td><td>' . e($p['software_code'] ?? '—') . '</td><td>' . (int) ($p['quantity'] ?? 0) . '</td><td>' . $currencySym . number_format((float) ($p['price'] ?? 0), 2) . '</td><td>' . $currencySym . number_format((float) ($p['total_price'] ?? 0), 2) . '</td></tr>';
+                                }
+                                $productsSection .= '</tbody></table>';
+                            } else {
+                                $productsSection .= '<p style="margin-top: 10px;">No products found.</p>';
+                            }
 
-                        Mail::send('emails.rentalJobCancelled', $mailData, function ($message) use ($email) {
+                            $mailData = [
+                                'receiver_contact_name' => $providerContact->full_name ?? 'there',
+                                'requester_company_name' => $requesterCompany->name ?? '-',
+                                'rental_job_name' => $rentalJob->name ?? '-',
+                                'status' => 'Cancelled by User',
+                                'reason' => $request->reason ?? 'No reason provided.',
+                                'date' => now()->format('d M Y, h:i A'),
+                                'products_section' => $productsSection,
+                            ];
+
+                        \App\Helpers\EmailHelper::send('rentalJobCancelled', $mailData, function ($message) use ($email) {
                             $message->to($email)
-                                ->subject('Rental Job Cancelled - Pro Subrental Marketplace')
                                 ->from(config('mail.from.address'), config('mail.from.name'));
                         });
                     }
@@ -659,6 +671,122 @@ class RentalJobActionsController extends Controller
                 'message' => 'Failed to cancel rental job.',
                 'error' => $e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * Renter submits a star rating (and optional comment) for a completed job.
+     */
+    public function rate(Request $request, int $id)
+    {
+        $user = auth('api')->user();
+
+        $validated = $request->validate([
+            'rating' => 'required|integer|min:1|max:5',
+            'comment' => 'nullable|string|max:2000',
+        ]);
+
+        try {
+            $rentalJob = RentalJob::with('user')->findOrFail($id);
+
+            if ((int) $rentalJob->user->company_id !== (int) $user->company_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized for this rental job.'
+                ], 403);
+            }
+
+            if ($rentalJob->status !== 'completed_pending_rating') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Job must be in completed (pending rating) status to submit a rating.'
+                ], 400);
+            }
+
+            DB::transaction(function () use ($rentalJob, $validated) {
+                $pendingSupplyJobs = SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->where('status', 'completed_pending_rating')
+                    ->get();
+                foreach ($pendingSupplyJobs as $sj) {
+                    JobRating::updateOrCreate(
+                        ['supply_job_id' => $sj->id],
+                        [
+                            'rental_job_id' => $rentalJob->id,
+                            'rating' => $validated['rating'],
+                            'comment' => $validated['comment'] ?? null,
+                            'rated_at' => now(),
+                            'skipped_at' => null,
+                        ]
+                    );
+                }
+                $rentalJob->update(['status' => 'rated']);
+                SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->where('status', 'completed_pending_rating')
+                    ->update(['status' => 'rated']);
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rating submitted successfully',
+                'data' => [],
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Rental job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to submit rating.'], 500);
+        }
+    }
+
+    /**
+     * Renter explicitly skips rating.
+     */
+    public function rateSkip(Request $request, int $id)
+    {
+        $user = auth('api')->user();
+
+        try {
+            $rentalJob = RentalJob::with('user')->findOrFail($id);
+
+            if ((int) $rentalJob->user->company_id !== (int) $user->company_id && !$user->is_admin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized for this rental job.'
+                ], 403);
+            }
+
+            if ($rentalJob->status !== 'completed_pending_rating') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Job must be in completed (pending rating) status to skip rating.'
+                ], 400);
+            }
+
+            // Record skip only; do not change supply job or rental job status. Skip can be done multiple times; reminders still send per schedule.
+                $pendingSupplyJobs = SupplyJob::where('rental_job_id', $rentalJob->id)
+                    ->where('status', 'completed_pending_rating')
+                    ->get();
+                foreach ($pendingSupplyJobs as $sj) {
+                    JobRating::updateOrCreate(
+                        ['supply_job_id' => $sj->id],
+                        [
+                            'rental_job_id' => $rentalJob->id,
+                            'rated_at' => null,
+                            'skipped_at' => now(),
+                        ]
+                    );
+                }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Rating skipped.',
+                'data' => [],
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Rental job not found.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'Failed to skip rating.'], 500);
         }
     }
 

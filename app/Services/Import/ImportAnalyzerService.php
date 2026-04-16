@@ -20,7 +20,7 @@ class ImportAnalyzerService
 
     /**
      * Stage uploaded Excel into DB with enhanced validation
-     *
+     * 
      * @throws ValidationException If file exceeds limits or contains no valid rows
      */
     public function stageUpload(ImportSession $session, $file): void
@@ -97,14 +97,14 @@ class ImportAnalyzerService
             // BUT: Check for existing brand/product matches before rejecting
             $validationPassed = true;
             $hasPotentialMatches = false;
-
+            
             try {
                 $validator->validateDescription($description);
             } catch (ValidationException $e) {
                 $validationPassed = false;
                 // ✅ If validation fails, check for potential matches before rejecting
                 $hasPotentialMatches = $this->hasPotentialMatches($description);
-
+                
                 // ✅ If validation fails BUT we found potential matches, allow it through
                 // The matching algorithm will handle it during analysis
                 if (!$hasPotentialMatches) {
@@ -521,12 +521,12 @@ class ImportAnalyzerService
         similar_text($a, $b, $percent);
         return round($percent / 100, 4);
     }
-
+    
     /**
      * Check if description has potential matches in existing products
      * Used to avoid rejecting items that might match existing products
      * This is a fast pre-check before validation rejection
-     *
+     * 
      * @param string $description
      * @return bool True if potential matches found (brand name or model code match)
      */
@@ -534,11 +534,11 @@ class ImportAnalyzerService
     {
         $descriptionLower = strtolower(trim($description));
         $words = array_filter(array_map('trim', explode(' ', $descriptionLower)));
-
+        
         if (empty($words)) {
             return false;
         }
-
+        
         // Strategy 1: Check if any words match existing brand names (fast check)
         $potentialBrands = [];
         foreach ($words as $word) {
@@ -547,13 +547,13 @@ class ImportAnalyzerService
             if (in_array($word, $stopWords)) {
                 continue;
             }
-
+            
             // If word is 3+ chars, check if it matches a brand
             if (strlen($word) >= 3) {
                 $potentialBrands[] = $word;
             }
         }
-
+        
         if (!empty($potentialBrands)) {
             $brandMatch = \App\Models\Brand::where(function ($query) use ($potentialBrands) {
                 foreach ($potentialBrands as $brand) {
@@ -561,12 +561,12 @@ class ImportAnalyzerService
                           ->orWhereRaw('LOWER(name) LIKE ?', ['%' . strtolower($brand) . '%']);
                 }
             })->exists();
-
+            
             if ($brandMatch) {
                 return true; // Found brand match - likely a valid product
             }
         }
-
+        
         // Strategy 2: Check for product model code matches (fast check using indexed normalized_model)
         $modelCode = \App\Support\ProductNormalizer::extractModelCode($description);
         if ($modelCode) {
@@ -576,25 +576,25 @@ class ImportAnalyzerService
                     $query->where('normalized_model', $normalizedCode)
                           ->orWhere('normalized_model', 'LIKE', '%' . $normalizedCode . '%');
                 })->exists();
-
+                
                 if ($productMatch) {
                     return true; // Found model code match - likely a valid product
                 }
             }
         }
-
+        
         // Strategy 3: Quick check for normalized full name matches (using index)
         $normalizedFull = \App\Support\ProductNormalizer::normalizeFullName(null, $description);
         if ($normalizedFull) {
             $fullNameMatch = \App\Models\Product::where('normalized_full_name', 'LIKE', '%' . $normalizedFull . '%')
                 ->limit(1)
                 ->exists();
-
+            
             if ($fullNameMatch) {
                 return true; // Found normalized full name match
             }
         }
-
+        
         return false;
     }
 }

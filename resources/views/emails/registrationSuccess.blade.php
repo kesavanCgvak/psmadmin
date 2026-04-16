@@ -43,7 +43,7 @@
         <!-- Header with Logo -->
         <tr style="background-color: #726d6c;">
             <td style="text-align: center; padding: 20px;">
-                <img src="{{ asset('images/logo-white.png') }}" alt="prosubmarket.com"
+                <img src="{{ config('mail.logo_url') ?? asset('images/logo-white.png') }}" alt="prosubmarket.com"
                     style="max-width: 200px; height: auto; display: block; margin: 0 auto;">
             </td>
         </tr>
@@ -66,8 +66,8 @@
                                 <li><strong>Name:</strong> {{ $name }}</li>
                                 <li><strong>Email:</strong> {{ $email }}</li>
                                 <li><strong>Username:</strong> {{ $username }}</li>
-                                <li><strong>Password:</strong> {{ $password }}</li>
-                                <li><strong>Account Type:</strong> {{ ucfirst($account_type) }}</li>
+                                <li><strong>Password:</strong> {{ $password ?? 'Use the password you set during registration.' }}</li>
+                                <li><strong>Account Type:</strong> {{ $account_type }}</li>
                             </ul>
                             <p style="color: #d9534f; font-size: 14px; font-weight: bold;">
                                 <strong>Important:</strong> Please save your login credentials and change your password after first login for security purposes.
@@ -83,8 +83,8 @@
                             <p>At PSM, our goal is to create new revenue streams by introducing you to new people in the
                                 industry looking for the equipment sitting idle in your warehouse.</p>
                             <p><b>You can now log in to your account:</b></p>
-                            <p style="text-align:center;">
-                                <a href="{{ $login_url }}" class="btn">Login to Your Account</a>
+                            <p style="text-align: center; margin: 24px 0;">
+                                <a href="{{ $login_url }}" style="display: inline-block; padding: 14px 28px; background-color: #e8d50b; color: #000000; font-size: 16px; font-weight: bold; text-decoration: none; border-radius: 6px;">Login to Your Account</a>
                             </p>
                             <p>If the button above doesn't work, copy and paste this link into your browser:</p>
                             <p style="word-break: break-all; font-size: 14px; color: #0066cc;">
@@ -99,7 +99,7 @@
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; 2025 Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
     </table>

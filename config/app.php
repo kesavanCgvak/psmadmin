@@ -123,4 +123,14 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Admin UI (lists, timestamps)
+    |--------------------------------------------------------------------------
+    */
+
+    'datetime_format' => env('APP_DATETIME_FORMAT', 'M d, Y H:i'),
+
+    'admin_list_per_page' => (int) env('ADMIN_LIST_PER_PAGE', 25),
+
 ];

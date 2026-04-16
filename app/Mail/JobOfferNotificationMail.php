@@ -38,7 +38,11 @@ class JobOfferNotificationMail extends Mailable
     public function build()
     {
         return $this->subject('New Job Offer Received - Pro Subrental Marketplace')
+<<<<<<< Updated upstream
+            ->from(config('mail.from.address'), config('mail.from.name'))
+=======
              ->from(config('mail.from.address'), config('mail.from.name'))
+>>>>>>> Stashed changes
             ->view('emails.jobOfferNotification')
             ->with([
                 'sender_company_name'   => $this->sender_company_name,
@@ -48,6 +52,7 @@ class JobOfferNotificationMail extends Mailable
                 'currency'              => $this->currency,
                 'status'                => $this->status,
                 'products'              => $this->products,
+                'current_year'          => (string) date('Y'),
             ]);
     }
 }

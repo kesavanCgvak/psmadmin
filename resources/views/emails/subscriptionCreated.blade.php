@@ -26,12 +26,12 @@
                     </tr>
                     <tr>
                         <td><strong>Status</strong></td>
-                        <td>{{ ucfirst($status) }}</td>
+                        <td>{{ $status }}</td>
                     </tr>
-                    @if($amount)
+                    @if(!empty($billing_line))
                         <tr>
                             <td><strong>Billing</strong></td>
-                            <td>{{ $currency }} {{ number_format((float) $amount, 2) }} {{ $interval ? '/ ' . $interval : '' }}</td>
+                            <td>{{ $billing_line }}</td>
                         </tr>
                     @endif
                     @if($trial_end_date)
@@ -44,7 +44,7 @@
 
                 <p style="margin-top: 20px;">You can manage your account anytime.</p>
                 <p style="text-align: center; margin: 24px 0;">
-                    <a href="{{ $app_url ?? env('APP_FRONTEND_URL') }}" style="display: inline-block; padding: 12px 24px; background-color: #1a73e8; color: #ffffff; text-decoration: none; border-radius: 4px;">Go to Dashboard</a>
+                    <a href="{{ $app_url }}" style="display: inline-block; padding: 14px 28px; background-color: #e8d50b; color: #000000; font-size: 16px; font-weight: bold; text-decoration: none; border-radius: 6px;">Go to Dashboard</a>
                 </p>
 
                 <p style="margin-top: 10px;">If you did not expect this email, please contact our support team.</p>
@@ -55,7 +55,7 @@
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; {{ date('Y') }} Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
     </table>

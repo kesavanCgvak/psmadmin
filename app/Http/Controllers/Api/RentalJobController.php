@@ -10,6 +10,7 @@ use App\Models\SupplyJobProduct;
 use App\Models\RentalJobComment;
 use App\Models\RentalJobOffer;
 use App\Models\JobOffer;
+use App\Models\JobRating;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -36,7 +37,7 @@ class RentalJobController extends Controller
 
         // Validate query params
         $validated = $request->validate([
-            'status' => ['nullable', Rule::in(['open', 'in_negotiation', 'accepted', 'cancelled', 'completed','partially_accepted'])],
+            'status' => ['nullable', Rule::in(['open', 'in_negotiation', 'accepted', 'cancelled', 'completed', 'partially_accepted', 'completed_pending_rating', 'rated', 'closed'])],
             'from_date' => ['nullable', 'date'],
             'to_date' => ['nullable', 'date', 'after_or_equal:from_date'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
@@ -51,7 +52,11 @@ class RentalJobController extends Controller
                 })
                 ->with([
                     'products.product.brand',
-                    'supplyJobs:id,rental_job_id'
+                    'supplyJobs:id,rental_job_id,provider_id,status',
+                    'supplyJobs.providerCompany:id,name',
+                    'supplyJobs.jobRating',
+                    'supplyJobs.ratingReply',
+                    'supplyJobs.renterRating',
                 ])
                 ->orderBy('created_at', 'desc');
 
@@ -77,9 +82,42 @@ class RentalJobController extends Controller
                 $paginator = null;
             }
 
-            //Transform data (shared for both cases)
+            //Transform data: include suppliers array so Rating column can show all company ratings
             $data = $collection->map(function (RentalJob $job) {
-                return [
+                $suppliers = $job->supplyJobs->map(function ($sj) {
+                    $supplier = [
+                        'supply_job_id' => $sj->id,
+                        'company_id' => $sj->provider_id ?? $sj->providerCompany->id ?? null,
+                        'company_name' => $sj->providerCompany->name ?? 'Unknown',
+                        'status' => $this->effectiveSupplyJobStatus($sj->status, $sj->jobRating),
+                    ];
+                    if ($sj->jobRating && $sj->jobRating->rated_at) {
+                        $reply = $sj->ratingReply;
+                        $supplier['supplier_rating'] = [
+                            'rating' => (int) $sj->jobRating->rating,
+                            'comment' => $sj->jobRating->comment,
+                            'rated_at' => $sj->jobRating->rated_at->toIso8601String(),
+                            'provider_reply' => $reply?->reply,
+                            'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
+                        ];
+                    }
+                    if ($sj->jobRating && $sj->jobRating->skipped_at) {
+                        $supplier['rating_skipped'] = true;
+                    }
+                    if ($sj->renterRating && $sj->renterRating->rated_at) {
+                        $rr = $sj->renterRating;
+                        $supplier['provider_rating_of_renter'] = [
+                            'rating' => (int) $rr->rating,
+                            'comment' => $rr->comment,
+                            'rated_at' => $rr->rated_at->toIso8601String(),
+                        ];
+                    } else {
+                        $supplier['provider_rating_of_renter'] = null;
+                    }
+                    return $supplier;
+                })->values();
+
+                $item = [
                     'id' => $job->id,
                     'name' => $job->name,
                     'from_date' => $job->from_date,
@@ -97,7 +135,23 @@ class RentalJobController extends Controller
                         ];
                     })->values(),
                     'provider_responses_count' => $job->supplyJobs->count(),
+                    'suppliers' => $suppliers,
                 ];
+
+                // Fallback: single job_rating when one supplier (for backward compatibility)
+                $ratedSupplier = $job->supplyJobs->first(fn ($sj) => $sj->jobRating && $sj->jobRating->rated_at);
+                if ($ratedSupplier) {
+                    $jr = $ratedSupplier->jobRating;
+                    $reply = $ratedSupplier->ratingReply;
+                    $item['job_rating'] = [
+                        'rating' => (int) $jr->rating,
+                        'comment' => $jr->comment,
+                        'rated_at' => $jr->rated_at->toIso8601String(),
+                        'provider_reply' => $reply?->reply,
+                        'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
+                    ];
+                }
+                return $item;
             })->values();
 
             //Build response
@@ -140,9 +194,12 @@ class RentalJobController extends Controller
 
         try {
             $job = RentalJob::with([
-                'user:id,company_id', // Load user to check company
-                'supplyJobs:id,rental_job_id,provider_id,status', // Basic supply job info
-                'supplyJobs.providerCompany:id,name', // Company name only
+                'user:id,company_id',
+                'supplyJobs:id,rental_job_id,provider_id,status',
+                'supplyJobs.providerCompany:id,name',
+                'supplyJobs.jobRating',
+                'supplyJobs.ratingReply',
+                'supplyJobs.renterRating',
             ])->findOrFail($id);
 
             // Security: only users from the same company or admin can view
@@ -154,15 +211,40 @@ class RentalJobController extends Controller
                 ], 403);
             }
 
-            // Build suppliers array with basic info only
+            // Build suppliers array: supplier_rating only from this supply job's rating (never copy to others).
+            // Status "rated" is only shown when the renter has actually rated or skipped (job_rating has rated_at or skipped_at).
             $suppliers = $job->supplyJobs->map(function ($sj) {
-                return [
+                $supplier = [
                     'supply_job_id' => $sj->id,
                     'rental_job_id' => $sj->rental_job_id,
                     'company_id' => $sj->providerCompany->id ?? null,
                     'company_name' => $sj->providerCompany->name ?? 'Unknown',
-                    'status' => $sj->status,
+                    'status' => $this->effectiveSupplyJobStatus($sj->status, $sj->jobRating),
                 ];
+                if ($sj->jobRating && $sj->jobRating->rated_at) {
+                    $reply = $sj->ratingReply;
+                    $supplier['supplier_rating'] = [
+                        'rating' => (int) $sj->jobRating->rating,
+                        'comment' => $sj->jobRating->comment,
+                        'rated_at' => $sj->jobRating->rated_at->toIso8601String(),
+                        'provider_reply' => $reply?->reply,
+                        'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
+                    ];
+                }
+                if ($sj->jobRating && $sj->jobRating->skipped_at) {
+                    $supplier['rating_skipped'] = true;
+                }
+                if ($sj->renterRating && $sj->renterRating->rated_at) {
+                    $rr = $sj->renterRating;
+                    $supplier['provider_rating_of_renter'] = [
+                        'rating' => (int) $rr->rating,
+                        'comment' => $rr->comment,
+                        'rated_at' => $rr->rated_at->toIso8601String(),
+                    ];
+                } else {
+                    $supplier['provider_rating_of_renter'] = null;
+                }
+                return $supplier;
             })->values();
 
             $payload = [
@@ -174,6 +256,21 @@ class RentalJobController extends Controller
                 'status' => $job->status,
                 'suppliers' => $suppliers,
             ];
+
+            // Legacy root job_rating: only when exactly one supplier and that supplier has a rating
+            if ($job->supplyJobs->count() === 1) {
+                $sj = $job->supplyJobs->first();
+                if ($sj->jobRating && $sj->jobRating->rated_at) {
+                    $reply = $sj->ratingReply;
+                    $payload['job_rating'] = [
+                        'rating' => (int) $sj->jobRating->rating,
+                        'comment' => $sj->jobRating->comment,
+                        'rated_at' => $sj->jobRating->rated_at->toIso8601String(),
+                        'provider_reply' => $reply?->reply,
+                        'provider_replied_at' => $reply?->replied_at?->toIso8601String(),
+                    ];
+                }
+            }
 
             return response()->json([
                 'success' => true,
@@ -302,7 +399,8 @@ class RentalJobController extends Controller
                     'code' => $currency->code,
                     'symbol' => $currency->symbol,
                 ] : null,
-                'status' => $supplyJob->status,
+                'status' => $this->effectiveSupplyJobStatus($supplyJob->status, $supplyJob->jobRating),
+                'rating_skipped' => $supplyJob->jobRating && $supplyJob->jobRating->skipped_at,
                 'equipment_details' => $equipmentDetails,
                 'latest_offer' => $latestOffer ? [
                     'id' => $latestOffer->id,
@@ -348,5 +446,24 @@ class RentalJobController extends Controller
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal Server Error',
             ], 500);
         }
+    }
+
+    /**
+     * Return effective supply job status for display.
+     * "rated" is only shown when the renter has actually submitted a rating or skipped (job_rating has rated_at or skipped_at).
+     * Fixes inconsistency where status could be "rated" in DB but no rating was given.
+     */
+    private function effectiveSupplyJobStatus(string $status, ?JobRating $jobRating): string
+    {
+        if ($status !== 'rated') {
+            return $status;
+        }
+        if (!$jobRating) {
+            return 'completed_pending_rating';
+        }
+        if ($jobRating->rated_at || $jobRating->skipped_at) {
+            return 'rated';
+        }
+        return 'completed_pending_rating';
     }
 }

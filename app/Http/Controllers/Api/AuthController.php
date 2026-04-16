@@ -2,25 +2,30 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Helpers\EmailHelper;
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use App\Models\User;
+use App\Http\Resources\UserResource;
+use App\Jobs\SyncUserToHubSpot;
 use App\Models\City;
 use App\Models\Company;
-use App\Models\Subscription;
+use App\Models\CompanyRating;
 use App\Models\Setting;
+use App\Models\Subscription;
+use App\Models\User;
+use App\Services\AuthEventLogger;
 use App\Services\StripeSubscriptionService;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Validator;
-use Tymon\JWTAuth\Facades\JWTAuth;
-use App\Http\Resources\UserResource;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Redirect;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redirect;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
+use Tymon\JWTAuth\Facades\JWTAuth;
+use App\Models\Equipment;
+use App\Models\Product;
+use App\Support\ProviderRegistrationInventory;
 
 class AuthController extends Controller
 {
@@ -37,7 +42,8 @@ class AuthController extends Controller
             'account_type' => 'required|string|in:provider,user',
             'company_name' => 'required|string|max:255|unique:companies,name',
             'username' => 'required|string|max:255|unique:users,username',
-            'name' => 'required|string|max:255',
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
             'region' => 'required|exists:regions,id',
             'country_id' => 'required|exists:countries,id',
             'state_id' => 'required|exists:states_provinces,id',
@@ -106,13 +112,14 @@ class AuthController extends Controller
                 $longitude = $city->longitude;
             } else {
                 // If city is not found, throw an error
-                throw new \Exception("City not found");
+                throw new \Exception('City not found');
             }
 
-            //Create company
+            // Create company
             $company = Company::create([
                 'name' => $request->company_name,
                 'account_type' => $request->account_type,
+                'subscription_mode' => $paymentEnabled ? 'paid' : 'free',
                 'region_id' => $request->region,
                 'country_id' => $request->country_id,
                 'city_id' => $request->city,
@@ -125,7 +132,7 @@ class AuthController extends Controller
                 'rating' => 5, // Default rating
             ]);
 
-            //Create user
+            // Create user
             $user = User::create([
                 'account_type' => $request->account_type,
                 'username' => $request->username,
@@ -138,17 +145,37 @@ class AuthController extends Controller
                 'role' => $company->users()->count() === 0 ? 'admin' : 'user',
             ]);
 
-            //Set default contact in company
+            // Set default contact in company
             if ($company->users()->count() === 1) {
                 $company->default_contact_id = $user->id;
                 $company->save();
             }
 
-            //Create profile
+            // For provider companies, create an initial 5-star company rating
+            // using the newly registered user's ID.
+            if (strtolower((string) $request->account_type) === 'provider') {
+                CompanyRating::updateOrCreate(
+                    [
+                        'company_id' => $company->id,
+                        'user_id' => $user->id,
+                    ],
+                    [
+                        'rating' => 5,
+                    ]
+                );
+            }
+
+            // Create profile
+
+            $firstName = $request->first_name;
+            $lastName = $request->last_name;
+            $fullName = trim($firstName.' '.($lastName ?? ''));
 
             // Build profile payload explicitly so we can log and avoid nulls
             $profileData = [
-                'full_name' => $request->name ?? $request->username,
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'full_name' => $fullName,
                 'birthday' => $request->birthday, // stored as VARCHAR in DB (e.g. MM-DD)
                 // user_profiles.email column is NOT nullable in DB, so make sure we never send null here
                 'email' => $request->email ?? $user->email ?? '',
@@ -157,22 +184,68 @@ class AuthController extends Controller
 
             Log::info('Profile payload before create', ['profile_data' => $profileData]);
 
-            //Create profile
+            // Create profile
             $user->profile()->create($profileData);
 
             Log::info('Profile created', ['profile' => $user->profile]);
+
+            if ($request->account_type === 'provider') {
+                Log::info('Provider registration: resolving default inventory models', [
+                    'company_id' => $company->id,
+                    'user_id' => $user->id,
+                    'environment' => app()->environment(),
+                ]);
+                $defaultModels = ProviderRegistrationInventory::defaultProductModelNames();
+                Log::info('Provider registration: resolved default inventory models', [
+                    'company_id' => $company->id,
+                    'user_id' => $user->id,
+                    'default_models' => $defaultModels,
+                    'default_model_count' => is_array($defaultModels) ? count($defaultModels) : null,
+                    'default_models_type' => gettype($defaultModels),
+                ]);
+
+                if (!is_array($defaultModels) || empty($defaultModels)) {
+                    Log::warning('Provider registration: default inventory models are empty or invalid', [
+                        'company_id' => $company->id,
+                        'user_id' => $user->id,
+                        'default_models' => $defaultModels,
+                    ]);
+                }
+
+                $products = Product::whereIn('model', $defaultModels)->get(['id', 'model']);
+                foreach ($defaultModels as $modelName) {
+                    $product = $products->firstWhere('model', $modelName);
+                    if (!$product) {
+                        Log::warning('Provider registration: default inventory product missing in inventory_master', [
+                            'model' => $modelName,
+                            'company_id' => $company->id,
+                        ]);
+                        continue;
+                    }
+                    if (Equipment::where('company_id', $company->id)->where('product_id', $product->id)->exists()) {
+                        continue;
+                    }
+                    Equipment::create([
+                        'user_id' => $user->id,
+                        'company_id' => $company->id,
+                        'product_id' => $product->id,
+                        'quantity' => 1,
+                        'rental_price' => 0,
+                    ]);
+                }
+            }
 
             // Handle Stripe Subscription only if payment is enabled
             $subscription = null;
 
             if ($paymentEnabled) {
-                $subscriptionService = new StripeSubscriptionService();
+                $subscriptionService = new StripeSubscriptionService;
 
                 try {
                     // Create Stripe customer
                     $customer = $subscriptionService->createCustomer([
                         'email' => $request->email,
-                        'name' => $request->name ?? $request->username,
+                        'name' => $fullName ?: $request->username,
                         'metadata' => [
                             'user_id' => $user->id,
                             'company_id' => $company->id,
@@ -215,24 +288,24 @@ class AuthController extends Controller
 
                     // Send subscription details email to the user
                     if ($request->email) {
+                        $amount = $subscription->amount;
+                        $currency = strtoupper($subscription->currency ?? 'USD');
+                        $interval = $subscription->interval;
                         $subscriptionEmailData = [
                             'username' => $request->username,
-                            'plan_name' => $subscription->plan_name ?? ucfirst($request->account_type) . ' Plan',
-                            'status' => $subscription->stripe_status,
+                            'plan_name' => $subscription->plan_name ?? ucfirst($request->account_type).' Plan',
+                            'status' => ucfirst($subscription->stripe_status),
                             'trial_end_date' => $subscription->trial_ends_at
                                 ? $subscription->trial_ends_at
                                     ->timezone(config('app.timezone'))
                                     ->format(config('app.display_date_format', 'M d, Y'))
                                 : null,
-                            'amount' => $subscription->amount,
-                            'currency' => strtoupper($subscription->currency ?? 'USD'),
-                            'interval' => $subscription->interval,
-                            'app_url' => env('APP_FRONTEND_URL'),
+                            'billing_line' => $amount ? ($currency.' '.number_format((float) $amount, 2).($interval ? ' / '.$interval : '')) : '',
+                            'app_url' => rtrim(env('APP_FRONTEND_URL', config('app.url', '')), '/'),
                         ];
 
-                        Mail::send('emails.subscriptionCreated', $subscriptionEmailData, function ($message) use ($request) {
+                        EmailHelper::send('subscriptionCreated', $subscriptionEmailData, function ($message) use ($request) {
                             $message->to($request->email);
-                            $message->subject('Your subscription is set up');
                             $message->from(config('mail.from.address'), config('mail.from.name'));
                         });
                     }
@@ -254,9 +327,9 @@ class AuthController extends Controller
 
             DB::commit();
             try {
-                //$user->sendEmailVerificationNotification();
+                // $user->sendEmailVerificationNotification();
                 $company_details = Company::where('id', $company->id)->first();
-                log::info('User account verified successfully.', [
+                Log::info('User account verified successfully.', [
                     'company' => $company_details,
                     'region_id' => $request->region,
                     'country_id' => $request->country_id,
@@ -265,37 +338,37 @@ class AuthController extends Controller
                 $data_user = User::where('id', $user->id)->first();
                 $data_user->token = $token;
                 $data_user->save();
-                $data = array('email' => $request->email);
+                $data = ['email' => $request->email];
 
-                // Mail::send('emails.verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
-                //     $message->to($data['email']);
-                //     $message->subject('Email Verification Mail');
-                // });
-                Mail::send('emails.verificationEmail', ['token' => $token, 'username' => $request->username], function ($message) use ($data) {
+                $verifyUrl = rtrim(env('APP_FRONTEND_URL', config('app.url', '')), '/').'#/verify-account?token='.$token;
+                EmailHelper::send('verificationEmail', [
+                    'token' => $token,
+                    'username' => $request->username,
+                    'verify_url' => $verifyUrl,
+                ], function ($message) use ($data) {
                     $message->to($data['email']);
-                    $message->subject('Email Verification Mail');
-                    $message->from(config('mail.from.address'), config('mail.from.name')); // <-- set from here
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
                 });
 
-                Log::info('state', ['state_name' => $company_details->getState->name,]);
+                Log::info('state', ['state_name' => $company_details->getState->name]);
                 Log::info('Email verification notification sent successfully', [
                     'user_id' => $user->id,
                     'user_email' => $request->email,
                 ]);
 
-                Mail::send('emails.newRegistration', [
+                EmailHelper::send('newRegistration', [
                     'company_name' => $request->company_name,
                     'account_type' => $request->account_type,
+                    'full_name' => $fullName,
                     'username' => $request->username,
                     'region_name' => $company_details->getregion->name,
                     'country_name' => $company_details->getcountry->name,
                     'city_name' => $company_details->getcity->name,
                     'state_name' => $company_details->getState->name,
                     'mobile' => $request->mobile,
-                    'email' => $request->email
-                ], function ($message) use ($data) {
+                    'email' => $request->email,
+                ], function ($message) {
                     $message->to(config('mail.to.addresses'));
-                    $message->subject('New registration');
                     $message->from(config('mail.from.address'), config('mail.from.name'));
                 });
 
@@ -344,8 +417,8 @@ class AuthController extends Controller
 
     /**
      * Summary of login
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     *
+     * @return JsonResponse
      */
     public function login(Request $request)
     {
@@ -365,7 +438,9 @@ class AuthController extends Controller
             }
 
             // 2️⃣ Attempt authentication (NO TOKEN YET)
-            if (!auth()->attempt($request->only('username', 'password'))) {
+            if (! auth()->attempt($request->only('username', 'password'))) {
+                AuthEventLogger::logFailedLogin($request, 'api', $request->input('username'));
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Invalid username or password',
@@ -374,7 +449,7 @@ class AuthController extends Controller
 
             $user = auth()->user();
 
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Unable to retrieve user information',
@@ -384,14 +459,16 @@ class AuthController extends Controller
             // 3️⃣ Account safety checks
             if ($user->is_blocked) {
                 auth()->logout();
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Your account has been blocked. Contact support.',
                 ], 403);
             }
 
-            if (!$user->email_verified) {
+            if (! $user->email_verified) {
                 auth()->logout();
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Please verify your email before logging in.',
@@ -411,7 +488,7 @@ class AuthController extends Controller
 
                 // Load only what is needed
                 $user->load([
-                    'company.subscription'
+                    'company.subscription',
                 ]);
 
                 $subscriptionMode = $user->company->subscription_mode;
@@ -439,10 +516,11 @@ class AuthController extends Controller
                     }
 
                     // 🚫 BLOCK NON-ADMIN USERS
-                    if (!$subscription || !$subscription->isActive()) {
+                    if (! $subscription || ! $subscription->isActive()) {
 
-                        if (!$user->is_admin) {
+                        if (! $user->is_admin) {
                             auth()->logout();
+
                             return response()->json([
                                 'status' => 'error',
                                 'message' => 'Your company subscription has expired. Please contact your administrator.',
@@ -460,6 +538,8 @@ class AuthController extends Controller
 
             // 5️⃣ Generate JWT ONLY AFTER ALL CHECKS
             $token = JWTAuth::fromUser($user);
+
+            AuthEventLogger::logLogin($user, $request, 'api');
 
             // 6️⃣ Load remaining relations (post-auth, optimized)
             $user->load([
@@ -532,7 +612,7 @@ class AuthController extends Controller
             $credentials = $request->only('username', 'password');
             $token = JWTAuth::attempt($credentials);
 
-            if (!$token) {
+            if (! $token) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Invalid username or password',
@@ -541,7 +621,7 @@ class AuthController extends Controller
 
             $user = JWTAuth::user();
 
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Unable to retrieve user information',
@@ -550,14 +630,16 @@ class AuthController extends Controller
 
             if ($user->is_blocked) {
                 auth()->logout();
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Your account has been blocked. Contact support.',
                 ], 403);
             }
 
-            if (!$user->email_verified) {
+            if (! $user->email_verified) {
                 auth()->logout();
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Please verify your email before logging in.',
@@ -587,7 +669,7 @@ class AuthController extends Controller
                     $user->company->load('subscription');
 
                     // If relationship didn't load, try direct query
-                    if (!$user->company->subscription) {
+                    if (! $user->company->subscription) {
                         $companySubscription = Subscription::where('company_id', $user->company->id)
                             ->where(function ($query) {
                                 $query->where('account_type', 'provider')
@@ -671,8 +753,9 @@ class AuthController extends Controller
 
             // Block login if subscription is expired/canceled for provider company users
             if ($user->company && $user->company->account_type === 'provider') {
-                if (!$subscription || !$subscription->isActive()) {
+                if (! $subscription || ! $subscription->isActive()) {
                     auth()->logout();
+
                     return response()->json([
                         'status' => 'error',
                         'message' => 'Your company subscription has expired or is inactive. Please renew to continue.',
@@ -713,7 +796,7 @@ class AuthController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('Login error: ' . $e->getMessage(), [
+            \Log::error('Login error: '.$e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
             ]);
 
@@ -736,16 +819,24 @@ class AuthController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'user' => new \App\Http\Resources\UserResource($user)
+            'user' => new UserResource($user),
         ]);
     }
 
     /**
      * Logout user
      */
-    public function logout()
+    public function logout(Request $request)
     {
-        auth()->logout();
+        // JWT users live on the api guard; auth()->user() uses the default (web) guard and is null here.
+        $user = auth('api')->user() ?? JWTAuth::user();
+
+        if ($user) {
+            AuthEventLogger::logLogout($user, $request, 'api');
+        }
+
+        auth('api')->logout();
+
         return response()->json([
             'status' => 'success',
             'message' => 'Successfully logged out',
@@ -760,12 +851,12 @@ class AuthController extends Controller
             return response()->json([
                 'access_token' => $newToken,
                 'token_type' => 'bearer',
-                'expires_in' => auth('api')->factory()->getTTL() * 60
+                'expires_in' => auth('api')->factory()->getTTL() * 60,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Token refresh failed. Please log in again.'
+                'message' => 'Token refresh failed. Please log in again.',
             ], 401);
         }
     }
@@ -775,57 +866,60 @@ class AuthController extends Controller
         try {
             $user = User::where('token', $token)->first();
 
-            if (!$user) {
+            if (! $user) {
                 Log::warning('Account verification failed: Invalid token.', [
-                    'token' => $token
+                    'token' => $token,
                 ]);
 
-                return Redirect::to(env('APP_FRONTEND_URL') . '/verification?status=failed&message=Invalid%20verification%20link');
+                return Redirect::to(env('APP_FRONTEND_URL').'/verification?status=failed&message=Invalid%20verification%20link');
             }
 
             if ($user->email_verified) {
-                return Redirect::to(env('APP_FRONTEND_URL') . '/verification?status=success&message=Email%20already%20verified');
+                return Redirect::to(env('APP_FRONTEND_URL').'/verification?status=success&message=Email%20already%20verified');
             }
 
             $user->email_verified = 1;
             $user->token = null; // clear token after verification
             $user->save();
 
+            // Dispatch HubSpot sync after successful email verification (non-blocking).
+            SyncUserToHubSpot::dispatch($user->id);
+
             Log::info('User account verified successfully.', [
                 'user_id' => $user->id,
-                'email' => $user->email ?? null
+                'email' => $user->email ?? null,
             ]);
 
-            return Redirect::to(env('APP_FRONTEND_URL') . '/verification?status=success&message=Email%20verified%20successfully');
+            return Redirect::to(env('APP_FRONTEND_URL').'/verification?status=success&message=Email%20verified%20successfully');
         } catch (\Throwable $e) {
             Log::error('Account verification error.', [
                 'token' => $token,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
-            return Redirect::to(env('APP_FRONTEND_URL') . '/verification?status=failed&message=Something%20went%20wrong');
+            return Redirect::to(env('APP_FRONTEND_URL').'/verification?status=failed&message=Something%20went%20wrong');
         }
     }
 
     public function verifyAccount(Request $request)
     {
         $request->validate([
-            'token' => 'required|string'
+            'token' => 'required|string',
         ]);
 
         $user = User::where('token', $request->token)->first();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid or expired verification link.'
+                'message' => 'Invalid or expired verification link.',
             ], 400);
         }
 
         if ($user->email_verified) {
             return response()->json([
                 'success' => false,
-                'message' => 'Email already verified.'
+                'message' => 'Email already verified.',
             ], 400);
         }
 
@@ -833,10 +927,13 @@ class AuthController extends Controller
         $user->token = null; // clear token
         $user->save();
 
+        // Dispatch HubSpot sync after successful email verification (non-blocking).
+        Log::info('Dispatching HubSpot sync job for user ID: '.$user->id);
+        SyncUserToHubSpot::dispatch($user->id);
+
         return response()->json([
             'success' => true,
-            'message' => 'Your email has been successfully verified. You can now login.'
+            'message' => 'Your email has been successfully verified. You can now login.',
         ], 200);
     }
-
 }

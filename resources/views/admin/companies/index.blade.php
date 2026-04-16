@@ -49,7 +49,6 @@
                         <th>Users</th>
                         <th>Equipment</th>
                         <th>Rating</th>
-                        <th>Created At</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -93,17 +92,50 @@
                             <td><span class="badge badge-warning">{{ $company->equipments_count }}</span></td>
                             <td>
                                 @php
-                                    $rating = $company->rating ?? 0;
+                                    $userAvg = $ratingStats[$company->id]['avg'] ?? 0;
+                                    $userCount = $ratingStats[$company->id]['count'] ?? 0;
+                                    $overrideRating = $company->rating_override;
+                                    $displayRating = $overrideRating !== null ? $overrideRating : $userAvg;
+                                    // For visual stars, support half-stars:
+                                    // e.g. 4.5 => 4 full + 1 half + 0 empty.
+                                    $fullStars = (int) floor($displayRating);
+                                    $hasHalfStar = ($displayRating - $fullStars) >= 0.5 && $fullStars < 5;
                                 @endphp
-                                @for($i = 1; $i <= 5; $i++)
-                                    @if($i <= $rating)
-                                        <i class="fas fa-star text-warning"></i>
-                                    @else
-                                        <i class="far fa-star text-muted"></i>
+                                <div>
+                                    @for($i = 1; $i <= 5; $i++)
+                                        @if($i <= $fullStars)
+                                            <i class="fas fa-star text-warning"></i>
+                                        @elseif($hasHalfStar && $i === $fullStars + 1)
+                                            <i class="fas fa-star-half-alt text-warning"></i>
+                                        @else
+                                            <i class="far fa-star text-muted"></i>
+                                        @endif
+                                    @endfor
+                                    @if($overrideRating !== null)
+                                        <span class="badge badge-dark ml-1">Override</span>
                                     @endif
-                                @endfor
+                                </div>
+                                <div class="company-rating-meta mt-1">
+                                    <small class="text-muted">
+                                        User avg: {{ number_format((float) $userAvg, 1) }}
+                                        ({{ (int) $userCount }} users)
+                                    </small>
+                                </div>
+                                <div class="company-rating-actions">
+                                    <a
+                                        href="#"
+                                        class="btn btn-outline-primary btn-sm js-rating-override-edit"
+                                        title="Edit overall rating override"
+                                        data-company-name="{{ $company->name }}"
+                                        data-user-avg="{{ $userAvg }}"
+                                        data-user-count="{{ $userCount }}"
+                                        data-override="{{ $overrideRating }}"
+                                        data-post-url="{{ route('admin.companies.rating-override', $company) }}"
+                                    >
+                                        <i class="fas fa-pen"></i>
+                                    </a>
+                                </div>
                             </td>
-                            <td>{{ $company->created_at?->format('M d, Y') }}</td>
                             <td>
                                 <div class="btn-group">
                                     <a href="{{ route('admin.companies.show', $company) }}" class="btn btn-info btn-sm" title="View">
@@ -131,17 +163,19 @@
 
 @section('css')
     @include('partials.responsive-css')
+    <link rel="stylesheet" href="{{ asset('common/css/company-rating-override.css') }}">
 @stop
 
 @section('js')
     @include('partials.responsive-js')
+    <script src="{{ asset('common/js/company-rating-override.js') }}"></script>
     <script>
         $(document).ready(function() {
             var table = initResponsiveDataTable('companiesTable', {
                 "columnDefs": [
-                    { "orderable": false, "targets": [0, 9, 11] },
+                    { "orderable": false, "targets": [0, 9, 10] },
                     { "responsivePriority": 1, "targets": 2 },
-                    { "responsivePriority": 2, "targets": 11 }
+                    { "responsivePriority": 2, "targets": 10 }
                 ]
             });
 
@@ -220,5 +254,62 @@
             });
         });
     </script>
+
+    <div class="modal fade" id="ratingOverrideModal" tabindex="-1" role="dialog" aria-labelledby="ratingOverrideModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="ratingOverrideModalTitle">
+                        Edit overall rating
+                    </h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <strong id="ratingOverrideCompanyName"></strong>
+                    </div>
+
+                    <div class="mb-3">
+                        <small class="text-muted">
+                            User rating (API): <strong><span id="ratingOverrideUserAvg">0.0</span></strong>
+                            | Users rated: <strong><span id="ratingOverrideUserCount">0</span></strong>
+                        </small>
+                    </div>
+
+                    <form id="ratingOverrideForm" method="POST" action="">
+                        @csrf
+                        <div class="form-group">
+                            <label for="ratingOverrideInput">Admin overall rating override (0–5)</label>
+                            <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="5"
+                                class="form-control"
+                                id="ratingOverrideInput"
+                                name="rating_override"
+                                placeholder="Leave blank to clear override"
+                            >
+                            <small class="form-text text-muted">
+                                This sets the displayed overall rating only. Star breakdown and user count remain from user ratings.
+                            </small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ratingOverrideReason">Reason (optional)</label>
+                            <textarea class="form-control" id="ratingOverrideReason" name="rating_override_reason" rows="3" maxlength="2000"></textarea>
+                        </div>
+
+                        <div class="d-flex justify-content-end">
+                            <button type="button" class="btn btn-secondary mr-2" data-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
 @stop
 

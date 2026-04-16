@@ -2,16 +2,28 @@
 
 use App\Http\Controllers\Api\AuthController;
 // Duplicate import removed during formatting cleanup
+use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CityController;
+use App\Http\Controllers\Api\CmsPageController as ApiCmsPageController;
 use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\CompanyUserController;
+use App\Http\Controllers\Api\CompanyUserLimitController;
 use App\Http\Controllers\Api\CurrencyController;
+use App\Http\Controllers\Api\DateFormatController;
+use App\Http\Controllers\Api\EquipmentController;
+use App\Http\Controllers\Api\FlexInventoryController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\GeoController;
 use App\Http\Controllers\Api\ImportController;
+use App\Http\Controllers\Api\IntegrationController;
+use App\Http\Controllers\Api\IssueTypeController;
+use App\Http\Controllers\Api\JobNegotiationController;
 use App\Http\Controllers\Api\LocationController;
+use App\Http\Controllers\Api\MailTestController;
+use App\Http\Controllers\Api\PaymentStatusController;
+use App\Http\Controllers\Api\PricingSchemeController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\RegistrationCheckController;
 use App\Http\Controllers\Api\RentalJobActionsController;
@@ -19,22 +31,17 @@ use App\Http\Controllers\Api\RentalJobController;
 use App\Http\Controllers\Api\RentalRequestController;
 use App\Http\Controllers\Api\RentalSoftwareController;
 use App\Http\Controllers\Api\StateController;
-use App\Http\Controllers\Api\BrandController;
+use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\SubCategoryController;
+use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\SupplyJobActionsController;
 use App\Http\Controllers\Api\SupplyJobController;
-use App\Http\Controllers\Api\UserProfileController;
-use App\Http\Controllers\Api\EquipmentController;
-use App\Http\Controllers\Api\UserOfferController;
-use App\Http\Controllers\Api\JobNegotiationController;
-use App\Http\Controllers\Api\DateFormatController;
-use App\Http\Controllers\Api\PricingSchemeController;
 use App\Http\Controllers\Api\SupportRequestController;
 use App\Http\Controllers\Api\TermsAndConditionsController;
-use App\Http\Controllers\Api\CompanyUserLimitController;
-use App\Http\Controllers\Api\MailTestController;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\UserOfferController;
+use App\Http\Controllers\Api\UserProfileController;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 Route::post('register', [AuthController::class, 'register']);
 Route::post('login', [AuthController::class, 'login']);
@@ -51,9 +58,8 @@ Route::post('/contact-sales', [SupportRequestController::class, 'contactSales'])
 // Mail Test API (public, for testing and debugging mail configuration only)
 Route::post('/mail/test', [MailTestController::class, 'testEmail']);
 
-
 // Payment status check (public endpoint for frontend)
-Route::get('/payment/status', [\App\Http\Controllers\Api\PaymentStatusController::class, 'status']);
+Route::get('/payment/status', [PaymentStatusController::class, 'status']);
 
 // Company user limit (public endpoint for frontend)
 Route::get('/company-user-limit', [CompanyUserLimitController::class, 'getLimit']);
@@ -61,7 +67,9 @@ Route::get('/company-user-limit', [CompanyUserLimitController::class, 'getLimit'
 // Terms and Conditions (public endpoint)
 Route::get('/terms-and-conditions', [TermsAndConditionsController::class, 'index']);
 
-
+// CMS pages (public; HTML already sanitized when saved in admin)
+Route::get('/cms-pages', [ApiCmsPageController::class, 'index']);
+Route::get('/cms-pages/{slug}', [ApiCmsPageController::class, 'show']);
 
 // ------------------------------
 // 🌐 Geography APIs
@@ -89,7 +97,7 @@ Route::middleware('jwt.verify')->group(function () {
         ->whereNumber('id');
 
     // Issue Types
-    Route::get('/issue-types', [\App\Http\Controllers\Api\IssueTypeController::class, 'index']);
+    Route::get('/issue-types', [IssueTypeController::class, 'index']);
 });
 
 // ------------------------------
@@ -131,7 +139,6 @@ Route::middleware('jwt.verify')->group(function () {
     Route::put('/company/preferences', [CompanyController::class, 'updatePreferences']);
     Route::put('/companies/{id}/gear-finder-visibility', [CompanyController::class, 'updateGearFinderVisibility']);
 
-
     Route::get('/company/images', [CompanyController::class, 'getImages']);
     Route::post('/company/images', [CompanyController::class, 'uploadImage']);
     Route::delete('/company/images', [CompanyController::class, 'deleteImage']);
@@ -152,13 +159,15 @@ Route::middleware('jwt.verify')->group(function () {
     // Add/Update rating
     Route::post('/companies/{company}/rate', [CompanyController::class, 'rateCompany']);
 
+    // Get company reviews (customer reviews)
+    Route::get('/companies/{company}/reviews', [CompanyController::class, 'getCompanyReviews']);
+
     // Block/Unblock company
     Route::post('/companies/{company}/block', [CompanyController::class, 'blockCompany']);
     Route::post('/companies/{company}/unblock', [CompanyController::class, 'unblockCompany']);
     Route::post('/providers/{company}/block', [CompanyController::class, 'toggleProviderBlock']);
 
 });
-
 
 Route::middleware('jwt.verify')->post('/products/create-or-attach', [ProductController::class, 'createOrAttach']);
 Route::middleware('jwt.verify')->post('/products/import', [ProductController::class, 'importProducts']); // Legacy endpoint
@@ -177,6 +186,18 @@ Route::middleware('jwt.verify')->prefix('import')->group(function () {
     Route::post('/sessions/{session}/cancel', [ImportController::class, 'cancel']); // Cancel session
 });
 
+Route::middleware(['jwt.verify'])->group(function () {
+    Route::post('/integrations/store', [IntegrationController::class, 'store']);
+    Route::get('/integrations/{integration_type}', [IntegrationController::class, 'show']);
+});
+
+// Flex Rental Solutions inventory import (company-specific credentials)
+Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
+    Route::get('/search', [FlexInventoryController::class, 'search']);
+    Route::get('/import/check', [FlexInventoryController::class, 'checkImport']);
+    Route::post('/import', [FlexInventoryController::class, 'import']);
+    Route::post('/link-inventory', [FlexInventoryController::class, 'linkInventory']);
+});
 
 Route::middleware(['jwt.verify'])->group(function () {
     // Equipment CRUD
@@ -224,10 +245,9 @@ Route::middleware(['jwt.verify'])->group(function () {
 
 });
 
-
 Route::group(['middleware' => ['jwt.verify']], function () {
 
-    //uopdate supply job name
+    // uopdate supply job name
     Route::put('/supply-jobs/{id}/name', [SupplyJobActionsController::class, 'updateName']);
 
     // Update milestone dates
@@ -254,6 +274,8 @@ Route::middleware(['jwt.verify'])->group(function () {
     Route::post('/supply-jobs/{id}/complete', [SupplyJobController::class, 'complete']);
     Route::post('/supply-jobs/{id}/rate', [SupplyJobController::class, 'rate']);
     Route::post('/supply-jobs/{id}/rate/skip', [SupplyJobController::class, 'rateSkip']);
+    Route::post('/supply-jobs/{id}/rate-renter', [SupplyJobController::class, 'rateRenter']);
+    Route::post('/supply-jobs/{id}/rate-renter/skip', [SupplyJobController::class, 'rateRenterSkip']);
     Route::post('/supply-jobs/{id}/rating-reply', [SupplyJobController::class, 'ratingReply']);
 });
 
@@ -265,7 +287,6 @@ Route::prefix('offers')->middleware(['jwt.verify'])->group(function () {
     Route::post('{offer_id}/handshake', [JobNegotiationController::class, 'handshake']);
     Route::post('{offer_id}/cancel-negotiation', [JobNegotiationController::class, 'cancelNegotiation']);
 });
-
 
 Route::middleware('jwt.verify')->group(function () {
     // Comments on supply jobs
@@ -280,26 +301,24 @@ Route::middleware('jwt.verify')->group(function () {
     Route::post('/support-request', [SupportRequestController::class, 'store']);
 });
 
-
-
 // ------------------------------
 // 💳 Stripe Webhook (No auth required)
 // ------------------------------
-Route::post('/webhooks/stripe', [\App\Http\Controllers\Api\StripeWebhookController::class, 'handleWebhook']);
+Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handleWebhook']);
 
 // ------------------------------
 // 📅 Subscription Management
 // ------------------------------
 Route::middleware('jwt.verify')->group(function () {
-    Route::get('/subscriptions/current', [\App\Http\Controllers\Api\SubscriptionController::class, 'getCurrent']);
-    Route::post('/subscriptions/cancel', [\App\Http\Controllers\Api\SubscriptionController::class, 'cancel']);
-    Route::post('/subscriptions/update-payment', [\App\Http\Controllers\Api\SubscriptionController::class, 'updatePaymentMethod']);
-    Route::get('/subscription/payment-method', [\App\Http\Controllers\Api\SubscriptionController::class, 'getPaymentMethod']);
-    Route::post('/subscriptions/create', [\App\Http\Controllers\Api\SubscriptionController::class, 'create']);
+    Route::get('/subscriptions/current', [SubscriptionController::class, 'getCurrent']);
+    Route::post('/subscriptions/cancel', [SubscriptionController::class, 'cancel']);
+    Route::post('/subscriptions/update-payment', [SubscriptionController::class, 'updatePaymentMethod']);
+    Route::get('/subscription/payment-method', [SubscriptionController::class, 'getPaymentMethod']);
+    Route::post('/subscriptions/create', [SubscriptionController::class, 'create']);
 
     // Billing History APIs
-    Route::get('/subscription/billing-history', [\App\Http\Controllers\Api\SubscriptionController::class, 'billingHistory']);
-    Route::get('/subscription/invoice/{invoiceId}', [\App\Http\Controllers\Api\SubscriptionController::class, 'downloadInvoice']);
+    Route::get('/subscription/billing-history', [SubscriptionController::class, 'billingHistory']);
+    Route::get('/subscription/invoice/{invoiceId}', [SubscriptionController::class, 'downloadInvoice']);
 
 });
 

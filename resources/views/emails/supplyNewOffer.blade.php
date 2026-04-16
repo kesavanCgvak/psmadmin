@@ -36,14 +36,16 @@
 
                 <p style="margin: 0 0 18px 0;">Login to your account to review and respond to this offer.</p>
 
-                <a href="{{ url('/') }}" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 16px; border-radius: 4px; font-weight: 600;">Login to Respond</a>
+                <p style="text-align: center; margin: 24px 0;">
+                    <a href="{{ $login_url ?? url('/') }}" style="display: inline-block; padding: 14px 28px; background-color: #e8d50b; color: #000000; font-size: 16px; font-weight: bold; text-decoration: none; border-radius: 6px;">Login to Respond</a>
+                </p>
             </td>
         </tr>
 
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; 2025 Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
     </table>

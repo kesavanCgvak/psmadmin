@@ -9,6 +9,8 @@ class Product extends Model
 {
     use HasFactory;
 
+    protected $table = 'inventory_master';
+
     protected $fillable = [
         'category_id',
         'sub_category_id',
@@ -19,6 +21,18 @@ class Product extends Model
         'webpage_url',
         'normalized_model',
         'normalized_full_name',
+        'height',
+        'width',
+        'length',
+        'weight',
+        'linear_unit_id',
+        'weight_unit_id',
+        'replacement_price',
+        'source',
+        'country_of_origin',
+        'iso_code_2',
+        'iso_code_3',
+        'hsn_code',
     ];
 
     /**
@@ -29,7 +43,7 @@ class Product extends Model
         static::saving(function (Product $product) {
             // Normalize model code
             $product->normalized_model = ProductNormalizer::normalizeCode($product->model);
-            
+
             // Get brand name for full name normalization
             $brandName = null;
             if ($product->brand_id) {
@@ -39,7 +53,7 @@ class Product extends Model
                 }
                 $brandName = $product->brand->name ?? null;
             }
-            
+
             // Normalize full name (brand + model)
             $product->normalized_full_name = ProductNormalizer::normalizeFullName($brandName, $product->model);
         });
@@ -67,6 +81,22 @@ class Product extends Model
     public function brand()
     {
         return $this->belongsTo(Brand::class);
+    }
+
+    /**
+     * A product belongs to a linear unit (for height, width, length).
+     */
+    public function linearUnit()
+    {
+        return $this->belongsTo(LinearUnit::class);
+    }
+
+    /**
+     * A product belongs to a weight unit.
+     */
+    public function weightUnit()
+    {
+        return $this->belongsTo(WeightUnit::class);
     }
 
     /**

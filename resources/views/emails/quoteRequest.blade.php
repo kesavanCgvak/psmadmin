@@ -21,12 +21,12 @@
         <!-- Body -->
         <tr>
             <td style="padding: 25px;">
-                <h2 style="color: #1a73e8; margin-top: 0;">New Quote Request from {{ $user_company}}</h2>
+                <h2 style="color: #1a73e8; margin-top: 0;">New Quote Request from {{ $user_company }}</h2>
 
                 <p>
-                    Hello <strong>{{ $provider_contact_name ?? 'there' }}</strong>,<br><br>
-                    You’ve received a new quote request from
-                    <strong>{{ $user_company}}</strong> via
+                    Hello <strong>{{ $provider_contact_name }}</strong>,<br><br>
+                    You've received a new quote request from
+                    <strong>{{ $user_company }}</strong> via
                     <strong>Pro Subrental Marketplace</strong>.
                 </p>
 
@@ -58,94 +58,22 @@
                     <strong>Delivery Address:</strong> {{ $delivery_address }}
                 </p>
 
-                @if (!empty($global_message))
-                    <h3 style="color: #1a73e8;">Global Message</h3>
-                    <p style="background: #f9f9f9; padding: 12px; border-left: 4px solid #1a73e8;">
-                        {{ $global_message }}
-                    </p>
-                @endif
+                {!! $global_message_section !!}
 
-                @if(!empty($offer_requirements))
-                    <h3 style="color: #1a73e8;">Offer Requirements</h3>
-                    <p>{{ $offer_requirements }}</p>
-                @endif
+                {!! $offer_requirements_section !!}
 
-                @if(!empty($private_message))
-                    <h3 style="color: #1a73e8;">Private Message</h3>
-                    <p style="background: #f9f9f9; padding: 12px; border-left: 4px solid #1a73e8;">
-                        {{ $private_message }}
-                    </p>
-                @endif
+                {!! $private_message_section !!}
 
-                @if(!empty($initial_offer))
-                    <h3 style="color: #1a73e8;">Initital Offer Negotitaion</h3>
-                    <p><b>Offer Price : </b>{{ $currency_symbol }}{{ $initial_offer }}</p>
-                @endif
+                {!! $initial_offer_section !!}
 
-
-                <!-- Equipment List -->
-                <h3 style="color: #1a73e8;">Requested Equipment</h3>
-                <table width="100%" cellpadding="8" cellspacing="0"
-                    style="border-collapse: collapse; margin-top: 10px; font-size: 14px;">
-                    <thead style="background-color: #f0f0f0; border-bottom: 2px solid #ddd;">
-                        <tr>
-                            <th align="left">Equipment</th>
-                            <th align="left">PSM Code</th>
-                            <th align="left">Software Code</th>
-                            <th align="left">Qty</th>
-                            <th align="left">Similar OK?</th>
-                            <th align="left">Price</th>
-                            <th align="left">Total Price</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    <tbody>
-                        @php
-                            $grandTotal = 0;
-                        @endphp
-
-                        @foreach($products as $product)
-                            @php
-                                $itemTotal = $product['total_price'] ?? 0;
-                                $grandTotal += $itemTotal;
-                            @endphp
-
-                            <tr style="border-bottom: 1px solid #eee;">
-                                <td>{{ $product['model'] ?? '-' }}</td>
-                                <td>{{ $product['psm_code'] ?? '—' }}</td>
-                                <td>{{ $product['software_code'] ?? '—' }}</td>
-                                <td>{{ $product['requested_quantity'] ?? '-' }}</td>
-                                <td>
-                                    @if(!empty($product['is_similar']))
-                                        Yes
-                                    @else
-                                        No
-                                    @endif
-                                </td>
-                                <td>{{ $currency_symbol }}{{ number_format($product['price_per_unit'] ?? 0, 2) }}</td>
-                                <td>{{ $currency_symbol }}{{ number_format($itemTotal, 2) }}</td>
-                            </tr>
-                        @endforeach
-
-                        <!-- ✅ Grand Total Row -->
-                        <tr style="border-top: 2px solid #ddd; background-color: #f9f9f9;">
-                            <td colspan="6" align="right" style="font-weight: bold; padding-right: 10px;">Grand Total:
-                            </td>
-                            <td style="font-weight: bold;">{{ $currency_symbol }}{{ number_format($grandTotal, 2) }}</td>
-                        </tr>
-                    </tbody>
-                </table>
+                {!! $products_table_html !!}
 
                 <p style="margin-top: 25px; font-size: 15px; line-height: 1.5;">
                     Please review the request and respond promptly to increase your chance of securing this rental
-                    opportunity with <strong>{{ $user_company}}</strong>.
+                    opportunity with <strong>{{ $user_company }}</strong>.
                 </p>
 
-                @if(!empty($is_similar_request))
-                    <p style="margin-top: 15px; padding: 12px; background-color: #e8f4fd; border-left: 4px solid #1a73e8; font-size: 14px; line-height: 1.5;">
-                        <strong>Note:</strong> The requester is also open to similar or equivalent products. Please contact the requester if you can offer suitable alternatives.
-                    </p>
-                @endif
+                {!! $similar_request_note !!}
 
                 <p style="font-size: 13px; color: #666; line-height: 1.6;">
                     <strong>Pro Subrental Marketplace</strong> connects rental companies to help you maximize
@@ -157,7 +85,7 @@
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; {{ date('Y') }} Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
 

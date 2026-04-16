@@ -57,7 +57,9 @@ class SubscriptionManagementController extends Controller
                     $userQuery->where('username', 'like', "%{$search}%")
                               ->orWhere('email', 'like', "%{$search}%")
                               ->orWhereHas('profile', function ($profileQuery) use ($search) {
-                                  $profileQuery->where('full_name', 'like', "%{$search}%");
+                                  $profileQuery->where('full_name', 'like', "%{$search}%")
+                                      ->orWhere('first_name', 'like', "%{$search}%")
+                                      ->orWhere('last_name', 'like', "%{$search}%");
                               });
                 })
                 ->orWhereHas('user.company', function ($companyQuery) use ($search) {

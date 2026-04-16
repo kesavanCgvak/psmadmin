@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\TermsAndConditions;
 use Illuminate\Http\Request;
+use Stevebauman\Purify\Facades\Purify;
 
 class TermsAndConditionsController extends Controller
 {
@@ -14,7 +15,7 @@ class TermsAndConditionsController extends Controller
     public function index()
     {
         $terms = TermsAndConditions::getCurrent();
-        
+
         return view('admin.terms-and-conditions.index', compact('terms'));
     }
 
@@ -24,13 +25,13 @@ class TermsAndConditionsController extends Controller
     public function edit()
     {
         $terms = TermsAndConditions::getCurrent();
-        
-        if (!$terms) {
+
+        if (! $terms) {
             // If no terms exist, create a default one
-            $terms = new TermsAndConditions();
+            $terms = new TermsAndConditions;
             $terms->description = '';
         }
-        
+
         return view('admin.terms-and-conditions.edit', compact('terms'));
     }
 
@@ -44,17 +45,19 @@ class TermsAndConditionsController extends Controller
         ]);
 
         try {
+            $description = Purify::config('wysiwyg')->clean($request->input('description'));
+
             $terms = TermsAndConditions::getCurrent();
-            
+
             if ($terms) {
                 // Update existing terms
                 $terms->update([
-                    'description' => $request->input('description'),
+                    'description' => $description,
                 ]);
             } else {
                 // Create new terms if none exist
                 TermsAndConditions::create([
-                    'description' => $request->input('description'),
+                    'description' => $description,
                 ]);
             }
 
@@ -70,7 +73,7 @@ class TermsAndConditionsController extends Controller
             return redirect()
                 ->back()
                 ->withInput()
-                ->with('error', 'Failed to update terms and conditions: ' . $e->getMessage());
+                ->with('error', 'Failed to update terms and conditions: '.$e->getMessage());
         }
     }
 }

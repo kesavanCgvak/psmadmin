@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Brand;
 use App\Services\BulkDeletionService;
+use App\Traits\NormalizesName;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class BrandController extends Controller
 {
+    use NormalizesName;
     /**
      * Display a listing of the brands.
      */
@@ -33,7 +35,7 @@ class BrandController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|unique:brands,name',
+            'name' => 'required|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -42,8 +44,22 @@ class BrandController extends Controller
                 ->withInput();
         }
 
+        // Normalize the name for duplicate checking
+        $normalizedName = $this->normalizeName($request->name);
+        
+        // Check for duplicate using normalized name (case-insensitive, symbol-agnostic)
+        $existingBrand = Brand::all()->first(function ($brand) use ($normalizedName) {
+            return $this->normalizeName($brand->name) === $normalizedName;
+        });
+
+        if ($existingBrand) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A brand with this name already exists.'])
+                ->withInput();
+        }
+
         Brand::create([
-            'name' => $request->name,
+            'name' => trim($request->name),
         ]);
 
         return redirect()->route('admin.brands.index')
@@ -73,7 +89,7 @@ class BrandController extends Controller
     public function update(Request $request, Brand $brand)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|unique:brands,name,' . $brand->id,
+            'name' => 'required|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -82,8 +98,35 @@ class BrandController extends Controller
                 ->withInput();
         }
 
+        // Normalize the name for duplicate checking
+        $normalizedName = $this->normalizeName($request->name);
+        $currentNormalizedName = $this->normalizeName($brand->name);
+        
+        // Allow update if the normalized name is unchanged
+        if ($normalizedName === $currentNormalizedName) {
+            $brand->update([
+                'name' => trim($request->name),
+            ]);
+
+            return redirect()->route('admin.brands.index')
+                ->with('success', 'Brand updated successfully.');
+        }
+        
+        // Check for duplicate using normalized name (excluding current brand)
+        $existingBrand = Brand::where('id', '!=', $brand->id)
+            ->get()
+            ->first(function ($b) use ($normalizedName) {
+                return $this->normalizeName($b->name) === $normalizedName;
+            });
+
+        if ($existingBrand) {
+            return redirect()->back()
+                ->withErrors(['name' => 'A brand with this name already exists.'])
+                ->withInput();
+        }
+
         $brand->update([
-            'name' => $request->name,
+            'name' => trim($request->name),
         ]);
 
         return redirect()->route('admin.brands.index')

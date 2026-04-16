@@ -50,7 +50,7 @@
                         <th>Brand</th>
                         <th>Category</th>
                         <th>Quantity</th>
-                        <th>Price</th>
+                        <th>Rental Price</th>
                         <th>Software Code</th>
                         <th>Created At</th>
                         <th>Actions</th>
@@ -75,7 +75,7 @@
                                 <span class="badge badge-info">{{ $equipment->product->category?->name ?? 'N/A' }}</span>
                             </td>
                             <td><span class="badge badge-warning">{{ $equipment->quantity }}</span></td>
-                            <td>${{ number_format($equipment->price, 2) }}</td>
+                            <td>${{ number_format($equipment->rental_price, 2) }}</td>
                             <td>{{ $equipment->software_code ?? 'N/A' }}</td>
                             <td>{{ $equipment->created_at?->format('M d, Y') }}</td>
                             <td>

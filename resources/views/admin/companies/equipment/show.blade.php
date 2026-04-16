@@ -61,9 +61,9 @@
                             <span class="badge badge-warning" style="font-size: 1.2em;">{{ $equipment->quantity }}</span>
                         </dd>
 
-                        <dt class="col-sm-3">Price</dt>
+                        <dt class="col-sm-3">Rental Price</dt>
                         <dd class="col-sm-9">
-                            <strong class="text-success" style="font-size: 1.2em;">${{ number_format($equipment->price, 2) }}</strong> /day
+                            <strong class="text-success" style="font-size: 1.2em;">${{ number_format($equipment->rental_price, 2) }}</strong> /day
                         </dd>
 
                         <dt class="col-sm-3">Software Code</dt>
@@ -126,21 +126,21 @@
                 </div>
                 <div class="card-body">
                     <dl class="row">
-                        <dt class="col-sm-6">Price per Day</dt>
-                        <dd class="col-sm-6">${{ number_format($equipment->price, 2) }}</dd>
+                        <dt class="col-sm-6">Rental Price per Day</dt>
+                        <dd class="col-sm-6">${{ number_format($equipment->rental_price, 2) }}</dd>
 
                         <dt class="col-sm-6">Week (7 days)</dt>
-                        <dd class="col-sm-6">${{ number_format($equipment->price * 7, 2) }}</dd>
+                        <dd class="col-sm-6">${{ number_format($equipment->rental_price * 7, 2) }}</dd>
 
                         <dt class="col-sm-6">Month (30 days)</dt>
-                        <dd class="col-sm-6">${{ number_format($equipment->price * 30, 2) }}</dd>
+                        <dd class="col-sm-6">${{ number_format($equipment->rental_price * 30, 2) }}</dd>
 
                         <dt class="col-sm-6">Quantity Available</dt>
                         <dd class="col-sm-6"><span class="badge badge-warning">{{ $equipment->quantity }}</span></dd>
 
                         <dt class="col-sm-6">Total Value</dt>
                         <dd class="col-sm-6">
-                            <strong class="text-success">${{ number_format($equipment->price * $equipment->quantity, 2) }}</strong>
+                            <strong class="text-success">${{ number_format($equipment->rental_price * $equipment->quantity, 2) }}</strong>
                         </dd>
                     </dl>
                 </div>

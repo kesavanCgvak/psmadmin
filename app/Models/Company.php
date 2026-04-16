@@ -33,6 +33,17 @@ class Company extends Model
         'longitude',
         'hide_from_gear_finder',
         'subscription_mode',
+        'blocked_by_admin_at',
+        'rating_override',
+        'rating_override_set_by',
+        'rating_override_reason',
+        'rating_override_set_at',
+    ];
+
+    protected $casts = [
+        'blocked_by_admin_at' => 'datetime',
+        'rating_override' => 'float',
+        'rating_override_set_at' => 'datetime',
     ];
 
     public function users()
@@ -104,7 +115,7 @@ class Company extends Model
     public function defaultContactProfile()
     {
         return $this->hasOne(UserProfile::class, 'user_id', 'default_contact_id')
-            ->select('user_id', 'full_name', 'email', 'mobile');
+            ->select('user_id', 'first_name', 'last_name', 'full_name', 'email', 'mobile');
     }
 
     public function supplyJobs()
@@ -157,6 +168,14 @@ class Company extends Model
     public function getAverageRatingAttribute()
     {
         return $this->ratings()->avg('rating') ?? 0;
+    }
+
+    /**
+     * Whether this company is blocked by admin (e.g. due to low ratings).
+     */
+    public function isBlockedByAdmin(): bool
+    {
+        return $this->blocked_by_admin_at !== null;
     }
 
     /**
@@ -246,6 +265,14 @@ class Company extends Model
     public function getMaxUserLimit(): int
     {
         return \App\Models\Setting::getCompanyUserLimit();
+    }
+
+    /**
+     * Get the company's integration configurations.
+     */
+    public function integrations()
+    {
+        return $this->hasMany(CompanyIntegration::class);
     }
 
 }

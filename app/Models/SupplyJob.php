@@ -12,14 +12,13 @@ class SupplyJob extends Model
 {
     use HasFactory;
 
-    protected $casts = [
-        'is_similar_request' => 'boolean',
-    ];
-
     protected $fillable = [
         'rental_job_id',
         'provider_id',
         'status',
+        'flex_sales_quote_id',
+        'flex_sales_quote_number',
+        'flex_sync_status',
         'is_similar_request',
         'quote_price',
         'notes',
@@ -27,10 +26,20 @@ class SupplyJob extends Model
         'delivery_date',
         'return_date',
         'unpacking_date',
+        'completed_at',
         'accepted_price',
         'handshake_status',
         'cancelled_by',
         'fulfilled_quantity',
+    ];
+
+    protected $casts = [
+        'is_similar_request' => 'boolean',
+        'completed_at' => 'datetime',
+        'packing_date' => 'date',
+        'delivery_date' => 'date',
+        'return_date' => 'date',
+        'unpacking_date' => 'date',
     ];
 
     public function rentalJob()
@@ -69,4 +78,32 @@ class SupplyJob extends Model
         return $this->hasMany(RentalJobComment::class);
     }
 
+    /** Rating for this supply job only (one per provider). */
+    public function jobRating()
+    {
+        return $this->hasOne(JobRating::class, 'supply_job_id');
+    }
+
+    public function ratingReply()
+    {
+        return $this->hasOne(JobRatingReply::class, 'supply_job_id');
+    }
+
+    public function completionReminders()
+    {
+        return $this->hasMany(SupplyJobCompletionReminder::class, 'supply_job_id');
+    }
+
+    public function ratingReminders()
+    {
+        return $this->hasMany(SupplyJobRatingReminder::class, 'supply_job_id');
+    }
+
+    /** Provider's rating of the renter for this supply job (one per supply job). */
+    public function renterRating()
+    {
+        return $this->hasOne(RenterRating::class, 'supply_job_id');
+    }
+
 }
+

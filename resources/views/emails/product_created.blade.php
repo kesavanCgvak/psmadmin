@@ -44,27 +44,27 @@
                     </tr>
                     <tr>
                         <td><strong>Product Name:</strong></td>
-                        <td>{{ $product->model }}</td>
+                        <td>{{ $product_name }}</td>
                     </tr>
                     <tr>
                         <td><strong>Brand:</strong></td>
-                        <td>{{ $product->brand->name ?? 'N/A' }}</td>
+                        <td>{{ $product_brand }}</td>
                     </tr>
                     <tr>
                         <td><strong>Category:</strong></td>
-                        <td>{{ $product->category->name ?? 'N/A' }}</td>
+                        <td>{{ $product_category }}</td>
                     </tr>
                     <tr>
                         <td><strong>Sub Category:</strong></td>
-                        <td>{{ $product->subCategory->name ?? 'N/A' }}</td>
+                        <td>{{ $product_sub_category }}</td>
                     </tr>
                     <tr>
                         <td><strong>PSM Code:</strong></td>
-                        <td>{{ $product->psm_code }}</td>
+                        <td>{{ $product_psm_code }}</td>
                     </tr>
                     <tr>
                         <td><strong>WebPage Url :</strong></td>
-                        <td>{{ $webpage_url ?? 'N/A' }}</td>
+                        <td>{{ $webpage_url }}</td>
                     </tr>
                 </table>
 
@@ -74,7 +74,7 @@
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; {{ date('Y') }} Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
 

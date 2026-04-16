@@ -40,7 +40,7 @@
                     </tr>
                     <tr>
                         <td><strong>Status:</strong></td>
-                        <td>{{ ucfirst($status) }}</td>
+                        <td>{{ $status }}</td>
                     </tr>
                 </table>
 
@@ -102,7 +102,7 @@
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; {{ date('Y') }} Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
     </table>

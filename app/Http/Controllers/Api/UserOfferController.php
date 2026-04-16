@@ -112,10 +112,9 @@ class UserOfferController extends Controller
                     'sent_at' => now()->format('d M Y, h:i A'),
                 ];
 
-                Mail::send('emails.rentalJobOffer', $mailContent, function ($message) use ($email) {
+                \App\Helpers\EmailHelper::send('rentalJobOffer', $mailContent, function ($message) use ($email) {
                     $message->to($email)
-                        ->subject('New Offer Received from Pro Subrental Marketplace')
-                       ->from(config('mail.from.address'), config('mail.from.name'));
+                        ->from(config('mail.from.address'), config('mail.from.name'));
                 });
             }
 

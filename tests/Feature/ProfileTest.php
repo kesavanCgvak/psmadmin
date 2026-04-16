@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Models\UserProfile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -24,11 +25,19 @@ class ProfileTest extends TestCase
     public function test_profile_information_can_be_updated(): void
     {
         $user = User::factory()->create();
+        UserProfile::create([
+            'user_id' => $user->id,
+            'first_name' => 'Old',
+            'last_name' => 'Name',
+            'full_name' => 'Old Name',
+            'email' => $user->email,
+        ]);
 
         $response = $this
             ->actingAs($user)
             ->patch('/profile', [
-                'name' => 'Test User',
+                'first_name' => 'Test',
+                'last_name' => 'User',
                 'email' => 'test@example.com',
             ]);
 
@@ -38,19 +47,29 @@ class ProfileTest extends TestCase
 
         $user->refresh();
 
-        $this->assertSame('Test User', $user->name);
         $this->assertSame('test@example.com', $user->email);
         $this->assertNull($user->email_verified_at);
+        $this->assertSame('Test', $user->profile->first_name);
+        $this->assertSame('User', $user->profile->last_name);
+        $this->assertSame('Test User', $user->profile->full_name);
     }
 
     public function test_email_verification_status_is_unchanged_when_the_email_address_is_unchanged(): void
     {
         $user = User::factory()->create();
+        UserProfile::create([
+            'user_id' => $user->id,
+            'first_name' => 'Test',
+            'last_name' => 'User',
+            'full_name' => 'Test User',
+            'email' => $user->email,
+        ]);
 
         $response = $this
             ->actingAs($user)
             ->patch('/profile', [
-                'name' => 'Test User',
+                'first_name' => 'Test',
+                'last_name' => 'User',
                 'email' => $user->email,
             ]);
 

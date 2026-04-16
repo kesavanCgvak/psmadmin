@@ -73,3 +73,4 @@ class ImportSessionItem extends Model
         return (bool) $this->is_skipped;
     }
 }
+

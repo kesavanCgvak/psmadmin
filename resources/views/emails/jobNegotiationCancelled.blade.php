@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>New Quote Request - Pro Subrental Marketplace</title>
+    <title>Negotiation Cancelled - Pro Subrental Marketplace</title>
 </head>
 
 <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; color: #333;">
@@ -23,67 +23,37 @@
             <td style="padding: 25px;">
                 <p>
                     Hello there,<br>
+                </p>
                 <h4>The negotiation for <strong style="color: #1a73e8;">{{ $rental_job_name }}</strong>
                     has been cancelled.</h4>
-                </p>
+
                 <table width="100%" cellpadding="8" cellspacing="0"
                     style="background: #f1f5fb; border-radius: 8px; margin-top: 20px;">
                     <h4 style="color: #1a73e8; margin-top: 0;">Offer Details</h4>
                     <tr>
                         <td><strong>Sender:</strong></td>
-                        <td>{{ $sender ?? '-' }}</td>
+                        <td>{{ $sender }}</td>
                     </tr>
                     <tr>
                         <td><strong>Receiver:</strong></td>
-                        <td>{{ $receiver ?? '-' }}</td>
+                        <td>{{ $receiver }}</td>
                     </tr>
                     <tr>
                         <td><strong>Amount:</strong></td>
-                        <td>{{ $currency_symbol }}{{ $total_price }}</td>
+                        <td>{{ $total_price }}</td>
+                    </tr>
                     <tr>
                         <td><strong>Reason:</strong></td>
                         <td>{{ $reason }}</td>
+                    </tr>
                     <tr>
                         <td><strong>Date:</strong></td>
-                        <td>{{ $date ?? '-' }}</td>
+                        <td>{{ $date }}</td>
                     </tr>
                 </table>
                 <br>
-                <!-- Products Section -->
-                @if(!empty($products))
-                    <h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3>
 
-                    <table width="100%" cellpadding="8" cellspacing="0"
-                        style="border-collapse: collapse; margin-top: 10px;">
-                        <thead>
-                            <tr style="background:#e8f0fe; text-align:left;">
-                                <th style="border-bottom:1px solid #ccc;">PSM Code</th>
-                                <th style="border-bottom:1px solid #ccc;">Model</th>
-                                <th style="border-bottom:1px solid #ccc;">Software Code</th>
-                                <th style="border-bottom:1px solid #ccc;">Qty</th>
-                                <th style="border-bottom:1px solid #ccc;">Price</th>
-                                <th style="border-bottom:1px solid #ccc;">Total</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            @forelse($products as $product)
-                                <tr>
-                                    <td>{{ $product['psm_code'] }}</td>
-                                    <td>{{ $product['model'] }}</td>
-                                    <td>{{ $product['software_code'] }}</td>
-                                    <td>{{ $product['quantity'] }}</td>
-                                    <td>{{ $currency ?? '' }}{{ $product['price'] }}</td>
-                                    <td>{{ $currency ?? '' }}{{ $product['total_price'] }}</td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="6" style="text-align:center;">No products found.</td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                @endif
+                {!! $products_section !!}
 
                 <p style="font-size: 13px; color: #666; line-height: 1.6;">
                     <strong>Pro Subrental Marketplace</strong> connects rental companies to help maximize equipment
@@ -94,7 +64,7 @@
         <!-- Footer -->
         <tr>
             <td style="background-color:#726d6c; padding: 18px; text-align:center; color:#ffffff; font-size: 13px;">
-                &copy; {{ date('Y') }} Pro Subrental Marketplace. All rights reserved.
+                &copy; {{ $current_year }} Pro Subrental Marketplace. All rights reserved.
             </td>
         </tr>
     </table>

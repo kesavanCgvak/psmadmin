@@ -1,5 +1,13 @@
 <?php
 
+use JeroenNoten\LaravelAdminLte\Menu\Filters\ActiveFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\ClassesFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\DataFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\GateFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\HrefFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\LangFilter;
+use JeroenNoten\LaravelAdminLte\Menu\Filters\SearchFilter;
+
 return [
 
     /*
@@ -440,6 +448,12 @@ return [
             'icon' => 'fas fa-fw fa-truck',
             'icon_color' => 'success',
         ],
+        [
+            'text' => 'Job Ratings',
+            'route' => 'admin.job-ratings.index',
+            'icon' => 'fas fa-fw fa-star',
+            'icon_color' => 'warning',
+        ],
         ['header' => 'SUPPORT MANAGEMENT'],
         [
             'text' => 'Issue Types',
@@ -461,16 +475,57 @@ return [
             'icon_color' => 'success',
         ],
         [
+            'text' => 'CMS Pages',
+            'route' => 'admin.cms-pages.index',
+            'icon' => 'fas fa-fw fa-file-alt',
+            'icon_color' => 'primary',
+        ],
+        [
             'text' => 'Terms and Conditions',
             'route' => 'admin.terms-and-conditions.index',
             'icon' => 'fas fa-fw fa-file-contract',
             'icon_color' => 'info',
         ],
         [
+            'text' => 'Email Templates',
+            'route' => 'admin.email-templates.index',
+            'icon' => 'fas fa-fw fa-envelope',
+            'icon_color' => 'primary',
+        ],
+        [
+            'text' => 'Email Logs',
+            'route' => 'admin.email-logs.index',
+            'icon' => 'fas fa-fw fa-inbox',
+            'icon_color' => 'info',
+        ],
+        [
+            'text' => 'User Login Activity',
+            'route' => 'admin.user-auth-events.index',
+            'icon' => 'fas fa-fw fa-user-clock',
+            'icon_color' => 'secondary',
+        ],
+        [
             'text' => 'User Restrictions',
             'route' => 'admin.user-restrictions.index',
             'icon' => 'fas fa-fw fa-users-cog',
             'icon_color' => 'warning',
+        ],
+        [
+            'text' => 'Measurement Units',
+            'icon' => 'fas fa-fw fa-ruler-combined',
+            'icon_color' => 'info',
+            'submenu' => [
+                [
+                    'text' => 'Linear Units',
+                    'route' => 'admin.linear-units.index',
+                    'icon' => 'fas fa-fw fa-ruler-horizontal',
+                ],
+                [
+                    'text' => 'Weight Units',
+                    'route' => 'admin.weight-units.index',
+                    'icon' => 'fas fa-fw fa-weight-hanging',
+                ],
+            ],
         ],
         [
             'text' => 'Subscriptions',
@@ -500,13 +555,13 @@ return [
     */
 
     'filters' => [
-        JeroenNoten\LaravelAdminLte\Menu\Filters\GateFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\HrefFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\SearchFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\ActiveFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\ClassesFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\LangFilter::class,
-        JeroenNoten\LaravelAdminLte\Menu\Filters\DataFilter::class,
+        GateFilter::class,
+        HrefFilter::class,
+        SearchFilter::class,
+        ActiveFilter::class,
+        ClassesFilter::class,
+        LangFilter::class,
+        DataFilter::class,
     ],
 
     /*
