@@ -93,6 +93,7 @@ class Xml extends BaseReader
         ];
 
         // Open file
+        File::assertFile($filename);
         $data = (string) file_get_contents($filename);
         $data = $this->getSecurityScannerOrThrow()->scan($data);
 
@@ -235,7 +236,7 @@ class Xml extends BaseReader
                 }
             }
 
-            $tmpInfo['lastColumnLetter'] = Coordinate::stringFromColumnIndex($tmpInfo['lastColumnIndex'] + 1);
+            $tmpInfo['lastColumnLetter'] = Coordinate::stringFromColumnIndex($tmpInfo['lastColumnIndex'] + 1, true);
             $tmpInfo['totalColumns'] = $tmpInfo['lastColumnIndex'] + 1;
             $tmpInfo['sheetState'] = Worksheet::SHEETSTATE_VISIBLE;
 
@@ -510,7 +511,18 @@ class Xml extends BaseReader
                                 $cellDataFormula = AddressHelper::convertFormulaToA1($cellDataFormula, $rowID, $columnNumber);
                             }
 
-                            $spreadsheet->getActiveSheet()->getCell($columnID . $rowID)->setValueExplicit((($hasCalculatedValue) ? $cellDataFormula : $cellValue), $type);
+                            $hyperlink = null;
+                            if ($spreadsheet->getActiveSheet()->hyperlinkExists($columnID . $rowID)) {
+                                $hyperlink = $spreadsheet->getActiveSheet()->getHyperlink($columnID . $rowID);
+                            }
+                            $spreadsheet->getActiveSheet()
+                                ->getCell($columnID . $rowID)
+                                ->setValueExplicit(
+                                    $hasCalculatedValue ? $cellDataFormula : $cellValue,
+                                    $type
+                                );
+                            $spreadsheet->getActiveSheet()
+                                ->setHyperlink($columnID . $rowID, $hyperlink);
                             if ($hasCalculatedValue) {
                                 $spreadsheet->getActiveSheet()->getCell($columnID . $rowID)->setCalculatedValue($cellValue, $originalType === DataType::TYPE_NUMERIC);
                             }

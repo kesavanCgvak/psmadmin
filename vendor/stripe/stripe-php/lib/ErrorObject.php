@@ -49,6 +49,7 @@ class ErrorObject extends StripeObject
     const CODE_ACCOUNT_INFORMATION_MISMATCH = 'account_information_mismatch';
     const CODE_ACCOUNT_INVALID = 'account_invalid';
     const CODE_ACCOUNT_NUMBER_INVALID = 'account_number_invalid';
+    const CODE_ACCOUNT_TOKEN_REQUIRED_FOR_V2_ACCOUNT = 'account_token_required_for_v2_account';
     const CODE_ACSS_DEBIT_SESSION_INCOMPLETE = 'acss_debit_session_incomplete';
     const CODE_ALIPAY_UPGRADE_REQUIRED = 'alipay_upgrade_required';
     const CODE_AMOUNT_TOO_LARGE = 'amount_too_large';
@@ -187,6 +188,7 @@ class ErrorObject extends StripeObject
     const CODE_RATE_LIMIT = 'rate_limit';
     const CODE_REFER_TO_CUSTOMER = 'refer_to_customer';
     const CODE_REFUND_DISPUTED_PAYMENT = 'refund_disputed_payment';
+    const CODE_REQUEST_BLOCKED = 'request_blocked';
     const CODE_RESOURCE_ALREADY_EXISTS = 'resource_already_exists';
     const CODE_RESOURCE_MISSING = 'resource_missing';
     const CODE_RETURN_INTENT_ALREADY_PROCESSED = 'return_intent_already_processed';
@@ -205,6 +207,8 @@ class ErrorObject extends StripeObject
     const CODE_SKU_INACTIVE = 'sku_inactive';
     const CODE_STATE_UNSUPPORTED = 'state_unsupported';
     const CODE_STATUS_TRANSITION_INVALID = 'status_transition_invalid';
+    const CODE_STORER_CAPABILITY_MISSING = 'storer_capability_missing';
+    const CODE_STORER_CAPABILITY_NOT_ACTIVE = 'storer_capability_not_active';
     const CODE_STRIPE_TAX_INACTIVE = 'stripe_tax_inactive';
     const CODE_TAX_ID_INVALID = 'tax_id_invalid';
     const CODE_TAX_ID_PROHIBITED = 'tax_id_prohibited';
