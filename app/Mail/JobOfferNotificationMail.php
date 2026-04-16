@@ -38,7 +38,7 @@ class JobOfferNotificationMail extends Mailable
     public function build()
     {
         return $this->subject('New Job Offer Received - Pro Subrental Marketplace')
-            ->from('no-reply@prosubmarket.com', 'Pro Subrental Marketplace')
+             ->from(config('mail.from.address'), config('mail.from.name'))
             ->view('emails.jobOfferNotification')
             ->with([
                 'sender_company_name'   => $this->sender_company_name,
