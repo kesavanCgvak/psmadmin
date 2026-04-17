@@ -25,6 +25,9 @@
             paste_as_text: false,
             image_title: true,
             automatic_uploads: true,
+            relative_urls: false,
+            remove_script_host: false,
+            convert_urls: true,
             images_upload_handler: function(blobInfo, progress) {
                 return new Promise(function(resolve, reject) {
                     var xhr = new XMLHttpRequest();
