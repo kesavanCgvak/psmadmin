@@ -25,3 +25,4 @@ Thumbs.db
 /public/images/company_images
 /public/images/profile_pictures
 /public/images/equipment_image
+*.lock
