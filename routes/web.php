@@ -240,6 +240,8 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
 
     // CMS pages (WordPress-like HTML content)
     Route::resource('cms-pages', AdminCmsPageController::class)->except(['show']);
+    Route::post('/cms-pages/upload-image', [AdminCmsPageController::class, 'uploadImage'])
+        ->name('cms-pages.upload-image');
 
     // Terms and Conditions Management
     Route::get('/terms-and-conditions', [TermsAndConditionsController::class, 'index'])

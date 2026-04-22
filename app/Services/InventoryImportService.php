@@ -6,6 +6,7 @@ use App\Models\Equipment;
 use App\Models\EquipmentImage;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class InventoryImportService
 {
@@ -54,9 +55,26 @@ class InventoryImportService
         $rentalQty = FlexService::getRentalQtySummary($companyId, $flexId);
         $flex = FlexService::flexImportCheckFlexPayload($details, $rentalQty);
 
-        $name = $details['name'] ?? '';
-        $parsed = FlexService::parseBrandAndModel($name);
-        $existingProduct = FlexService::findExistingProduct($parsed['brand_id'], $parsed['normalized_model'], $name);
+        $proSubFields = FlexService::getProSubrentalMarketplaceCustomFields($companyId, $flexId);
+        if ($proSubFields !== null) {
+            $flex['publish_to_psm'] = $proSubFields['publish_to_psm'] ?? null;
+            if (!empty(trim((string) ($proSubFields['psm_code'] ?? '')))) {
+                $flex['flex_psm_code'] = trim((string) $proSubFields['psm_code']);
+            }
+        }
+
+        $existingProduct = FlexService::matchUsingPSMCode($companyId, $flexId, $proSubFields);
+        if (!$existingProduct) {
+            $name = $details['name'] ?? '';
+            $parsed = FlexService::parseBrandAndModel($name);
+            $existingProduct = FlexService::findExistingProduct($parsed['brand_id'], $parsed['normalized_model'], $name);
+        } else {
+            Log::debug('Inventory import check: using PSM Code custom-field match (skipping brand/model match)', [
+                'flex_id' => $flexId,
+                'company_id' => $companyId,
+                'product_id' => $existingProduct->id,
+            ]);
+        }
         $dayRate = FlexService::getDayRentalRate($companyId, $flexId);
 
         if ($existingProduct) {
