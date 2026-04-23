@@ -42,6 +42,7 @@
                         </th>
                         <th>ID</th>
                         <th>Name</th>
+                        <th>Account Type</th>
                         <th>Location</th>
                         <th>Currency</th>
                         <th>Rental Software</th>
@@ -61,6 +62,18 @@
                             </td>
                             <td>{{ $company->id }}</td>
                             <td><strong>{{ $company->name }}</strong></td>
+                            <td>
+                                @php
+                                    $companyType = strtolower((string) $company->account_type);
+                                @endphp
+                                @if($companyType === 'provider')
+                                    <span class="badge badge-primary">Provider</span>
+                                @elseif($companyType === 'user')
+                                    <span class="badge badge-secondary">User</span>
+                                @else
+                                    <span class="text-muted">N/A</span>
+                                @endif
+                            </td>
                             <td>
                                 @if($company->city)
                                     {{ $company->city->name }},
@@ -173,9 +186,10 @@
         $(document).ready(function() {
             var table = initResponsiveDataTable('companiesTable', {
                 "columnDefs": [
-                    { "orderable": false, "targets": [0, 9, 10] },
+                    { "orderable": false, "targets": [0, 10, 11] },
                     { "responsivePriority": 1, "targets": 2 },
-                    { "responsivePriority": 2, "targets": 10 }
+                    { "responsivePriority": 2, "targets": 3 },
+                    { "responsivePriority": 3, "targets": 11 }
                 ]
             });
 

@@ -19,12 +19,46 @@
                     <h3 class="card-title">{{ $company->name }}</h3>
                 </div>
                 <div class="card-body">
+                    <div class="mb-3 d-flex flex-wrap align-items-center">
+                        @php
+                            $companyType = strtolower((string) $company->account_type);
+                        @endphp
+                        @if($companyType === 'provider')
+                            <span class="badge badge-primary mr-2">Provider Company</span>
+                        @elseif($companyType === 'user')
+                            <span class="badge badge-secondary mr-2">User Company</span>
+                        @else
+                            <span class="badge badge-light mr-2">Type Not Set</span>
+                        @endif
+
+                        @if($company->subscription_mode === 'free')
+                            <span class="badge badge-secondary mr-2">Free Subscription</span>
+                        @else
+                            <span class="badge badge-success mr-2">Paid Subscription</span>
+                        @endif
+
+                        @if($company->currency)
+                            <span class="badge badge-success">{{ $company->currency->code }}</span>
+                        @endif
+                    </div>
+
                     <dl class="row">
                         <dt class="col-sm-3">ID</dt>
                         <dd class="col-sm-9">{{ $company->id }}</dd>
 
                         <dt class="col-sm-3">Name</dt>
                         <dd class="col-sm-9"><strong>{{ $company->name }}</strong></dd>
+
+                        <dt class="col-sm-3">Account Type</dt>
+                        <dd class="col-sm-9">
+                            @if($companyType === 'provider')
+                                <span class="badge badge-primary">Provider</span>
+                            @elseif($companyType === 'user')
+                                <span class="badge badge-secondary">User</span>
+                            @else
+                                <span class="text-muted">N/A</span>
+                            @endif
+                        </dd>
 
                         <dt class="col-sm-3">Description</dt>
                         <dd class="col-sm-9">{{ $company->description ?? 'N/A' }}</dd>
@@ -163,7 +197,9 @@
             <div class="card card-widget widget-user">
                 <div class="widget-user-header bg-info">
                     <h3 class="widget-user-username">{{ $company->name }}</h3>
-                    <h5 class="widget-user-desc">Company Statistics</h5>
+                    <h5 class="widget-user-desc">
+                        {{ $companyType === 'provider' ? 'Provider' : ($companyType === 'user' ? 'User' : 'Company') }} Statistics
+                    </h5>
                 </div>
                 <div class="widget-user-image">
                     <img class="img-circle elevation-2" src="{{ $company->logo ? asset($company->logo) : asset('vendor/adminlte/dist/img/AdminLTELogo.png') }}" alt="Company Logo">
