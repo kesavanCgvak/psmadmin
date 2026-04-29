@@ -1,0 +1,228 @@
+{
+  "info": {
+    "name": "PSM + Rentman Integration Tests",
+    "_postman_id": "d5a2a1d1-7d2c-4b2e-9f0d-4f2d8ab4c001",
+    "description": "Focused collection for testing Rentman integration paths in PSM and direct Rentman API calls.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    { "key": "psm_base_url", "value": "http://localhost/api" },
+    { "key": "psm_auth_token", "value": "" },
+    { "key": "rentman_base_url", "value": "https://api.rentman.net" },
+    { "key": "rentman_jwt", "value": "" },
+    { "key": "integration_type", "value": "rentman" },
+    { "key": "rentman_keyword", "value": "speaker" },
+    { "key": "rentman_equipment_id", "value": "1" },
+    { "key": "psm_inventory_id", "value": "1" },
+    { "key": "psm_quantity", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "1) Save Rentman Credentials In PSM",
+      "item": [
+        {
+          "name": "Store Integration (rentman)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{psm_auth_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"integration_type\": \"{{integration_type}}\",\n  \"api_base_url\": \"{{rentman_base_url}}\",\n  \"api_key\": \"{{rentman_jwt}}\"\n}"
+            },
+            "url": {
+              "raw": "{{psm_base_url}}/integrations/store",
+              "host": ["{{psm_base_url}}"],
+              "path": ["integrations", "store"]
+            }
+          }
+        },
+        {
+          "name": "Get Integration (rentman)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{psm_auth_token}}" }
+            ],
+            "url": {
+              "raw": "{{psm_base_url}}/integrations/{{integration_type}}",
+              "host": ["{{psm_base_url}}"],
+              "path": ["integrations", "{{integration_type}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2) PSM Rentman Endpoints (planned pattern)",
+      "item": [
+        {
+          "name": "Search Rentman Inventory (planned endpoint)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{psm_auth_token}}" }
+            ],
+            "url": {
+              "raw": "{{psm_base_url}}/rentman/search?keyword={{rentman_keyword}}",
+              "host": ["{{psm_base_url}}"],
+              "path": ["rentman", "search"],
+              "query": [
+                { "key": "keyword", "value": "{{rentman_keyword}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Check Import Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{psm_auth_token}}" }
+            ],
+            "url": {
+              "raw": "{{psm_base_url}}/rentman/import/check?rentman_id={{rentman_equipment_id}}",
+              "host": ["{{psm_base_url}}"],
+              "path": ["rentman", "import", "check"],
+              "query": [
+                { "key": "rentman_id", "value": "{{rentman_equipment_id}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Import To PSM",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{psm_auth_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rentman_id\": \"{{rentman_equipment_id}}\",\n  \"quantity\": {{psm_quantity}},\n  \"confirm\": true\n}"
+            },
+            "url": {
+              "raw": "{{psm_base_url}}/rentman/import",
+              "host": ["{{psm_base_url}}"],
+              "path": ["rentman", "import"]
+            }
+          }
+        },
+        {
+          "name": "Link Existing Inventory",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{psm_auth_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"inventory_id\": {{psm_inventory_id}},\n  \"rentman_id\": \"{{rentman_equipment_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{psm_base_url}}/rentman/link-inventory",
+              "host": ["{{psm_base_url}}"],
+              "path": ["rentman", "link-inventory"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3) Direct Rentman API Calls",
+      "item": [
+        {
+          "name": "Search Equipment (exact name filter)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{rentman_jwt}}" }
+            ],
+            "url": {
+              "raw": "{{rentman_base_url}}/equipment?fields=id,displayname,name,code,updateHash&limit=20&name={{rentman_keyword}}",
+              "host": ["{{rentman_base_url}}"],
+              "path": ["equipment"],
+              "query": [
+                { "key": "fields", "value": "id,displayname,name,code,updateHash" },
+                { "key": "limit", "value": "20" },
+                { "key": "name", "value": "{{rentman_keyword}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search Equipment (keyword fallback: broad list)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{rentman_jwt}}" }
+            ],
+            "url": {
+              "raw": "{{rentman_base_url}}/equipment?fields=id,displayname,name,code,updateHash&limit=200",
+              "host": ["{{rentman_base_url}}"],
+              "path": ["equipment"],
+              "query": [
+                { "key": "fields", "value": "id,displayname,name,code,updateHash" },
+                { "key": "limit", "value": "200" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Equipment Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{rentman_jwt}}" }
+            ],
+            "url": {
+              "raw": "{{rentman_base_url}}/equipment/{{rentman_equipment_id}}",
+              "host": ["{{rentman_base_url}}"],
+              "path": ["equipment", "{{rentman_equipment_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Search Contacts (name)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{rentman_jwt}}" }
+            ],
+            "url": {
+              "raw": "{{rentman_base_url}}/contacts?fields=id,displayname,name,firstname,surname,email_1&limit=20&name={{rentman_keyword}}",
+              "host": ["{{rentman_base_url}}"],
+              "path": ["contacts"],
+              "query": [
+                { "key": "fields", "value": "id,displayname,name,firstname,surname,email_1" },
+                { "key": "limit", "value": "20" },
+                { "key": "name", "value": "{{rentman_keyword}}" }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
