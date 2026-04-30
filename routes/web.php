@@ -57,7 +57,7 @@ Route::middleware('auth')->group(function () {
 });
 
 // Geography Management Routes
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'verified', 'admin.access'])->group(function () {
     // Regions
     Route::resource('regions', RegionController::class);
     Route::post('/regions/bulk-delete', [RegionController::class, 'bulkDelete'])->name('regions.bulk-delete');
@@ -86,7 +86,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 // Admin Routes (Product Catalog, Company Management, User Management)
-Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(function () {
+Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('admin.')->group(function () {
     // Product Catalog Management
     // Categories
     Route::resource('categories', CategoryController::class);
@@ -271,41 +271,6 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     // User login / logout / failed login history (read-only)
     Route::get('/user-auth-events', [UserAuthEventController::class, 'index'])
         ->name('user-auth-events.index');
-});
-
-// Clear application cache
-Route::get('/clear-cache', function () {
-    Artisan::call('cache:clear');
-
-    return 'Application cache has been cleared';
-});
-
-// Clear route cache
-Route::get('/route-cache', function () {
-    Artisan::call('route:cache');
-
-    return 'Routes cache has been cleared';
-});
-
-// Clear config cache
-Route::get('/config-cache', function () {
-    Artisan::call('config:cache');
-
-    return 'Config cache has been cleared';
-});
-
-// Clear view cache
-Route::get('/view-clear', function () {
-    Artisan::call('view:clear');
-
-    return 'View cache has been cleared';
-});
-
-// Optimize application
-Route::get('/optimize-clear', function () {
-    Artisan::call('optimize:clear');
-
-    return 'Optimization has been cleared';
 });
 
 require __DIR__.'/auth.php';

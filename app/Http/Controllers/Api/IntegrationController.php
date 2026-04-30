@@ -38,8 +38,15 @@ class IntegrationController extends Controller
                 'client_secret' => 'nullable|string|max:1000',
             ];
 
+            $existingIntegration = CompanyIntegration::where('company_id', $companyId)
+                ->where('integration_type', $request->integration_type)
+                ->first();
+
             if ($request->integration_type === 'flex') {
-                $rules['api_key'] = 'required|string|max:1000';
+                // For existing Flex integrations, allow keeping the current API key.
+                if (!$existingIntegration || empty($existingIntegration->api_key)) {
+                    $rules['api_key'] = 'required|string|max:1000';
+                }
             } else {
                 $rules['client_id'] = 'required|string|max:500';
                 $rules['client_secret'] = 'required|string|max:1000';
@@ -60,7 +67,9 @@ class IntegrationController extends Controller
             ];
 
             if ($request->integration_type === 'flex') {
-                $data['api_key'] = $request->api_key;
+                if ($request->filled('api_key')) {
+                    $data['api_key'] = $request->api_key;
+                }
             } else {
                 $data['client_id'] = $request->client_id;
                 $data['client_secret'] = $request->client_secret;
@@ -80,6 +89,11 @@ class IntegrationController extends Controller
                 'data' => [
                     'integration_type' => $integration->integration_type,
                     'api_base_url' => $integration->api_base_url,
+                    'connected' => $integration->isConnected(),
+                    'has_api_key' => $integration->integration_type === 'flex' ? !empty($integration->api_key) : null,
+                    'api_key_masked' => $integration->integration_type === 'flex'
+                        ? $this->maskSecretKeepingLastFour((string) $integration->api_key)
+                        : null,
                 ],
             ], 200);
 
@@ -124,6 +138,8 @@ class IntegrationController extends Controller
                         'integration_type' => $integration_type,
                         'api_base_url' => null,
                         'connected' => false,
+                        'has_api_key' => $integration_type === 'flex' ? false : null,
+                        'api_key_masked' => null,
                     ],
                 ], 200);
             }
@@ -134,6 +150,10 @@ class IntegrationController extends Controller
                     'integration_type' => $integration->integration_type,
                     'api_base_url' => $integration->api_base_url,
                     'connected' => $integration->isConnected(),
+                    'has_api_key' => $integration->integration_type === 'flex' ? !empty($integration->api_key) : null,
+                    'api_key_masked' => $integration->integration_type === 'flex'
+                        ? $this->maskSecretKeepingLastFour((string) $integration->api_key)
+                        : null,
                 ],
             ], 200);
 
@@ -147,5 +167,19 @@ class IntegrationController extends Controller
                 'message' => 'Unable to fetch integration configuration.',
             ], 500);
         }
+    }
+
+    private function maskSecretKeepingLastFour(string $value): ?string
+    {
+        if ($value === '') {
+            return null;
+        }
+
+        $length = strlen($value);
+        if ($length <= 4) {
+            return str_repeat('*', $length);
+        }
+
+        return str_repeat('*', $length - 4) . substr($value, -4);
     }
 }

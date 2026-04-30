@@ -1,0 +1,310 @@
+{
+  "info": {
+    "name": "PSM Admin Panel API",
+    "_postman_id": "f8f5a4f2-8f28-4dcb-b8f8-3f3f6d0c1d7a",
+    "description": "Complete Postman collection generated from routes/api.php including all protected endpoints as individual requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost/api"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_type\": \"provider\",\n  \"company_name\": \"Acme Rentals\",\n  \"username\": \"johndoe\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"region\": 1,\n  \"country_id\": 1,\n  \"state_id\": 1,\n  \"city\": 1,\n  \"birthday\": \"1990-01-01\",\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"Password@123\",\n  \"password_confirmation\": \"Password@123\",\n  \"mobile\": \"+12025550199\",\n  \"terms_accepted\": true\n}"
+            },
+            "url": { "raw": "{{base_url}}/register", "host": ["{{base_url}}"], "path": ["register"] }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"johndoe\",\n  \"password\": \"Password@123\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/login", "host": ["{{base_url}}"], "path": ["login"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login successful', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let jsonData = {};",
+                  "try { jsonData = pm.response.json(); } catch (e) {}",
+                  "const token = jsonData.token || jsonData.access_token || (jsonData.data && jsonData.data.token);",
+                  "if (token) {",
+                  "  pm.environment.set('auth_token', token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Account",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"token\": \"verification-token\"\n}" },
+            "url": { "raw": "{{base_url}}/auth/verify-account", "host": ["{{base_url}}"], "path": ["auth", "verify-account"] }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{auth_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{base_url}}/auth/refresh", "host": ["{{base_url}}"], "path": ["auth", "refresh"] }
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"johndoe\"\n}" },
+            "url": { "raw": "{{base_url}}/password/forgot", "host": ["{{base_url}}"], "path": ["password", "forgot"] }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"password\": \"Password@123\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/reset-password/:token",
+              "host": ["{{base_url}}"],
+              "path": ["reset-password", ":token"],
+              "variable": [{ "key": "token", "value": "reset-token-value" }]
+            }
+          }
+        },
+        {
+          "name": "Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{auth_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/profile", "host": ["{{base_url}}"], "path": ["profile"] }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{base_url}}/logout", "host": ["{{base_url}}"], "path": ["logout"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public",
+      "item": [
+        { "name": "Search Products", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/products/search?search=drill", "host": ["{{base_url}}"], "path": ["products", "search"], "query": [{ "key": "search", "value": "drill" }] } } },
+        { "name": "Registration Availability", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"username\": \"newuser\"\n}" }, "url": { "raw": "{{base_url}}/registration/availability", "host": ["{{base_url}}"], "path": ["registration", "availability"] } } },
+        { "name": "Contact Sales", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Jane Buyer\",\n  \"email\": \"jane@example.com\",\n  \"description\": \"Need enterprise pricing\"\n}" }, "url": { "raw": "{{base_url}}/contact-sales", "host": ["{{base_url}}"], "path": ["contact-sales"] } } },
+        { "name": "Mail Test", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"dev@example.com\"\n}" }, "url": { "raw": "{{base_url}}/mail/test", "host": ["{{base_url}}"], "path": ["mail", "test"] } } },
+        { "name": "Payment Status", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/payment/status", "host": ["{{base_url}}"], "path": ["payment", "status"] } } },
+        { "name": "Company User Limit", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/company-user-limit", "host": ["{{base_url}}"], "path": ["company-user-limit"] } } },
+        { "name": "Terms and Conditions", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/terms-and-conditions", "host": ["{{base_url}}"], "path": ["terms-and-conditions"] } } },
+        { "name": "CMS Pages", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/cms-pages", "host": ["{{base_url}}"], "path": ["cms-pages"] } } },
+        { "name": "CMS Page by Slug", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/cms-pages/:slug", "host": ["{{base_url}}"], "path": ["cms-pages", ":slug"], "variable": [{ "key": "slug", "value": "about-us" }] } } },
+        { "name": "Regions", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/regions", "host": ["{{base_url}}"], "path": ["regions"] } } },
+        { "name": "Countries", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/countries", "host": ["{{base_url}}"], "path": ["countries"] } } },
+        { "name": "Countries by Region", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/regions/:region_id/countries", "host": ["{{base_url}}"], "path": ["regions", ":region_id", "countries"], "variable": [{ "key": "region_id", "value": "1" }] } } },
+        { "name": "Cities by Country", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/countries/:country_id/cities", "host": ["{{base_url}}"], "path": ["countries", ":country_id", "cities"], "variable": [{ "key": "country_id", "value": "1" }] } } },
+        { "name": "States by Country", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/countries/:country/states", "host": ["{{base_url}}"], "path": ["countries", ":country", "states"], "variable": [{ "key": "country", "value": "1" }] } } },
+        { "name": "State Detail", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/states/:state", "host": ["{{base_url}}"], "path": ["states", ":state"], "variable": [{ "key": "state", "value": "1" }] } } },
+        { "name": "Cities by State", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{base_url}}/states/:state/cities", "host": ["{{base_url}}"], "path": ["states", ":state", "cities"], "variable": [{ "key": "state", "value": "1" }] } } },
+        { "name": "Stripe Webhook", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"id\": \"evt_test_123\",\n  \"type\": \"invoice.payment_succeeded\"\n}" }, "url": { "raw": "{{base_url}}/webhooks/stripe", "host": ["{{base_url}}"], "path": ["webhooks", "stripe"] } } }
+      ]
+    },
+    {
+      "name": "Protected - Catalog",
+      "item": [
+        { "name": "Brands", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/brands", "host": ["{{base_url}}"], "path": ["brands"] } } },
+        { "name": "Categories", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/categories", "host": ["{{base_url}}"], "path": ["categories"] } } },
+        { "name": "Sub Categories", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/sub-categories", "host": ["{{base_url}}"], "path": ["sub-categories"] } } },
+        { "name": "Sub Categories by Category", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/categories/:id/sub-categories", "host": ["{{base_url}}"], "path": ["categories", ":id", "sub-categories"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Issue Types", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/issue-types", "host": ["{{base_url}}"], "path": ["issue-types"] } } }
+      ]
+    },
+    {
+      "name": "Protected - Profile",
+      "item": [
+        { "name": "User Profile", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/user/profile", "host": ["{{base_url}}"], "path": ["user", "profile"] } } },
+        { "name": "Upload Profile Picture", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "body": { "mode": "formdata", "formdata": [{ "key": "profile_picture", "type": "file", "src": "" }] }, "url": { "raw": "{{base_url}}/profile/upload-picture", "host": ["{{base_url}}"], "path": ["profile", "upload-picture"] } } },
+        { "name": "Change Password", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"current_password\": \"Password@123\",\n  \"new_password\": \"NewPassword@123\",\n  \"new_password_confirmation\": \"NewPassword@123\"\n}" }, "url": { "raw": "{{base_url}}/profile/change-password", "host": ["{{base_url}}"], "path": ["profile", "change-password"] } } },
+        { "name": "Update Username", "request": { "method": "PATCH", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"username\": \"john.updated\"\n}" }, "url": { "raw": "{{base_url}}/profile/update-username", "host": ["{{base_url}}"], "path": ["profile", "update-username"] } } },
+        { "name": "Update Name", "request": { "method": "PATCH", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"first_name\": \"John\",\n  \"last_name\": \"Updated\"\n}" }, "url": { "raw": "{{base_url}}/profile/update-name", "host": ["{{base_url}}"], "path": ["profile", "update-name"] } } },
+        { "name": "Update Email", "request": { "method": "PATCH", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"john.updated@example.com\"\n}" }, "url": { "raw": "{{base_url}}/profile/update-email", "host": ["{{base_url}}"], "path": ["profile", "update-email"] } } },
+        { "name": "Update Mobile", "request": { "method": "PATCH", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"mobile\": \"+12025550111\"\n}" }, "url": { "raw": "{{base_url}}/profile/update-mobile", "host": ["{{base_url}}"], "path": ["profile", "update-mobile"] } } },
+        { "name": "Rental Softwares", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/rental-softwares", "host": ["{{base_url}}"], "path": ["rental-softwares"] } } },
+        { "name": "Currencies", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/currencies", "host": ["{{base_url}}"], "path": ["currencies"] } } },
+        { "name": "Date Formats", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/date-formats", "host": ["{{base_url}}"], "path": ["date-formats"] } } },
+        { "name": "Pricing Schemes", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/pricing-schemes", "host": ["{{base_url}}"], "path": ["pricing-schemes"] } } }
+      ]
+    },
+    {
+      "name": "Protected - Company",
+      "item": [
+        { "name": "Create Company User", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"username\": \"staff01\",\n  \"email\": \"staff01@example.com\",\n  \"first_name\": \"Staff\",\n  \"last_name\": \"One\",\n  \"mobile\": \"+12025550100\",\n  \"password\": \"Password@123\",\n  \"role\": \"user\",\n  \"company_id\": 1\n}" }, "url": { "raw": "{{base_url}}/company/users", "host": ["{{base_url}}"], "path": ["company", "users"] } } },
+        { "name": "List Company Users", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/company/users", "host": ["{{base_url}}"], "path": ["company", "users"] } } },
+        { "name": "Update Company User", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"first_name\": \"Updated\",\n  \"last_name\": \"User\",\n  \"mobile\": \"+12025550199\"\n}" }, "url": { "raw": "{{base_url}}/company/users/:id", "host": ["{{base_url}}"], "path": ["company", "users", ":id"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Delete Company User", "request": { "method": "DELETE", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/company/users/:id", "host": ["{{base_url}}"], "path": ["company", "users", ":id"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Make Company User Admin", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"is_admin\": true\n}" }, "url": { "raw": "{{base_url}}/company/users/:id/make-admin", "host": ["{{base_url}}"], "path": ["company", "users", ":id", "make-admin"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Company Info", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/company/info", "host": ["{{base_url}}"], "path": ["company", "info"] } } },
+        { "name": "Update Company Info", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"company_name\": \"Acme Rentals Updated\"\n}" }, "url": { "raw": "{{base_url}}/company/info/update", "host": ["{{base_url}}"], "path": ["company", "info", "update"] } } },
+        { "name": "Default Contact", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/company/default-contact", "host": ["{{base_url}}"], "path": ["company", "default-contact"] } } },
+        { "name": "Update Default Contact", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"contact_id\": 2\n}" }, "url": { "raw": "{{base_url}}/company/default-contact", "host": ["{{base_url}}"], "path": ["company", "default-contact"] } } },
+        { "name": "Company Preferences", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/company/preferences", "host": ["{{base_url}}"], "path": ["company", "preferences"] } } },
+        { "name": "Update Company Preferences", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"currency_id\": 1,\n  \"date_format_id\": 1,\n  \"pricing_scheme_id\": 1,\n  \"rental_software_id\": 1\n}" }, "url": { "raw": "{{base_url}}/company/preferences", "host": ["{{base_url}}"], "path": ["company", "preferences"] } } },
+        { "name": "Update Gear Finder Visibility", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"hide_from_gear_finder\": false\n}" }, "url": { "raw": "{{base_url}}/companies/:id/gear-finder-visibility", "host": ["{{base_url}}"], "path": ["companies", ":id", "gear-finder-visibility"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Company Images", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/company/images", "host": ["{{base_url}}"], "path": ["company", "images"] } } },
+        { "name": "Upload Company Image", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "body": { "mode": "formdata", "formdata": [{ "key": "type", "value": "logo", "type": "text" }, { "key": "image", "type": "file", "src": "" }] }, "url": { "raw": "{{base_url}}/company/images", "host": ["{{base_url}}"], "path": ["company", "images"] } } },
+        { "name": "Delete Company Image", "request": { "method": "DELETE", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"type\": \"logo\"\n}" }, "url": { "raw": "{{base_url}}/company/images", "host": ["{{base_url}}"], "path": ["company", "images"] } } },
+        { "name": "Company Address", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/company/address", "host": ["{{base_url}}"], "path": ["company", "address"] } } },
+        { "name": "Update Company Address", "request": { "method": "PATCH", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"country_id\": 1,\n  \"state_id\": 1,\n  \"city_id\": 1,\n  \"address_line_1\": \"123 Main Street\",\n  \"postal_code\": \"10001\"\n}" }, "url": { "raw": "{{base_url}}/company/address", "host": ["{{base_url}}"], "path": ["company", "address"] } } },
+        { "name": "Company Search Priority", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/company/search-priority", "host": ["{{base_url}}"], "path": ["company", "search-priority"] } } },
+        { "name": "Update Company Search Priority", "request": { "method": "PATCH", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"search_priority\": 1\n}" }, "url": { "raw": "{{base_url}}/company/search-priority", "host": ["{{base_url}}"], "path": ["company", "search-priority"] } } },
+        { "name": "Search Companies", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"products\": [\n    { \"product_id\": 1, \"quantity\": 2 }\n  ],\n  \"city_id\": 1\n}" }, "url": { "raw": "{{base_url}}/companies/search", "host": ["{{base_url}}"], "path": ["companies", "search"] } } },
+        { "name": "Search Priority (POST)", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"search_priority\": 1\n}" }, "url": { "raw": "{{base_url}}/company/search-priority", "host": ["{{base_url}}"], "path": ["company", "search-priority"] } } },
+        { "name": "List Companies", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/companies", "host": ["{{base_url}}"], "path": ["companies"] } } },
+        { "name": "Rate Company", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"rating\": 5\n}" }, "url": { "raw": "{{base_url}}/companies/:company/rate", "host": ["{{base_url}}"], "path": ["companies", ":company", "rate"], "variable": [{ "key": "company", "value": "1" }] } } },
+        { "name": "Company Reviews", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/companies/:company/reviews", "host": ["{{base_url}}"], "path": ["companies", ":company", "reviews"], "variable": [{ "key": "company", "value": "1" }] } } },
+        { "name": "Block Company", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"block\": true\n}" }, "url": { "raw": "{{base_url}}/companies/:company/block", "host": ["{{base_url}}"], "path": ["companies", ":company", "block"], "variable": [{ "key": "company", "value": "1" }] } } },
+        { "name": "Unblock Company", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{base_url}}/companies/:company/unblock", "host": ["{{base_url}}"], "path": ["companies", ":company", "unblock"], "variable": [{ "key": "company", "value": "1" }] } } },
+        { "name": "Toggle Provider Block", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"block\": true\n}" }, "url": { "raw": "{{base_url}}/providers/:company/block", "host": ["{{base_url}}"], "path": ["providers", ":company", "block"], "variable": [{ "key": "company", "value": "1" }] } } }
+      ]
+    },
+    {
+      "name": "Protected - Products Import Integration Equipment",
+      "item": [
+        { "name": "Create or Attach Product", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Concrete Mixer\",\n  \"quantity\": 1,\n  \"rental_price\": 150,\n  \"rental_software_code\": \"CM-001\"\n}" }, "url": { "raw": "{{base_url}}/products/create-or-attach", "host": ["{{base_url}}"], "path": ["products", "create-or-attach"] } } },
+        { "name": "Products Import (Legacy)", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] }, "url": { "raw": "{{base_url}}/products/import", "host": ["{{base_url}}"], "path": ["products", "import"] } } },
+        { "name": "Import Sessions", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/import/sessions", "host": ["{{base_url}}"], "path": ["import", "sessions"] } } },
+        { "name": "Start Import Session", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{base_url}}/import/sessions", "host": ["{{base_url}}"], "path": ["import", "sessions"] } } },
+        { "name": "Import Session Detail", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/import/sessions/:session", "host": ["{{base_url}}"], "path": ["import", "sessions", ":session"], "variable": [{ "key": "session", "value": "1" }] } } },
+        { "name": "Import Upload File", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] }, "url": { "raw": "{{base_url}}/import/sessions/:session/upload", "host": ["{{base_url}}"], "path": ["import", "sessions", ":session", "upload"], "variable": [{ "key": "session", "value": "1" }] } } },
+        { "name": "Import Analyze", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{base_url}}/import/sessions/:session/analyze", "host": ["{{base_url}}"], "path": ["import", "sessions", ":session", "analyze"], "variable": [{ "key": "session", "value": "1" }] } } },
+        { "name": "Import Reanalyze", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{base_url}}/import/sessions/:session/reanalyze", "host": ["{{base_url}}"], "path": ["import", "sessions", ":session", "reanalyze"], "variable": [{ "key": "session", "value": "1" }] } } },
+        { "name": "Import Update Selections", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"items\": [\n    { \"id\": 1, \"action\": \"create\" }\n  ]\n}" }, "url": { "raw": "{{base_url}}/import/sessions/:session/selections", "host": ["{{base_url}}"], "path": ["import", "sessions", ":session", "selections"], "variable": [{ "key": "session", "value": "1" }] } } },
+        { "name": "Import Remove Item", "request": { "method": "DELETE", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/import/sessions/:session/items/:item", "host": ["{{base_url}}"], "path": ["import", "sessions", ":session", "items", ":item"], "variable": [{ "key": "session", "value": "1" }, { "key": "item", "value": "1" }] } } },
+        { "name": "Import Confirm", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"rows\": [\n    { \"row\": 1, \"action\": \"create\" }\n  ]\n}" }, "url": { "raw": "{{base_url}}/import/sessions/:session/confirm", "host": ["{{base_url}}"], "path": ["import", "sessions", ":session", "confirm"], "variable": [{ "key": "session", "value": "1" }] } } },
+        { "name": "Import Cancel", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{base_url}}/import/sessions/:session/cancel", "host": ["{{base_url}}"], "path": ["import", "sessions", ":session", "cancel"], "variable": [{ "key": "session", "value": "1" }] } } },
+        { "name": "Store Integration", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"integration_type\": \"flex\",\n  \"api_base_url\": \"https://api.example.com\",\n  \"api_key\": \"demo-key\"\n}" }, "url": { "raw": "{{base_url}}/integrations/store", "host": ["{{base_url}}"], "path": ["integrations", "store"] } } },
+        { "name": "Get Integration", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/integrations/:integration_type", "host": ["{{base_url}}"], "path": ["integrations", ":integration_type"], "variable": [{ "key": "integration_type", "value": "flex" }] } } },
+        { "name": "Flex Search", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/flex/search?keyword=test", "host": ["{{base_url}}"], "path": ["flex", "search"], "query": [{ "key": "keyword", "value": "test" }] } } },
+        { "name": "Flex Import Check", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/flex/import/check?flex_id=123", "host": ["{{base_url}}"], "path": ["flex", "import", "check"], "query": [{ "key": "flex_id", "value": "123" }] } } },
+        { "name": "Flex Import", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"flex_id\": \"123\",\n  \"quantity\": 1\n}" }, "url": { "raw": "{{base_url}}/flex/import", "host": ["{{base_url}}"], "path": ["flex", "import"] } } },
+        { "name": "Flex Link Inventory", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"inventory_id\": 1,\n  \"flex_id\": \"123\"\n}" }, "url": { "raw": "{{base_url}}/flex/link-inventory", "host": ["{{base_url}}"], "path": ["flex", "link-inventory"] } } },
+        { "name": "Create Equipment", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"product_id\": 1,\n  \"quantity\": 1,\n  \"rental_price\": 100\n}" }, "url": { "raw": "{{base_url}}/equipments", "host": ["{{base_url}}"], "path": ["equipments"] } } },
+        { "name": "List Equipments", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/equipments", "host": ["{{base_url}}"], "path": ["equipments"] } } },
+        { "name": "Delete Equipment", "request": { "method": "DELETE", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/equipments/:equipment", "host": ["{{base_url}}"], "path": ["equipments", ":equipment"], "variable": [{ "key": "equipment", "value": "1" }] } } },
+        { "name": "Update Equipment Quantity", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"quantity\": 2\n}" }, "url": { "raw": "{{base_url}}/equipments/:equipment/quantity", "host": ["{{base_url}}"], "path": ["equipments", ":equipment", "quantity"], "variable": [{ "key": "equipment", "value": "1" }] } } },
+        { "name": "Update Equipment Price", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"rental_price\": 120\n}" }, "url": { "raw": "{{base_url}}/equipments/:equipment/price", "host": ["{{base_url}}"], "path": ["equipments", ":equipment", "price"], "variable": [{ "key": "equipment", "value": "1" }] } } },
+        { "name": "Update Equipment Software Code", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"software_code\": \"SW-001\"\n}" }, "url": { "raw": "{{base_url}}/equipments/:equipment/software-code", "host": ["{{base_url}}"], "path": ["equipments", ":equipment", "software-code"], "variable": [{ "key": "equipment", "value": "1" }] } } },
+        { "name": "Update Equipment Description", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"description\": \"Updated description\"\n}" }, "url": { "raw": "{{base_url}}/equipments/:equipment/description", "host": ["{{base_url}}"], "path": ["equipments", ":equipment", "description"], "variable": [{ "key": "equipment", "value": "1" }] } } },
+        { "name": "Add Equipment Images", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "body": { "mode": "formdata", "formdata": [{ "key": "images[]", "type": "file", "src": "" }] }, "url": { "raw": "{{base_url}}/equipments/:equipment/images", "host": ["{{base_url}}"], "path": ["equipments", ":equipment", "images"], "variable": [{ "key": "equipment", "value": "1" }] } } },
+        { "name": "Delete Equipment Image", "request": { "method": "DELETE", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/equipments/images/:id", "host": ["{{base_url}}"], "path": ["equipments", "images", ":id"], "variable": [{ "key": "id", "value": "1" }] } } }
+      ]
+    },
+    {
+      "name": "Protected - Rental Supply Negotiation",
+      "item": [
+        { "name": "Create Rental Request", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Project Request\",\n  \"from_date\": \"2026-05-01\",\n  \"to_date\": \"2026-05-10\",\n  \"delivery_address\": \"123 Main St\",\n  \"company_products\": [\n    {\n      \"company_id\": 1,\n      \"products\": [\n        { \"product_id\": 1, \"requested_quantity\": 2 }\n      ]\n    }\n  ]\n}" }, "url": { "raw": "{{base_url}}/rental-requests", "host": ["{{base_url}}"], "path": ["rental-requests"] } } },
+        { "name": "Rental Jobs", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/rental-jobs", "host": ["{{base_url}}"], "path": ["rental-jobs"] } } },
+        { "name": "Rental Job Detail", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/rental-jobs/:id", "host": ["{{base_url}}"], "path": ["rental-jobs", ":id"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Rental Supplier Detail", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/rental-jobs/:rentalJobId/suppliers/:supplyJobId", "host": ["{{base_url}}"], "path": ["rental-jobs", ":rentalJobId", "suppliers", ":supplyJobId"], "variable": [{ "key": "rentalJobId", "value": "1" }, { "key": "supplyJobId", "value": "1" }] } } },
+        { "name": "Update Rental Job Basics", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated Job\"\n}" }, "url": { "raw": "{{base_url}}/rental-jobs/:id/basics", "host": ["{{base_url}}"], "path": ["rental-jobs", ":id", "basics"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Update Rental Job Quantities", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"items\": [\n    { \"product_id\": 1, \"requested_quantity\": 1, \"supply_job_id\": 1 }\n  ]\n}" }, "url": { "raw": "{{base_url}}/rental-jobs/:id/quantities", "host": ["{{base_url}}"], "path": ["rental-jobs", ":id", "quantities"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Cancel Rental Job", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"No longer needed\"\n}" }, "url": { "raw": "{{base_url}}/rental-jobs/:id/cancel", "host": ["{{base_url}}"], "path": ["rental-jobs", ":id", "cancel"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Rate Rental Job", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"rating\": 5,\n  \"comment\": \"Great\"\n}" }, "url": { "raw": "{{base_url}}/rental-jobs/:id/rate", "host": ["{{base_url}}"], "path": ["rental-jobs", ":id", "rate"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Skip Rental Job Rating", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{base_url}}/rental-jobs/:id/rate/skip", "host": ["{{base_url}}"], "path": ["rental-jobs", ":id", "rate", "skip"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Update Supply Job Name", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Supply Job 1\"\n}" }, "url": { "raw": "{{base_url}}/supply-jobs/:id/name", "host": ["{{base_url}}"], "path": ["supply-jobs", ":id", "name"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Update Supply Job Milestones", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"packing_date\": \"2026-05-01\"\n}" }, "url": { "raw": "{{base_url}}/supply-jobs/:id/milestones", "host": ["{{base_url}}"], "path": ["supply-jobs", ":id", "milestones"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Update Supply Job Quantities", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"items\": [\n    { \"product_id\": 1, \"can_supply\": 1 }\n  ]\n}" }, "url": { "raw": "{{base_url}}/supply-jobs/:id/quantities", "host": ["{{base_url}}"], "path": ["supply-jobs", ":id", "quantities"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Send Supply Offer", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"amount\": 500\n}" }, "url": { "raw": "{{base_url}}/supply-jobs/:id/offer", "host": ["{{base_url}}"], "path": ["supply-jobs", ":id", "offer"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Supply Jobs", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/supply-jobs?company_id=1", "host": ["{{base_url}}"], "path": ["supply-jobs"], "query": [{ "key": "company_id", "value": "1" }] } } },
+        { "name": "Supply Job Detail", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/supply-jobs/:id?company_id=1", "host": ["{{base_url}}"], "path": ["supply-jobs", ":id"], "query": [{ "key": "company_id", "value": "1" }], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Cancel Supply Job", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"cancel\"\n}" }, "url": { "raw": "{{base_url}}/supply-jobs/:supply_job_id/cancel", "host": ["{{base_url}}"], "path": ["supply-jobs", ":supply_job_id", "cancel"], "variable": [{ "key": "supply_job_id", "value": "1" }] } } },
+        { "name": "Complete Supply Job", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{base_url}}/supply-jobs/:id/complete", "host": ["{{base_url}}"], "path": ["supply-jobs", ":id", "complete"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Rate Supply Job", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"rating\": 5\n}" }, "url": { "raw": "{{base_url}}/supply-jobs/:id/rate", "host": ["{{base_url}}"], "path": ["supply-jobs", ":id", "rate"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Skip Supply Job Rating", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{base_url}}/supply-jobs/:id/rate/skip", "host": ["{{base_url}}"], "path": ["supply-jobs", ":id", "rate", "skip"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Rate Renter", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"rating\": 5\n}" }, "url": { "raw": "{{base_url}}/supply-jobs/:id/rate-renter", "host": ["{{base_url}}"], "path": ["supply-jobs", ":id", "rate-renter"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Skip Rate Renter", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{base_url}}/supply-jobs/:id/rate-renter/skip", "host": ["{{base_url}}"], "path": ["supply-jobs", ":id", "rate-renter", "skip"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Rating Reply", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reply\": \"Thank you\"\n}" }, "url": { "raw": "{{base_url}}/supply-jobs/:id/rating-reply", "host": ["{{base_url}}"], "path": ["supply-jobs", ":id", "rating-reply"], "variable": [{ "key": "id", "value": "1" }] } } },
+        { "name": "Send Offer to Job", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"target_company_id\": 1,\n  \"amount\": 100\n}" }, "url": { "raw": "{{base_url}}/jobs/:rental_job/offer", "host": ["{{base_url}}"], "path": ["jobs", ":rental_job", "offer"], "variable": [{ "key": "rental_job", "value": "1" }] } } },
+        { "name": "Offer Handshake", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{base_url}}/offers/:offer_id/handshake", "host": ["{{base_url}}"], "path": ["offers", ":offer_id", "handshake"], "variable": [{ "key": "offer_id", "value": "1" }] } } },
+        { "name": "Cancel Negotiation", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"No longer required\"\n}" }, "url": { "raw": "{{base_url}}/offers/:offer_id/cancel-negotiation", "host": ["{{base_url}}"], "path": ["offers", ":offer_id", "cancel-negotiation"], "variable": [{ "key": "offer_id", "value": "1" }] } } }
+      ]
+    },
+    {
+      "name": "Protected - Comments Support Subscription",
+      "item": [
+        { "name": "Supply Job Comments", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/supply-jobs/:supplyJobId/comments", "host": ["{{base_url}}"], "path": ["supply-jobs", ":supplyJobId", "comments"], "variable": [{ "key": "supplyJobId", "value": "1" }] } } },
+        { "name": "Create Comment", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"message\": \"Comment text\"\n}" }, "url": { "raw": "{{base_url}}/supply-jobs/:supplyJobId/comments", "host": ["{{base_url}}"], "path": ["supply-jobs", ":supplyJobId", "comments"], "variable": [{ "key": "supplyJobId", "value": "1" }] } } },
+        { "name": "Update Comment", "request": { "method": "PUT", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"message\": \"Updated comment\"\n}" }, "url": { "raw": "{{base_url}}/comments/:commentId", "host": ["{{base_url}}"], "path": ["comments", ":commentId"], "variable": [{ "key": "commentId", "value": "1" }] } } },
+        { "name": "Delete Comment", "request": { "method": "DELETE", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/comments/:commentId", "host": ["{{base_url}}"], "path": ["comments", ":commentId"], "variable": [{ "key": "commentId", "value": "1" }] } } },
+        { "name": "Create Support Request", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"user@example.com\",\n  \"description\": \"Need help\",\n  \"issue_type_id\": 1\n}" }, "url": { "raw": "{{base_url}}/support-request", "host": ["{{base_url}}"], "path": ["support-request"] } } },
+        { "name": "Current Subscription", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/subscriptions/current", "host": ["{{base_url}}"], "path": ["subscriptions", "current"] } } },
+        { "name": "Cancel Subscription", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": { "raw": "{{base_url}}/subscriptions/cancel", "host": ["{{base_url}}"], "path": ["subscriptions", "cancel"] } } },
+        { "name": "Update Subscription Payment", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"payment_method_id\": \"pm_123\"\n}" }, "url": { "raw": "{{base_url}}/subscriptions/update-payment", "host": ["{{base_url}}"], "path": ["subscriptions", "update-payment"] } } },
+        { "name": "Subscription Payment Method", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/subscription/payment-method", "host": ["{{base_url}}"], "path": ["subscription", "payment-method"] } } },
+        { "name": "Create Subscription", "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"payment_method_id\": \"pm_123\",\n  \"billing_details\": {\n    \"name\": \"John Doe\",\n    \"address\": {\n      \"line1\": \"123 Main St\",\n      \"city\": \"New York\",\n      \"state\": \"NY\",\n      \"postal_code\": \"10001\",\n      \"country\": \"US\"\n    }\n  }\n}" }, "url": { "raw": "{{base_url}}/subscriptions/create", "host": ["{{base_url}}"], "path": ["subscriptions", "create"] } } },
+        { "name": "Subscription Billing History", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/subscription/billing-history", "host": ["{{base_url}}"], "path": ["subscription", "billing-history"] } } },
+        { "name": "Download Invoice", "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" }], "url": { "raw": "{{base_url}}/subscription/invoice/:invoiceId", "host": ["{{base_url}}"], "path": ["subscription", "invoice", ":invoiceId"], "variable": [{ "key": "invoiceId", "value": "in_123" }] } } }
+      ]
+    }
+  ]
+}

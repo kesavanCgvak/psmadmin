@@ -32,6 +32,7 @@ class CompanyManagementController extends Controller
     {
         $companies = Company::with(['region', 'country', 'city', 'currency', 'rentalSoftware'])
             ->withCount(['users', 'equipments'])
+            ->orderByRaw('created_at IS NULL, created_at DESC')
             ->get();
 
         $companyIds = $companies->pluck('id')->values();
