@@ -196,6 +196,7 @@ Route::middleware(['jwt.verify'])->group(function () {
 Route::middleware(['jwt.verify'])->prefix('provider/api-keys')->group(function () {
     Route::get('/', [ProviderApiKeyController::class, 'index']);
     Route::post('/generate', [ProviderApiKeyController::class, 'generate']);
+    Route::get('/{id}/reveal', [ProviderApiKeyController::class, 'reveal'])->whereNumber('id');
     Route::post('/{id}/revoke', [ProviderApiKeyController::class, 'revoke'])->whereNumber('id');
 });
 

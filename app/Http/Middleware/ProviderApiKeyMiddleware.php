@@ -60,7 +60,13 @@ class ProviderApiKeyMiddleware
         }
 
         $providerUser = $apiKey->providerUser;
-        if (!$providerUser || !$providerUser->company || $providerUser->company->account_type !== 'provider') {
+        $isProvider = $providerUser
+            && (
+                strtolower((string) ($providerUser->account_type ?? '')) === 'provider'
+                || strtolower((string) ($providerUser->company->account_type ?? '')) === 'provider'
+            );
+
+        if (!$providerUser || !$providerUser->company || !$isProvider) {
             Log::warning('Partner API auth failed: API key linked to invalid provider context', [
                 'provider_user_id' => $apiKey->provider_user_id,
                 'api_key_id' => $apiKey->id,

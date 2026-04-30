@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
@@ -85,7 +86,7 @@ class ProviderApiKeyController extends Controller
             $keyPrefix = substr($plainApiKey, 0, 14);
             $name = $request->input('name') ?: 'Default key';
 
-            DB::transaction(function () use ($user, $hash, $keyPrefix, $name) {
+            DB::transaction(function () use ($user, $hash, $keyPrefix, $name, $plainApiKey) {
                 ProviderApiKey::where('provider_user_id', $user->id)
                     ->where('is_active', true)
                     ->update([
@@ -98,6 +99,7 @@ class ProviderApiKeyController extends Controller
                     'name' => $name,
                     'key_prefix' => $keyPrefix,
                     'key_hash' => $hash,
+                    'encrypted_key' => Crypt::encryptString($plainApiKey),
                     'is_active' => true,
                 ]);
             });
@@ -169,9 +171,68 @@ class ProviderApiKeyController extends Controller
         }
     }
 
+    public function reveal(int $id): JsonResponse
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+            if (!$this->isProviderUser($user)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only provider users can reveal API keys.',
+                ], 403);
+            }
+
+            $apiKey = ProviderApiKey::where('provider_user_id', $user->id)->find($id);
+            if (!$apiKey) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'API key not found.',
+                ], 404);
+            }
+
+            if (empty($apiKey->encrypted_key)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Full key is not available for this record. Please generate a new key.',
+                ], 422);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'API key fetched successfully.',
+                'data' => [
+                    'id' => $apiKey->id,
+                    'key_prefix' => $apiKey->key_prefix,
+                    'api_key' => Crypt::decryptString($apiKey->encrypted_key),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Provider API key reveal failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to reveal API key.',
+            ], 500);
+        }
+    }
+
     private function isProviderUser($user): bool
     {
-        return (bool) ($user && $user->company && $user->company->account_type === 'provider');
+        if (!$user) {
+            return false;
+        }
+
+        $userAccountType = strtolower((string) ($user->account_type ?? ''));
+        if ($userAccountType === 'provider') {
+            return true;
+        }
+
+        // Fallback for environments that may have account_type at company level.
+        $companyAccountType = strtolower((string) ($user->company->account_type ?? ''));
+
+        return $companyAccountType === 'provider';
     }
 }
 

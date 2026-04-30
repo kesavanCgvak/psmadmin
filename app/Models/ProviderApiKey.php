@@ -11,6 +11,7 @@ class ProviderApiKey extends Model
         'name',
         'key_prefix',
         'key_hash',
+        'encrypted_key',
         'is_active',
         'last_used_at',
         'expires_at',
@@ -26,6 +27,7 @@ class ProviderApiKey extends Model
 
     protected $hidden = [
         'key_hash',
+        'encrypted_key',
     ];
 
     public function providerUser()
