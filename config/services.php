@@ -46,4 +46,8 @@ return [
         'key' => env('TEXTMAGIC_API_KEY'),
     ],
 
+    'rentman' => [
+        'base_url' => env('RENTMAN_API_BASE_URL', 'https://api.rentman.net'),
+    ],
+
 ];

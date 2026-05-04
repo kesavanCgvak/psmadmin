@@ -41,13 +41,18 @@ class CompanyIntegration extends Model
 
     /**
      * Check if the integration has valid credentials.
-     * Flex uses api_key; others use client_id + client_secret.
+     * Flex requires api_key + api_base_url; Rentman requires api_key.
      */
     public function isConnected(): bool
     {
-        if ($this->integration_type === 'flex') {
-            return !empty($this->api_key) && !empty($this->api_base_url);
+        if (in_array($this->integration_type, ['flex', 'rentman'], true)) {
+            if ($this->integration_type === 'flex') {
+                return !empty($this->api_key) && !empty($this->api_base_url);
+            }
+
+            return !empty($this->api_key);
         }
+
         return !empty($this->client_id) && !empty($this->client_secret);
     }
 }

@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\IntegrationValidationException;
 use App\Http\Controllers\Controller;
 use App\Models\CompanyIntegration;
+use App\Services\Integrations\CompanyIntegrationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -12,6 +14,10 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 
 class IntegrationController extends Controller
 {
+    public function __construct(private readonly CompanyIntegrationService $integrationService)
+    {
+    }
+
     /**
      * Store or update API credentials for an integration.
      *
@@ -30,29 +36,15 @@ class IntegrationController extends Controller
                 ], 403);
             }
 
-            $rules = [
-                'integration_type' => 'required|string|max:50|regex:/^[a-z0-9_-]+$/',
-                'api_base_url' => 'required|string|url|max:500',
-                'api_key' => 'nullable|string|max:1000',
-                'client_id' => 'nullable|string|max:500',
-                'client_secret' => 'nullable|string|max:1000',
-            ];
-
-            $existingIntegration = CompanyIntegration::where('company_id', $companyId)
-                ->where('integration_type', $request->integration_type)
-                ->first();
-
-            if ($request->integration_type === 'flex') {
-                // For existing Flex integrations, allow keeping the current API key.
-                if (!$existingIntegration || empty($existingIntegration->api_key)) {
-                    $rules['api_key'] = 'required|string|max:1000';
-                }
-            } else {
-                $rules['client_id'] = 'required|string|max:500';
-                $rules['client_secret'] = 'required|string|max:1000';
+            $normalizedType = strtolower((string) $request->input('integration_type'));
+            if ($normalizedType === 'rentman' && !$request->filled('api_key') && $request->filled('auth_token')) {
+                $request->merge(['api_key' => $request->input('auth_token')]);
             }
-
-            $validator = Validator::make($request->all(), $rules);
+            $request->merge(['integration_type' => $normalizedType]);
+            $validator = Validator::make(
+                $request->all(),
+                $this->integrationService->buildValidationRules($normalizedType)
+            );
 
             if ($validator->fails()) {
                 return response()->json([
@@ -62,41 +54,21 @@ class IntegrationController extends Controller
                 ], 422);
             }
 
-            $data = [
-                'api_base_url' => $request->api_base_url,
-            ];
-
-            if ($request->integration_type === 'flex') {
-                if ($request->filled('api_key')) {
-                    $data['api_key'] = $request->api_key;
-                }
-            } else {
-                $data['client_id'] = $request->client_id;
-                $data['client_secret'] = $request->client_secret;
-            }
-
-            $integration = CompanyIntegration::updateOrCreate(
-                [
-                    'company_id' => $companyId,
-                    'integration_type' => $request->integration_type,
-                ],
-                $data
-            );
+            $validated = $validator->validated();
+            $integration = $this->integrationService->upsert($companyId, $validated);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Integration credentials saved successfully.',
-                'data' => [
-                    'integration_type' => $integration->integration_type,
-                    'api_base_url' => $integration->api_base_url,
-                    'connected' => $integration->isConnected(),
-                    'has_api_key' => $integration->integration_type === 'flex' ? !empty($integration->api_key) : null,
-                    'api_key_masked' => $integration->integration_type === 'flex'
-                        ? $this->maskSecretKeepingLastFour((string) $integration->api_key)
-                        : null,
-                ],
+                'data' => $this->formatIntegrationResponse($integration),
             ], 200);
 
+        } catch (IntegrationValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'error_code' => $e->errorCode(),
+            ], $e->httpStatus());
         } catch (\Exception $e) {
             Log::error('Integration store error', [
                 'error' => $e->getMessage(),
@@ -132,13 +104,14 @@ class IntegrationController extends Controller
                 ->first();
 
             if (!$integration) {
+                $usesApiKey = $this->integrationService->usesApiKey($integration_type);
                 return response()->json([
                     'success' => true,
                     'data' => [
                         'integration_type' => $integration_type,
                         'api_base_url' => null,
                         'connected' => false,
-                        'has_api_key' => $integration_type === 'flex' ? false : null,
+                        'has_api_key' => $usesApiKey ? false : null,
                         'api_key_masked' => null,
                     ],
                 ], 200);
@@ -146,15 +119,7 @@ class IntegrationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'integration_type' => $integration->integration_type,
-                    'api_base_url' => $integration->api_base_url,
-                    'connected' => $integration->isConnected(),
-                    'has_api_key' => $integration->integration_type === 'flex' ? !empty($integration->api_key) : null,
-                    'api_key_masked' => $integration->integration_type === 'flex'
-                        ? $this->maskSecretKeepingLastFour((string) $integration->api_key)
-                        : null,
-                ],
+                'data' => $this->formatIntegrationResponse($integration),
             ], 200);
 
         } catch (\Exception $e) {
@@ -181,5 +146,20 @@ class IntegrationController extends Controller
         }
 
         return str_repeat('*', $length - 4) . substr($value, -4);
+    }
+
+    private function formatIntegrationResponse(CompanyIntegration $integration): array
+    {
+        $usesApiKey = $this->integrationService->usesApiKey($integration->integration_type);
+
+        return [
+            'integration_type' => $integration->integration_type,
+            'api_base_url' => $integration->api_base_url,
+            'connected' => $integration->isConnected(),
+            'has_api_key' => $usesApiKey ? !empty($integration->api_key) : null,
+            'api_key_masked' => $usesApiKey
+                ? $this->maskSecretKeepingLastFour((string) $integration->api_key)
+                : null,
+        ];
     }
 }
