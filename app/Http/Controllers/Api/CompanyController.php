@@ -745,6 +745,21 @@ class CompanyController extends Controller
                 ->pluck('company_id')
                 ->toArray();
 
+            $distanceExpression = "(
+                COALESCE(
+                    6371 * acos(
+                        LEAST(
+                            1.0,
+                            cos(radians($cityLat))
+                            * cos(radians(companies.latitude))
+                            * cos(radians(companies.longitude) - radians($cityLng))
+                            + sin(radians($cityLat))
+                            * sin(radians(companies.latitude))
+                        )
+                    ), 0
+                )
+            )";
+
             // ✅ Main query with joins + geolocation (exclude admin-blocked companies)
             $query = Company::with(['defaultContactProfile'])
                 ->whereNull('blocked_by_admin_at')
@@ -788,20 +803,7 @@ class CompanyController extends Controller
                     'cities.name as city_name',
                     'states_provinces.name as state_name',
                     'countries.name as country_name',
-                    DB::raw("(
-                    COALESCE(
-                        6371 * acos(
-                            LEAST(
-                                1.0,
-                                cos(radians($cityLat))
-                                * cos(radians(companies.latitude))
-                                * cos(radians(companies.longitude) - radians($cityLng))
-                                + sin(radians($cityLat))
-                                * sin(radians(companies.latitude))
-                            )
-                        ), 0
-                    )
-                ) as distance")
+                    DB::raw("$distanceExpression as distance")
                 )
                 ->where('companies.id', '!=', $user->company_id)
                 ->where('companies.hide_from_gear_finder', 0);
@@ -817,8 +819,10 @@ class CompanyController extends Controller
             }
 
             // ✅ Distance or same-city fallback
-            $query->havingRaw('distance <= ? OR companies.city_id = ?', [$radius, $validated['city_id']])
-                ->orderBy('distance');
+            $query->where(function ($distanceQuery) use ($distanceExpression, $radius, $validated) {
+                $distanceQuery->whereRaw("$distanceExpression <= ?", [$radius])
+                    ->orWhere('companies.city_id', $validated['city_id']);
+            })->orderBy('distance');
 
             $results = $query->get();
 
