@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\CurrencyController;
 use App\Http\Controllers\Api\DateFormatController;
 use App\Http\Controllers\Api\EquipmentController;
 use App\Http\Controllers\Api\FlexInventoryController;
+use App\Http\Controllers\Api\RentmanEquipmentController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\GeoController;
 use App\Http\Controllers\Api\ImportController;
@@ -197,6 +198,15 @@ Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
     Route::get('/import/check', [FlexInventoryController::class, 'checkImport']);
     Route::post('/import', [FlexInventoryController::class, 'import']);
     Route::post('/link-inventory', [FlexInventoryController::class, 'linkInventory']);
+});
+
+// Rentman equipment (local cache + import; search is DB-only)
+Route::middleware(['jwt.verify'])->prefix('rentman/equipment')->group(function () {
+    Route::post('/sync', [RentmanEquipmentController::class, 'sync']);
+    Route::get('/search', [RentmanEquipmentController::class, 'search']);
+    Route::get('/import/check', [RentmanEquipmentController::class, 'checkImport']);
+    Route::post('/import', [RentmanEquipmentController::class, 'import']);
+    Route::post('/link-inventory', [RentmanEquipmentController::class, 'linkInventory']);
 });
 
 Route::middleware(['jwt.verify'])->group(function () {

@@ -3,6 +3,7 @@
 namespace App\Services\Integrations;
 
 use App\Exceptions\IntegrationValidationException;
+use App\Jobs\SyncRentmanEquipmentJob;
 use App\Models\CompanyIntegration;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
@@ -79,7 +80,7 @@ class CompanyIntegrationService
             $data['api_key'] = $validatedData['api_key'];
         }
 
-        return DB::transaction(function () use ($existingDifferentSource, $companyId, $integrationType, $data) {
+        $integration = DB::transaction(function () use ($existingDifferentSource, $companyId, $integrationType, $data) {
             $existingDifferentSource->delete();
 
             return CompanyIntegration::updateOrCreate(
@@ -90,6 +91,12 @@ class CompanyIntegrationService
                 $data
             );
         });
+
+        if ($integrationType === 'rentman') {
+            SyncRentmanEquipmentJob::dispatch($companyId);
+        }
+
+        return $integration;
     }
 
     public function usesApiKey(string $integrationType): bool

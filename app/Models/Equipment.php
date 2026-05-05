@@ -19,6 +19,7 @@ class Equipment extends Model
         'software_code',
         'company_id',
         'flex_resource_id',
+        'rentman_equipment_id',
     ];
 
     public function user()
