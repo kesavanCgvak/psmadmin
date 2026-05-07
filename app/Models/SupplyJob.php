@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\RentalJobProduct;
 use App\Models\RentalJobComment;
+use App\Models\User;
 
 class SupplyJob extends Model
 {
@@ -103,6 +104,11 @@ class SupplyJob extends Model
     public function renterRating()
     {
         return $this->hasOne(RenterRating::class, 'supply_job_id');
+    }
+
+    public function cancelledByUser()
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
     }
 
 }

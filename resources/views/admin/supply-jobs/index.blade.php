@@ -117,7 +117,10 @@
                                             'completed' => 'success',
                                         ];
                                         $statusColor = $statusColors[$job->status] ?? 'secondary';
-                                        $statusDisplay = ucfirst(str_replace('_', ' ', $job->status ?? 'N/A'));
+                                        $isAdminCancelled = $job->status === 'cancelled' && optional($job->cancelledByUser)->is_admin;
+                                        $statusDisplay = $isAdminCancelled
+                                            ? 'Admin Cancelled'
+                                            : ucfirst(str_replace('_', ' ', $job->status ?? 'N/A'));
                                     @endphp
                                     <span class="badge badge-{{ $statusColor }}">{{ $statusDisplay }}</span>
                                 </td>
@@ -126,11 +129,62 @@
                                     <a href="{{ route('admin.supply-jobs.show', $job) }}" class="btn btn-info btn-sm" title="View Details">
                                         <i class="fas fa-eye"></i>
                                     </a>
+                                    @php
+                                        $canAdminCancel = !in_array($job->status, ['completed', 'rated'], true) && !$isAdminCancelled;
+                                    @endphp
+                                    @if($canAdminCancel)
+                                        <button
+                                            type="button"
+                                            class="btn btn-danger btn-sm js-open-admin-cancel-modal"
+                                            title="Delete Supply Job"
+                                            data-toggle="modal"
+                                            data-target="#adminCancelSupplyJobModal"
+                                            data-cancel-url="{{ route('admin.supply-jobs.admin-cancel', $job) }}"
+                                            data-job-name="{{ $job->rentalJob?->name ? 'Job: ' . $job->rentalJob->name : 'Supply Job #' . $job->id }}"
+                                        >
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    @endif
                                 </td>
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="adminCancelSupplyJobModal" tabindex="-1" role="dialog" aria-labelledby="adminCancelSupplyJobModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <form id="adminCancelSupplyJobForm" method="POST">
+                    @csrf
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="adminCancelSupplyJobModalLabel">Delete Supply Job</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-2" id="adminCancelSupplyJobTarget">This supply job will be marked as Admin Cancelled.</p>
+                        <div class="form-group">
+                            <label for="admin_cancel_reason">Reason (optional)</label>
+                            <textarea id="admin_cancel_reason" name="reason" rows="2" class="form-control" placeholder="Reason for admin deletion/cancellation"></textarea>
+                        </div>
+                        <div class="form-group form-check">
+                            <input type="checkbox" name="send_delete_email" id="admin_cancel_send_delete_email" value="1" class="form-check-input" checked>
+                            <label class="form-check-label" for="admin_cancel_send_delete_email">
+                                Send "job deleted" email to renter and provider
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-trash"></i> Delete Supply Job
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -151,6 +205,16 @@
                     { "responsivePriority": 2, "targets": 9 }
                 ],
                 "order": [[0, "desc"]]
+            });
+
+            $('.js-open-admin-cancel-modal').on('click', function() {
+                const cancelUrl = $(this).data('cancel-url');
+                const jobName = $(this).data('job-name');
+
+                $('#adminCancelSupplyJobForm').attr('action', cancelUrl);
+                $('#adminCancelSupplyJobTarget').text(jobName + ' will be marked as Admin Cancelled.');
+                $('#admin_cancel_reason').val('');
+                $('#admin_cancel_send_delete_email').prop('checked', true);
             });
         });
     </script>

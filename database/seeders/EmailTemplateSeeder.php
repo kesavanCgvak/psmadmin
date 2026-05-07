@@ -85,6 +85,13 @@ class EmailTemplateSeeder extends Seeder
                 'file' => 'supplyJobCancelled.blade.php',
             ],
             [
+                'name' => 'supplyJobDeletedByAdmin',
+                'subject' => 'Supply Job Deleted by Admin',
+                'description' => 'Email sent when admin deletes/cancels a supply job',
+                'variables' => ['provider', 'supply_job_name', 'status', 'reason_display', 'date', 'products_section', 'current_year'],
+                'file' => 'supplyJobDeletedByAdmin.blade.php',
+            ],
+            [
                 'name' => 'jobHandshakeAccepted',
                 'subject' => 'Job Handshake Accepted',
                 'description' => 'Email sent when a job handshake is accepted',

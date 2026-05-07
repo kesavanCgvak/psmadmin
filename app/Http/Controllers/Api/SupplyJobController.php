@@ -34,7 +34,7 @@ class SupplyJobController extends Controller
         // Validate query params
         $validated = $request->validate([
             'company_id' => 'required|integer|exists:companies,id',
-            'status' => 'nullable|string|in:pending,negotiating,accepted,cancelled,closed,partially_accepted,completed,completed_pending_rating,rated',
+            'status' => 'nullable|string|in:pending,negotiating,accepted,cancelled,admin_cancelled,closed,partially_accepted,completed,completed_pending_rating,rated',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
             'page' => 'nullable|integer|min:1',
@@ -61,6 +61,7 @@ class SupplyJobController extends Controller
                 'rentalJob:id,name,from_date,to_date,user_id',
                 'rentalJob.user:id,company_id',
                 'rentalJob.user.company:id,name',
+                'cancelledByUser:id,is_admin',
                 'jobRating',
                 'ratingReply',
                 'renterRating',
@@ -74,7 +75,14 @@ class SupplyJobController extends Controller
 
             // Apply filters
             if ($status) {
-                $query->where('status', $status);
+                if ($status === 'admin_cancelled') {
+                    $query->where('status', 'cancelled')
+                        ->whereHas('cancelledByUser', function ($q) {
+                            $q->where('is_admin', 1);
+                        });
+                } else {
+                    $query->where('status', $status);
+                }
             }
             if ($startDate) {
                 $query->whereHas('rentalJob', function ($q) use ($startDate) {
@@ -101,7 +109,7 @@ class SupplyJobController extends Controller
 
             //Transform data (works for both cases)
             $data = $collection->map(function (SupplyJob $job) {
-                $effectiveStatus = $this->effectiveSupplyJobStatus($job->status, $job->jobRating);
+                $effectiveStatus = $this->effectiveSupplyJobStatus($job);
                 $row = [
                     'id' => $job->id,
                     'name' => $job->rentalJob?->name ?? '',
@@ -203,6 +211,7 @@ class SupplyJobController extends Controller
         try {
             $supplyJob = SupplyJob::with([
                 'rentalJob:id,name,from_date,to_date,delivery_address',
+                'cancelledByUser:id,is_admin',
                 'jobRating',
                 'ratingReply',
                 'renterRating',
@@ -291,7 +300,7 @@ class SupplyJobController extends Controller
             }
 
 
-            $effectiveStatus = $this->effectiveSupplyJobStatus($supplyJob->status, $supplyJob->jobRating);
+            $effectiveStatus = $this->effectiveSupplyJobStatus($supplyJob);
 
             // Renter company's average rating and count: only for THIS renter company (from this supply job's rental job)
             $renterCompanyId = $rentalJob->user?->company_id ?? null;
@@ -957,8 +966,19 @@ class SupplyJobController extends Controller
      * "rated" is only shown when the renter has actually submitted a rating or skipped (job_rating has rated_at or skipped_at).
      * Fixes inconsistency where status could be "rated" in DB but no rating was given.
      */
-    private function effectiveSupplyJobStatus(string $status, ?JobRating $jobRating): string
+    private function effectiveSupplyJobStatus(SupplyJob $supplyJob): string
     {
+        if (
+            $supplyJob->status === 'cancelled'
+            && $supplyJob->cancelledByUser
+            && (bool) $supplyJob->cancelledByUser->is_admin
+        ) {
+            return 'admin_cancelled';
+        }
+
+        $status = $supplyJob->status;
+        $jobRating = $supplyJob->jobRating;
+
         if ($status !== 'rated') {
             return $status;
         }
