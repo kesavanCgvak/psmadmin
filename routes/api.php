@@ -24,8 +24,10 @@ use App\Http\Controllers\Api\JobNegotiationController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MailTestController;
 use App\Http\Controllers\Api\PaymentStatusController;
+use App\Http\Controllers\Api\PartnerProductController;
 use App\Http\Controllers\Api\PricingSchemeController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\ProviderApiKeyController;
 use App\Http\Controllers\Api\RegistrationCheckController;
 use App\Http\Controllers\Api\RentalJobActionsController;
 use App\Http\Controllers\Api\RentalJobController;
@@ -190,6 +192,18 @@ Route::middleware('jwt.verify')->prefix('import')->group(function () {
 Route::middleware(['jwt.verify'])->group(function () {
     Route::post('/integrations/store', [IntegrationController::class, 'store']);
     Route::get('/integrations/{integration_type}', [IntegrationController::class, 'show']);
+});
+
+Route::middleware(['jwt.verify'])->prefix('provider/api-keys')->group(function () {
+    Route::get('/', [ProviderApiKeyController::class, 'index']);
+    Route::post('/generate', [ProviderApiKeyController::class, 'generate']);
+    Route::get('/{id}/reveal', [ProviderApiKeyController::class, 'reveal'])->whereNumber('id');
+    Route::post('/{id}/revoke', [ProviderApiKeyController::class, 'revoke'])->whereNumber('id');
+});
+
+Route::prefix('v1/partner')->middleware(['provider.api.key', 'throttle:60,1'])->group(function () {
+    Route::get('/products/search', [PartnerProductController::class, 'search']);
+    Route::get('/products/{product_id}', [PartnerProductController::class, 'details'])->whereNumber('product_id');
 });
 
 // Flex Rental Solutions inventory import (company-specific credentials)
