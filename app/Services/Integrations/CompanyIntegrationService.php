@@ -93,7 +93,11 @@ class CompanyIntegrationService
         });
 
         if ($integrationType === 'rentman') {
-            SyncRentmanEquipmentJob::dispatch($companyId);
+            Log::info('Running Rentman equipment sync immediately after integration save.', [
+                'company_id' => $companyId,
+                'queue_connection' => config('queue.default'),
+            ]);
+            SyncRentmanEquipmentJob::dispatchSync($companyId);
         }
 
         return $integration;

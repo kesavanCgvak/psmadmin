@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SyncRentmanEquipmentJob;
 use App\Models\CompanyIntegration;
 use App\Models\Equipment;
+use App\Models\LinearUnit;
 use App\Models\Product;
 use App\Models\RentmanEquipment;
+use App\Models\WeightUnit;
 use App\Services\FlexService;
 use App\Services\RentmanInventoryImportService;
 use App\Services\RentmanService;
@@ -46,11 +48,16 @@ class RentmanEquipmentController extends Controller
             ], 422);
         }
 
-        SyncRentmanEquipmentJob::dispatch($companyId);
+        Log::info('Manual Rentman sync requested; running sync immediately.', [
+            'company_id' => $companyId,
+            'queue_connection' => config('queue.default'),
+        ]);
+
+        SyncRentmanEquipmentJob::dispatchSync($companyId);
 
         return response()->json([
             'success' => true,
-            'message' => 'Rentman equipment sync has been queued.',
+            'message' => 'Rentman equipment sync completed successfully.',
         ], 200);
     }
 
@@ -200,6 +207,8 @@ class RentmanEquipmentController extends Controller
         $validator = Validator::make($request->all(), [
             'inventory_id' => 'required|integer|min:1',
             'rentman_id' => 'required|string',
+            'quantity' => 'nullable|integer|min:1',
+            'rental_rate' => 'nullable|numeric|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -212,9 +221,25 @@ class RentmanEquipmentController extends Controller
 
         $inventoryId = (int) $request->input('inventory_id');
         $rentmanId = (string) $request->input('rentman_id');
+        $quantity = $request->filled('quantity') ? (int) $request->input('quantity') : null;
+        $rentalOverride = $request->filled('rental_rate') ? (float) $request->input('rental_rate') : null;
+        $row = RentmanService::fetchAndStoreEquipmentDetails($companyId, $rentmanId);
+        $this->assertRentmanMandatoryFields($row);
+        if ($rentalOverride === null && $row->subrental_costs !== null) {
+            $rentalOverride = (float) $row->subrental_costs;
+        }
+        $description = trim((string) ($row->shop_description_long ?? ''));
+        $description = $description === '' ? null : $description;
 
         try {
-            $result = RentmanInventoryImportService::linkRentmanToExistingInventory($companyId, $inventoryId, $rentmanId);
+            $result = RentmanInventoryImportService::linkRentmanToExistingInventory(
+                $companyId,
+                $inventoryId,
+                $rentmanId,
+                $quantity,
+                $rentalOverride,
+                $description
+            );
 
             if (isset($result['status']) && $result['status'] === 'already_linked') {
                 return response()->json([
@@ -275,7 +300,6 @@ class RentmanEquipmentController extends Controller
             'rentman_id' => 'required|string',
             'quantity' => 'required|numeric|min:1',
             'rental_rate' => 'nullable|numeric|min:0',
-            'rental_price' => 'nullable|numeric|min:0',
             'confirm' => 'nullable|boolean',
             'product_id' => 'nullable|integer|min:1',
         ]);
@@ -292,12 +316,7 @@ class RentmanEquipmentController extends Controller
         $quantity = (int) $request->input('quantity');
         $confirm = $request->boolean('confirm', true);
 
-        $rentalOverride = null;
-        if ($request->exists('rental_price')) {
-            $rentalOverride = (float) $request->input('rental_price');
-        } elseif ($request->has('rental_rate')) {
-            $rentalOverride = (float) $request->input('rental_rate');
-        }
+        $rentalOverride = $request->filled('rental_rate') ? (float) $request->input('rental_rate') : null;
 
         $explicitProductId = $request->filled('product_id') ? (int) $request->input('product_id') : null;
 
@@ -309,9 +328,16 @@ class RentmanEquipmentController extends Controller
             ], 404);
         }
 
+        $row = RentmanService::fetchAndStoreEquipmentDetails($companyId, $rentmanId);
+        $this->assertRentmanMandatoryFields($row);
         $label = RentmanService::primaryLabel($row);
         $parsed = FlexService::parseBrandAndModel($label);
         $softwareCode = trim((string) ($row->code ?? '')) !== '' ? trim((string) $row->code) : $rentmanId;
+        if ($rentalOverride === null && $row->subrental_costs !== null) {
+            $rentalOverride = (float) $row->subrental_costs;
+        }
+        $description = trim((string) ($row->shop_description_long ?? ''));
+        $description = $description === '' ? null : $description;
 
         try {
             $checkResult = RentmanInventoryImportService::checkImportStatus($companyId, $rentmanId);
@@ -345,6 +371,19 @@ class RentmanEquipmentController extends Controller
                     ], 404);
                 }
 
+                $existingInventoryForProduct = Equipment::where('company_id', $companyId)
+                    ->where('product_id', $explicitProductId)
+                    ->first();
+                if ($existingInventoryForProduct) {
+                    return response()->json([
+                        'status' => 'inventory_exists',
+                        'inventory_id' => $existingInventoryForProduct->id,
+                        'brand_name' => $checkResult['brand_name'] ?? null,
+                        'model' => $checkResult['model'] ?? null,
+                        'rentman' => $checkResult['rentman'] ?? null,
+                    ], 200);
+                }
+
                 if (!$confirm) {
                     return response()->json([
                         'status' => 'product_exists',
@@ -361,7 +400,8 @@ class RentmanEquipmentController extends Controller
                         $rentmanId,
                         $quantity,
                         $rentalOverride,
-                        $softwareCode
+                        $softwareCode,
+                        $description
                     );
                 } catch (\Exception $e) {
                     if ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate entry')) {
@@ -395,7 +435,8 @@ class RentmanEquipmentController extends Controller
                 $parsed,
                 $softwareCode,
                 $quantity,
-                $rentalOverride
+                $rentalOverride,
+                $description
             );
         } catch (\RuntimeException $e) {
             return response()->json([
@@ -423,10 +464,13 @@ class RentmanEquipmentController extends Controller
         array $parsed,
         string $softwareCode,
         int $quantity,
-        ?float $rentalRate
+        ?float $rentalRate,
+        ?string $description
     ): JsonResponse {
         $brandId = $parsed['brand_id'] ?? null;
         $model = $parsed['model'] ?? RentmanService::primaryLabel($row) ?: 'Unknown';
+        $linearUnitId = $this->resolveRentmanLinearUnitId();
+        $weightUnitId = $this->resolveRentmanWeightUnitId();
 
         DB::beginTransaction();
         try {
@@ -437,13 +481,14 @@ class RentmanEquipmentController extends Controller
                 'model' => $model,
                 'psm_code' => PsmCodeGenerator::generateNext(),
                 'is_verified' => 0,
-                'height' => null,
-                'width' => null,
-                'length' => null,
-                'weight' => null,
-                'linear_unit_id' => null,
-                'weight_unit_id' => null,
+                'height' => $row->height,
+                'width' => $row->width,
+                'length' => $row->length,
+                'weight' => $row->weight,
+                'linear_unit_id' => $linearUnitId,
+                'weight_unit_id' => $weightUnitId,
                 'replacement_price' => null,
+                'country_of_origin' => $row->country_of_origin,
                 'source' => 'rentman',
             ]);
 
@@ -455,8 +500,15 @@ class RentmanEquipmentController extends Controller
                 'software_code' => $softwareCode,
                 'quantity' => $quantity,
                 'rental_price' => $rentalRate ?? 0,
+                'description' => $description,
                 'replacement_price' => null,
             ]);
+            $equipment = Equipment::where('company_id', $companyId)
+                ->where('rentman_equipment_id', $rentmanEquipmentId)
+                ->first();
+            if ($equipment) {
+                RentmanInventoryImportService::appendEquipmentImagesFromRentman($companyId, $rentmanEquipmentId, (int) $equipment->id);
+            }
 
             RentmanInventoryImportService::markRentmanCacheImported($companyId, $rentmanEquipmentId);
 
@@ -481,6 +533,81 @@ class RentmanEquipmentController extends Controller
             return JWTAuth::parseToken()->authenticate();
         } catch (\Exception $e) {
             return null;
+        }
+    }
+
+    protected function resolveRentmanLinearUnitId(): ?int
+    {
+        $configuredId = config('services.rentman.default_linear_unit_id');
+        if (is_numeric($configuredId)) {
+            $configuredId = (int) $configuredId;
+            if (!LinearUnit::whereKey($configuredId)->exists()) {
+                Log::error('Invalid Rentman linear unit configuration', [
+                    'configured_linear_unit_id' => $configuredId,
+                ]);
+                throw new \RuntimeException(
+                    'Invalid Rentman configuration: RENTMAN_DEFAULT_LINEAR_UNIT_ID (' . $configuredId . ') does not exist in linear_units.'
+                );
+            }
+
+            return $configuredId;
+        }
+
+        $unit = LinearUnit::whereRaw('LOWER(name) = ?', ['inch'])->first()
+            ?: LinearUnit::whereRaw('LOWER(name) = ?', ['inches'])->first()
+            ?: LinearUnit::whereRaw('LOWER(name) = ?', ['in'])->first();
+
+        return $unit?->id;
+    }
+
+    protected function resolveRentmanWeightUnitId(): ?int
+    {
+        $configuredId = config('services.rentman.default_weight_unit_id');
+        if (is_numeric($configuredId)) {
+            $configuredId = (int) $configuredId;
+            if (!WeightUnit::whereKey($configuredId)->exists()) {
+                Log::error('Invalid Rentman weight unit configuration', [
+                    'configured_weight_unit_id' => $configuredId,
+                ]);
+                throw new \RuntimeException(
+                    'Invalid Rentman configuration: RENTMAN_DEFAULT_WEIGHT_UNIT_ID (' . $configuredId . ') does not exist in weight_units.'
+                );
+            }
+
+            return $configuredId;
+        }
+
+        $unit = WeightUnit::whereRaw('LOWER(name) = ?', ['pound'])->first()
+            ?: WeightUnit::whereRaw('LOWER(name) = ?', ['pounds'])->first()
+            ?: WeightUnit::whereRaw('LOWER(name) = ?', ['lbs'])->first()
+            ?: WeightUnit::whereRaw('LOWER(name) = ?', ['lb'])->first();
+
+        return $unit?->id;
+    }
+
+    protected function assertRentmanMandatoryFields(RentmanEquipment $row): void
+    {
+        $missing = [];
+        if ($row->height === null) {
+            $missing[] = 'height';
+        }
+        if ($row->width === null) {
+            $missing[] = 'width';
+        }
+        if ($row->length === null) {
+            $missing[] = 'length';
+        }
+        if ($row->weight === null) {
+            $missing[] = 'weight';
+        }
+        if ($row->country_of_origin === null || trim((string) $row->country_of_origin) === '') {
+            $missing[] = 'country_of_origin';
+        }
+
+        if ($missing !== []) {
+            throw new \RuntimeException(
+                'Rentman equipment details are incomplete. Missing required fields: ' . implode(', ', $missing) . '.'
+            );
         }
     }
 }

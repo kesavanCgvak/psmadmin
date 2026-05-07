@@ -162,6 +162,7 @@ class EquipmentController extends Controller
                     'psm_code' => $product->psm_code,
                     'webpage_url' => $product->webpage_url, // 🔗 product webpage URL
                     'flex_resource_id' => $equipment->flex_resource_id,
+                    'rentman_equipment_id' => $equipment->rentman_equipment_id,
                     'software_code' => $equipment->software_code,
                     'quantity' => $equipment->quantity,
                     'price' => $equipment->rental_price,

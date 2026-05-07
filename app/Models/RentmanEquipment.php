@@ -16,6 +16,15 @@ class RentmanEquipment extends Model
         'name',
         'displayname',
         'code',
+        'subrental_costs',
+        'rental_sales',
+        'shop_description_long',
+        'height',
+        'width',
+        'length',
+        'weight',
+        'country_of_origin',
+        'current_quantity',
         'update_hash',
         'synced_at',
         'is_imported',
@@ -24,6 +33,12 @@ class RentmanEquipment extends Model
 
     protected $casts = [
         'is_imported' => 'boolean',
+        'subrental_costs' => 'float',
+        'height' => 'float',
+        'width' => 'float',
+        'length' => 'float',
+        'weight' => 'float',
+        'current_quantity' => 'int',
         'synced_at' => 'datetime',
         'imported_at' => 'datetime',
     ];

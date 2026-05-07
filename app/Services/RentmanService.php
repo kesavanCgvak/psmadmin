@@ -57,9 +57,9 @@ class RentmanService
     }
 
     /**
-     * Payload aligned with Flex import-check shape (minimal Rentman fields).
+     * Payload aligned with Flex import-check shape (extended Rentman fields).
      *
-     * @return array{rentman_id: string, name: ?string, displayname: ?string, code: ?string}
+     * @return array<string, mixed>
      */
     public static function importCheckRentmanPayload(RentmanEquipment $row): array
     {
@@ -68,7 +68,75 @@ class RentmanService
             'name' => $row->name,
             'displayname' => $row->displayname,
             'code' => $row->code,
+            'subrental_costs' => $row->subrental_costs,
+            'rental_sales' => $row->rental_sales,
+            'shop_description_long' => $row->shop_description_long,
+            'height' => $row->height,
+            'width' => $row->width,
+            'length' => $row->length,
+            'weight' => $row->weight,
+            'country_of_origin' => $row->country_of_origin,
+            'current_quantity' => $row->current_quantity,
         ];
+    }
+
+    /**
+     * Fetch live equipment details from Rentman and persist on local cache row.
+     *
+     * @throws \RuntimeException
+     */
+    public static function fetchAndStoreEquipmentDetails(int $companyId, string $rentmanId): RentmanEquipment
+    {
+        $service = new self($companyId);
+        $payload = $service->fetchEquipmentDetailsFromApi($rentmanId);
+        $attributes = self::mapEquipmentDetailsPayload($payload);
+        $rentalSales = strtolower(trim((string) ($attributes['rental_sales'] ?? '')));
+
+        if ($rentalSales !== '' && $rentalSales !== 'rental') {
+            throw new \RuntimeException('This equipment is not for rental.');
+        }
+
+        $row = RentmanEquipment::query()
+            ->where('company_id', $companyId)
+            ->where('rentman_id', $rentmanId)
+            ->first();
+
+        if (!$row) {
+            throw new \RuntimeException('Rentman equipment not found locally. Run a sync first, then try again.');
+        }
+
+        $row->forceFill(array_merge($attributes, ['synced_at' => now()]))->save();
+
+        return $row->fresh();
+    }
+
+    /**
+     * Get equipment image URLs from Rentman files endpoint.
+     *
+     * @return array<int, string>
+     */
+    public static function getEquipmentImageUrls(int $companyId, string $rentmanId): array
+    {
+        $service = new self($companyId);
+        $payload = $service->fetchEquipmentFilesFromApi($rentmanId);
+        $items = self::extractEquipmentList($payload);
+        $urls = [];
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $isImage = $item['image'] ?? null;
+            if ($isImage !== true && $isImage !== 1 && $isImage !== '1') {
+                continue;
+            }
+            $url = trim((string) ($item['url'] ?? ''));
+            if ($url !== '') {
+                $urls[] = $url;
+            }
+        }
+
+        return array_values(array_unique($urls));
     }
 
     /**
@@ -136,7 +204,8 @@ class RentmanService
         ?string $softwareCode,
         int $quantity,
         int $userId,
-        ?float $overrideRentalRate = null
+        ?float $overrideRentalRate = null,
+        ?string $description = null
     ): Equipment {
         Product::findOrFail($productId);
 
@@ -148,6 +217,7 @@ class RentmanService
             'software_code' => $softwareCode ?? $rentmanEquipmentId,
             'quantity' => $quantity,
             'rental_price' => $overrideRentalRate,
+            'description' => $description,
         ]);
 
         return $equipment;
@@ -156,6 +226,73 @@ class RentmanService
     protected function buildEquipmentUrl(array $queryParams): string
     {
         return $this->baseUrl . '/equipment?' . http_build_query($queryParams);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function fetchEquipmentDetailsFromApi(string $rentmanId): array
+    {
+        $url = $this->baseUrl . '/equipment/' . urlencode($rentmanId);
+        $response = Http::timeout($this->timeout)
+            ->withHeaders($this->authHeaders())
+            ->acceptJson()
+            ->get($url);
+
+        if (!$response->successful()) {
+            Log::warning('Rentman equipment details fetch failed', [
+                'company_id' => $this->companyId,
+                'rentman_id' => $rentmanId,
+                'url' => $url,
+                'status' => $response->status(),
+                'body_preview' => substr($response->body(), 0, 800),
+            ]);
+            throw new \RuntimeException('Unable to fetch Rentman equipment details (HTTP ' . $response->status() . ').');
+        }
+
+        $payload = $response->json();
+        if (!is_array($payload)) {
+            throw new \RuntimeException('Invalid Rentman equipment details response.');
+        }
+
+        if (isset($payload['data']) && is_array($payload['data'])) {
+            return $payload['data'];
+        }
+        if (isset($payload['equipment']) && is_array($payload['equipment'])) {
+            return $payload['equipment'];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function fetchEquipmentFilesFromApi(string $rentmanId): array
+    {
+        $url = $this->baseUrl . '/equipment/' . urlencode($rentmanId) . '/files';
+        $response = Http::timeout($this->timeout)
+            ->withHeaders($this->authHeaders())
+            ->acceptJson()
+            ->get($url, ['limit' => 300]);
+
+        if (!$response->successful()) {
+            Log::warning('Rentman equipment files fetch failed', [
+                'company_id' => $this->companyId,
+                'rentman_id' => $rentmanId,
+                'url' => $url,
+                'status' => $response->status(),
+                'body_preview' => substr($response->body(), 0, 800),
+            ]);
+            throw new \RuntimeException('Unable to fetch Rentman equipment files (HTTP ' . $response->status() . ').');
+        }
+
+        $payload = $response->json();
+        if (!is_array($payload)) {
+            throw new \RuntimeException('Invalid Rentman equipment files response.');
+        }
+
+        return $payload;
     }
 
     /**
@@ -223,6 +360,59 @@ class RentmanService
             'code' => isset($item['code']) ? (string) $item['code'] : null,
             'update_hash' => (string) $hash,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    protected static function mapEquipmentDetailsPayload(array $payload): array
+    {
+        return [
+            'name' => self::stringOrNull($payload['name'] ?? null),
+            'displayname' => self::stringOrNull($payload['displayname'] ?? ($payload['displayName'] ?? null)),
+            'code' => self::stringOrNull($payload['code'] ?? null),
+            'subrental_costs' => self::floatOrNull($payload['subrental_costs'] ?? ($payload['subrentalCosts'] ?? null)),
+            'rental_sales' => self::stringOrNull($payload['rental_sales'] ?? ($payload['rentalSales'] ?? null)),
+            'shop_description_long' => self::stringOrNull($payload['shop_description_long'] ?? ($payload['shopDescriptionLong'] ?? null)),
+            'height' => self::floatOrNull($payload['height'] ?? null),
+            'width' => self::floatOrNull($payload['width'] ?? null),
+            'length' => self::floatOrNull($payload['length'] ?? null),
+            'weight' => self::floatOrNull($payload['weight'] ?? null),
+            'country_of_origin' => self::stringOrNull($payload['country_of_origin'] ?? ($payload['countryOfOrigin'] ?? null)),
+            'current_quantity' => self::intOrNull($payload['current_quantity'] ?? ($payload['currentQuantity'] ?? null)),
+        ];
+    }
+
+    protected static function stringOrNull(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $trimmed = trim((string) $value);
+        return $trimmed === '' ? null : $trimmed;
+    }
+
+    protected static function floatOrNull(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (!is_numeric($value)) {
+            return null;
+        }
+        return (float) $value;
+    }
+
+    protected static function intOrNull(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (!is_numeric($value)) {
+            return null;
+        }
+        return (int) $value;
     }
 
     /**

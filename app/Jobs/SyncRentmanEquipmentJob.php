@@ -24,6 +24,10 @@ class SyncRentmanEquipmentJob implements ShouldQueue
     public function handle(): void
     {
         try {
+            Log::info('Rentman equipment sync job started.', [
+                'company_id' => $this->companyId,
+            ]);
+
             $service = new RentmanService($this->companyId);
             $service->syncAllEquipmentFromApi();
 
