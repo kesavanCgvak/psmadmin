@@ -17,10 +17,14 @@ class CompanyIntegration extends Model
         'access_token',
         'refresh_token',
         'token_expires_at',
+        'last_fetched_at',
+        'last_synced_at',
     ];
 
     protected $casts = [
         'token_expires_at' => 'datetime',
+        'last_fetched_at' => 'datetime',
+        'last_synced_at' => 'datetime',
         'client_secret' => 'encrypted',
         'api_key' => 'encrypted',
         'settings' => 'array',

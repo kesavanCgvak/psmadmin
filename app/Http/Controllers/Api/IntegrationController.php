@@ -8,6 +8,7 @@ use App\Models\CompanyIntegration;
 use App\Services\Integrations\CompanyIntegrationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -113,6 +114,8 @@ class IntegrationController extends Controller
                         'connected' => false,
                         'has_api_key' => $usesApiKey ? false : null,
                         'api_key_masked' => null,
+                        'last_fetched_at' => null,
+                        'last_synced_at' => null,
                     ],
                 ], 200);
             }
@@ -130,6 +133,76 @@ class IntegrationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Unable to fetch integration configuration.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get integration sync timestamps for a company + integration type.
+     *
+     * POST /api/integrations/sync-status
+     * Payload: { company_id?: int, integration_type: string }
+     */
+    public function syncStatus(Request $request): JsonResponse
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+            $authCompanyId = $user->company_id ?? null;
+
+            if (!$authCompanyId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Company not found for this user.',
+                ], 403);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'company_id' => ['nullable', 'integer', 'min:1'],
+                'integration_type' => ['required', 'string', Rule::in(CompanyIntegrationService::supportedTypes())],
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed.',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $validated = $validator->validated();
+            $targetCompanyId = (int) ($validated['company_id'] ?? $authCompanyId);
+            $integrationType = strtolower((string) $validated['integration_type']);
+
+            if ($targetCompanyId !== (int) $authCompanyId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You are not allowed to view integration status for another company.',
+                ], 403);
+            }
+
+            $integration = CompanyIntegration::query()
+                ->where('company_id', $targetCompanyId)
+                ->where('integration_type', $integrationType)
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'integration_type' => $integrationType,
+                    'company_id' => $targetCompanyId,
+                    'last_fetched_at' => $integration?->last_fetched_at?->toIso8601String(),
+                    'last_synced_at' => $integration?->last_synced_at?->toIso8601String(),
+                ],
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Integration sync-status error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to fetch integration sync status.',
             ], 500);
         }
     }
@@ -160,6 +233,8 @@ class IntegrationController extends Controller
             'api_key_masked' => $usesApiKey
                 ? $this->maskSecretKeepingLastFour((string) $integration->api_key)
                 : null,
+            'last_fetched_at' => $integration->last_fetched_at?->toIso8601String(),
+            'last_synced_at' => $integration->last_synced_at?->toIso8601String(),
         ];
     }
 }

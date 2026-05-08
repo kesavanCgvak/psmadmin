@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\CompanyIntegration;
 use App\Services\RentmanService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -30,6 +31,14 @@ class SyncRentmanEquipmentJob implements ShouldQueue
 
             $service = new RentmanService($this->companyId);
             $service->syncAllEquipmentFromApi();
+
+            CompanyIntegration::query()
+                ->where('company_id', $this->companyId)
+                ->where('integration_type', 'rentman')
+                ->update([
+                    'last_fetched_at' => now(),
+                    'last_synced_at' => now(),
+                ]);
 
             Log::info('Rentman equipment sync completed.', [
                 'company_id' => $this->companyId,

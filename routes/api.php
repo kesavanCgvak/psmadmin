@@ -192,6 +192,7 @@ Route::middleware('jwt.verify')->prefix('import')->group(function () {
 Route::middleware(['jwt.verify'])->group(function () {
     Route::post('/integrations/store', [IntegrationController::class, 'store']);
     Route::get('/integrations/{integration_type}', [IntegrationController::class, 'show']);
+    Route::post('/integrations/sync-status', [IntegrationController::class, 'syncStatus']);
 });
 
 Route::middleware(['jwt.verify'])->prefix('provider/api-keys')->group(function () {
