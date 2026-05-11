@@ -37,6 +37,14 @@
                             <span class="badge badge-success mr-2">Paid Subscription</span>
                         @endif
 
+                        @if($companyType === 'provider')
+                            @if((bool) ($company->is_open_api_enabled ?? false))
+                                <span class="badge badge-success mr-2">Open API Enabled</span>
+                            @else
+                                <span class="badge badge-secondary mr-2">Open API Disabled</span>
+                            @endif
+                        @endif
+
                         @if($company->currency)
                             <span class="badge badge-success">{{ $company->currency->code }}</span>
                         @endif
@@ -142,6 +150,21 @@
                                 <span class="badge badge-success">Paid</span>
                             @endif
                         </dd>
+
+                        @if($companyType === 'provider')
+                            <dt class="col-sm-3">Open API Access</dt>
+                            <dd class="col-sm-9">
+                                @if((bool) ($company->is_open_api_enabled ?? false))
+                                    <span class="badge badge-success">Enabled</span>
+                                @else
+                                    <span class="badge badge-secondary">Disabled</span>
+                                @endif
+                                <div class="small text-muted mt-1">Partner API keys work only when enabled here and the company type is Provider.</div>
+                            </dd>
+                        @else
+                            <dt class="col-sm-3">Open API Access</dt>
+                            <dd class="col-sm-9"><span class="text-muted">Not applicable (User companies do not use partner Open API).</span></dd>
+                        @endif
 
                         <dt class="col-sm-3">Search Priority</dt>
                         <dd class="col-sm-9">{{ $company->search_priority ?? 'N/A' }}</dd>

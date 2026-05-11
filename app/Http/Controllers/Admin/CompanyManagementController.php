@@ -132,6 +132,7 @@ class CompanyManagementController extends Controller
             'pricing_scheme' => 'nullable|string|max:255',
             'pricing_scheme_id' => 'nullable|exists:pricing_schemes,id',
             'subscription_mode' => 'nullable|in:free,paid',
+            'is_open_api_enabled' => 'nullable|boolean',
         ], [
             'account_type.required' => 'Company type is required.',
             'account_type.in' => 'Company type must be either User or Provider.',
@@ -144,6 +145,8 @@ class CompanyManagementController extends Controller
         }
 
         $data = $request->all();
+        $isProviderCompany = strtolower((string) ($data['account_type'] ?? '')) === 'provider';
+        $data['is_open_api_enabled'] = $isProviderCompany && $request->boolean('is_open_api_enabled');
         // Set default subscription_mode to 'paid' if not provided
         if (!isset($data['subscription_mode'])) {
             $data['subscription_mode'] = 'paid';
@@ -262,6 +265,7 @@ class CompanyManagementController extends Controller
             'pricing_scheme' => 'nullable|string|max:255',
             'pricing_scheme_id' => 'nullable|exists:pricing_schemes,id',
             'subscription_mode' => 'nullable|in:free,paid',
+            'is_open_api_enabled' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -271,7 +275,10 @@ class CompanyManagementController extends Controller
         }
 
         $oldAccountType = $company->account_type;
-        $company->update($request->all());
+        $data = $request->all();
+        $isProviderCompany = strtolower((string) ($request->input('account_type', $company->account_type))) === 'provider';
+        $data['is_open_api_enabled'] = $isProviderCompany && $request->boolean('is_open_api_enabled');
+        $company->update($data);
 
         // Sync users.account_type when company account_type changes
         if ($request->has('account_type') && $oldAccountType !== $company->account_type) {

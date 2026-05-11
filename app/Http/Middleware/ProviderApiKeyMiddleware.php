@@ -60,13 +60,14 @@ class ProviderApiKeyMiddleware
         }
 
         $providerUser = $apiKey->providerUser;
-        $isProvider = $providerUser
-            && (
-                strtolower((string) ($providerUser->account_type ?? '')) === 'provider'
-                || strtolower((string) ($providerUser->company->account_type ?? '')) === 'provider'
-            );
+        $company = $providerUser?->company;
+        $companyIsProvider = $company
+            && strtolower((string) ($company->account_type ?? '')) === 'provider';
+        $userIsProvider = $providerUser
+            && strtolower((string) ($providerUser->account_type ?? '')) === 'provider';
+        $isProvider = $providerUser && $company && $companyIsProvider && $userIsProvider;
 
-        if (!$providerUser || !$providerUser->company || !$isProvider) {
+        if (!$isProvider) {
             Log::warning('Partner API auth failed: API key linked to invalid provider context', [
                 'provider_user_id' => $apiKey->provider_user_id,
                 'api_key_id' => $apiKey->id,
@@ -76,7 +77,22 @@ class ProviderApiKeyMiddleware
 
             return response()->json([
                 'success' => false,
-                'message' => 'API key is not linked to a valid provider account.',
+                'message' => 'API key is not linked to a valid provider company account.',
+            ], 403);
+        }
+
+        if (!(bool) ($providerUser->company->is_open_api_enabled ?? false)) {
+            Log::warning('Partner API auth failed: open API disabled for company', [
+                'provider_user_id' => $providerUser->id,
+                'provider_company_id' => $providerUser->company->id,
+                'api_key_id' => $apiKey->id,
+                'ip' => $request->ip(),
+                'path' => $request->path(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Open API access is disabled for this company.',
             ], 403);
         }
 

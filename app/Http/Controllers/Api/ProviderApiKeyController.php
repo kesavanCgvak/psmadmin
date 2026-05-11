@@ -224,15 +224,19 @@ class ProviderApiKeyController extends Controller
             return false;
         }
 
-        $userAccountType = strtolower((string) ($user->account_type ?? ''));
-        if ($userAccountType === 'provider') {
-            return true;
+        $user->loadMissing('company');
+        if (!$user->company) {
+            return false;
         }
 
-        // Fallback for environments that may have account_type at company level.
         $companyAccountType = strtolower((string) ($user->company->account_type ?? ''));
+        if ($companyAccountType !== 'provider') {
+            return false;
+        }
 
-        return $companyAccountType === 'provider';
+        $userAccountType = strtolower((string) ($user->account_type ?? ''));
+
+        return $userAccountType === 'provider';
     }
 }
 
