@@ -72,17 +72,27 @@
                         </li>
                     </ul>
 
+                    @if(!empty($showBackToCompany) && !empty($backToCompanyUrl))
+                        <div class="mb-3">
+                            <a href="{{ $backToCompanyUrl }}" class="btn btn-info btn-lg btn-block font-weight-bold shadow-sm">
+                                <i class="fas fa-building"></i> Back to Company
+                            </a>
+                        </div>
+                    @endif
+
                     <div class="row">
-                        <div class="col-6">
+                        <div class="{{ !empty($showBackToCompany) ? 'col-12' : 'col-6' }}">
                             <a href="{{ route('admin.users.edit', $user) }}" class="btn btn-primary btn-block">
                                 <i class="fas fa-edit"></i> Edit User
                             </a>
                         </div>
-                        <div class="col-6">
-                            <a href="{{ route('admin.users.index') }}" class="btn btn-secondary btn-block">
-                                <i class="fas fa-arrow-left"></i> Back to List
-                            </a>
-                        </div>
+                        @if(empty($showBackToCompany))
+                            <div class="col-6">
+                                <a href="{{ route('admin.users.index') }}" class="btn btn-secondary btn-block">
+                                    <i class="fas fa-arrow-left"></i> Back to List
+                                </a>
+                            </div>
+                        @endif
                     </div>
                 </div>
             </div>

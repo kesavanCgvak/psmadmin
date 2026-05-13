@@ -255,7 +255,9 @@
                         <ul class="list-group list-group-flush">
                             @foreach($company->users as $user)
                                 <li class="list-group-item">
-                                    <strong>{{ $user->username }}</strong>
+                                    <a href="{{ route('admin.users.show', $user) }}?{{ http_build_query(['from' => 'company', 'company_id' => $company->id]) }}">
+                                        <strong>{{ $user->username }}</strong>
+                                    </a>
                                     @if($user->is_admin)
                                         <span class="badge badge-success float-right">Admin</span>
                                     @else
