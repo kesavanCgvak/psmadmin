@@ -102,8 +102,9 @@
                                         @endif
                                     </td>
                                     <td>
-                                        @if($user->company?->name)
-                                            {{ $user->company->name }}
+                                        @if($user->company?->name && $user->company?->id)
+                                            <a href="{{ route('admin.companies.show', $user->company) }}?from=users"
+                                               class="font-weight-bold js-users-company-link">{{ $user->company->name }}</a>
                                         @else
                                             <span class="text-muted">—</span>
                                         @endif
@@ -150,6 +151,16 @@
     <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap4.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.3.0/css/responsive.bootstrap4.min.css">
     <style>
+        /* Company column link */
+        #users-table a.js-users-company-link {
+            color: #007bff;
+        }
+
+        #users-table a.js-users-company-link:hover {
+            color: #0056b3;
+            text-decoration: underline;
+        }
+
         /* ========== Base Layout ========== */
         .content-header h1 {
             font-size: 1.75rem;
@@ -614,10 +625,45 @@
                     $('.btn-group').each(function() {
                         $(this).css('display', 'flex');
                     });
+                },
+                "initComplete": function() {
+                    var params = new URLSearchParams(window.location.search);
+                    var pageParam = params.get('page');
+                    var searchParam = params.get('search');
+                    var changed = false;
+                    if (searchParam !== null && searchParam !== '') {
+                        table.search(searchParam);
+                        changed = true;
+                    }
+                    if (pageParam !== null && pageParam !== '') {
+                        var p = parseInt(pageParam, 10);
+                        if (!isNaN(p) && p > 0) {
+                            table.page(p - 1);
+                            changed = true;
+                        }
+                    }
+                    if (changed) {
+                        table.draw(false);
+                    }
                 }
             });
 
-            // Add responsive behavior for window resize
+            // Company name → company detail with return context (page + global search)
+            $('#users-table tbody').on('click', 'a.js-users-company-link', function(e) {
+                e.preventDefault();
+                var base = $(this).attr('href');
+                var info = table.page.info();
+                var u = new URL(base, window.location.origin);
+                u.searchParams.set('from', 'users');
+                var keyword = table.search();
+                if (keyword) {
+                    u.searchParams.set('search', keyword);
+                } else {
+                    u.searchParams.delete('search');
+                }
+                u.searchParams.set('page', (info.page + 1).toString());
+                window.location.href = u.pathname + u.search;
+            });
             $(window).on('resize', function() {
                 table.columns.adjust().responsive.recalc();
             });
