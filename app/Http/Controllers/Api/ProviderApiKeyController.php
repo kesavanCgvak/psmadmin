@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Helpers\EmailHelper;
 use App\Http\Controllers\Controller;
 use App\Models\ProviderApiKey;
 use Illuminate\Http\JsonResponse;
@@ -54,6 +55,119 @@ class ProviderApiKeyController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Unable to fetch API keys.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Provider user asks admin to enable Open API access (email to admin inbox).
+     */
+    public function requestAccess(Request $request): JsonResponse
+    {
+        $messageText = trim((string) $request->input('message', ''));
+
+        $validator = Validator::make(
+            ['message' => $messageText],
+            [
+                'message' => 'required|string|min:1|max:5000',
+            ],
+            [
+                'message.required' => 'A message is required.',
+                'message.min' => 'Message cannot be empty.',
+            ]
+        );
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+            if (!$this->isProviderUser($user)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only provider company users can request Open API access.',
+                ], 403);
+            }
+
+            $user->loadMissing(['profile', 'company']);
+            $company = $user->company;
+            $profile = $user->profile;
+
+            $adminRecipients = $this->adminNotificationRecipients();
+            if (empty($adminRecipients)) {
+                Log::error('Open API access request: no admin notification addresses configured', [
+                    'user_id' => $user->id,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unable to submit request: admin notification email is not configured.',
+                ], 503);
+            }
+
+            $emailData = [
+                'company_id' => $company->id,
+                'company_name' => $company->name,
+                'is_open_api_enabled' => (bool) ($company->is_open_api_enabled ?? false),
+                'user_id' => $user->id,
+                'username' => $user->username,
+                'full_name' => $profile?->full_name ?? $user->username,
+                'user_email' => $user->preferred_email ?? $user->email ?? ($profile?->email ?? ''),
+                'mobile' => $profile?->mobile ?? 'N/A',
+                'message' => $messageText,
+                'submitted_at' => now()->timezone(config('app.timezone'))->format('M d, Y h:i A T'),
+            ];
+
+            $emailSent = false;
+            try {
+                $emailSent = EmailHelper::send('provider-api-key-access-request', $emailData, function ($message) use ($adminRecipients, $emailData) {
+                    $message->to($adminRecipients);
+                    $message->from(config('mail.from.address'), config('mail.from.name'));
+                    $message->subject('Open API access request: '.$emailData['company_name']);
+                });
+            } catch (\Throwable $e) {
+                Log::error('Open API access request email failed', [
+                    'user_id' => $user->id,
+                    'company_id' => $company->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            if (!$emailSent) {
+                Log::warning('Open API access request: email not sent (disabled template or send failure)', [
+                    'user_id' => $user->id,
+                    'company_id' => $company->id,
+                ]);
+            }
+
+            Log::info('Open API access request submitted', [
+                'user_id' => $user->id,
+                'company_id' => $company->id,
+                'email_sent' => $emailSent,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $emailSent
+                    ? 'Your request has been sent to the administrator.'
+                    : 'Your request was received, but the notification email could not be sent. Please contact support.',
+                'data' => [
+                    'email_sent' => $emailSent,
+                ],
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Open API access request failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to submit request.',
             ], 500);
         }
     }
@@ -237,6 +351,36 @@ class ProviderApiKeyController extends Controller
         $userAccountType = strtolower((string) ($user->account_type ?? ''));
 
         return $userAccountType === 'provider';
+    }
+
+    /**
+     * Admin addresses for registration-style notifications (see config/mail.php).
+     *
+     * @return list<string>
+     */
+    private function adminNotificationRecipients(): array
+    {
+        $raw = config('mail.to.addresses', []);
+        $list = is_array($raw) ? $raw : [$raw];
+        $emails = array_values(array_filter(array_map(static function ($v) {
+            return is_string($v) ? trim($v) : '';
+        }, $list)));
+
+        if ($emails !== []) {
+            return $emails;
+        }
+
+        $admin = config('mail.admin.address');
+        if (is_string($admin) && trim($admin) !== '') {
+            return [trim($admin)];
+        }
+
+        $from = config('mail.from.address');
+        if (is_string($from) && trim($from) !== '') {
+            return [trim($from)];
+        }
+
+        return [];
     }
 }
 

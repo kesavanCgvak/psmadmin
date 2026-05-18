@@ -195,9 +195,10 @@ Route::middleware(['jwt.verify'])->group(function () {
     Route::post('/integrations/sync-status', [IntegrationController::class, 'syncStatus']);
 });
 
-Route::middleware(['jwt.verify'])->prefix('provider/api-keys')->group(function () {
+Route::middleware(['jwt.verify', 'throttle:12,1'])->prefix('provider/api-keys')->group(function () {
     Route::get('/', [ProviderApiKeyController::class, 'index']);
     Route::post('/generate', [ProviderApiKeyController::class, 'generate']);
+    Route::post('/request-access', [ProviderApiKeyController::class, 'requestAccess']);
     Route::get('/{id}/reveal', [ProviderApiKeyController::class, 'reveal'])->whereNumber('id');
     Route::post('/{id}/revoke', [ProviderApiKeyController::class, 'revoke'])->whereNumber('id');
 });

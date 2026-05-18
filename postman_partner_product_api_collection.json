@@ -53,6 +53,49 @@
           }
         },
         {
+          "name": "Request Open API access (email admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{provider_jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Please enable Open API access for our integration.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/provider/api-keys/request-access",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "provider",
+                "api-keys",
+                "request-access"
+              ]
+            },
+            "description": "Sends an email to admin (MAIL_TO_NOTIFY_NEW_REGISTRATION / mail.to.addresses) with the user's message. Requires JWT; provider company user only."
+          }
+        },
+        {
           "name": "List API Keys",
           "request": {
             "method": "GET",
