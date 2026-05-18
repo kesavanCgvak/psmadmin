@@ -2,8 +2,20 @@
 
 @section('title', 'Company Details')
 
+@php
+    $fromUsersListing = request()->query('from') === 'users';
+    $backToUsersParams = [];
+    if (request()->filled('page')) {
+        $backToUsersParams['page'] = request()->query('page');
+    }
+    if (request()->filled('search')) {
+        $backToUsersParams['search'] = request()->query('search');
+    }
+    $backToUsersUrl = route('admin.users.index', $backToUsersParams);
+@endphp
+
 @section('content_header')
-    <h1>Company Details</h1>
+    <h1 class="m-0">Company Details</h1>
 @stop
 
 @section('css')
@@ -208,9 +220,15 @@
                     <a href="{{ route('admin.companies.edit', $company) }}" class="btn btn-warning">
                         <i class="fas fa-edit"></i> Edit
                     </a>
-                    <a href="{{ route('admin.companies.index') }}" class="btn btn-default">
-                        <i class="fas fa-arrow-left"></i> Back to List
-                    </a>
+                    @if($fromUsersListing)
+                        <a href="{{ $backToUsersUrl }}" class="btn btn-primary btn-lg">
+                            <i class="fas fa-arrow-left"></i> Back to Users
+                        </a>
+                    @else
+                        <a href="{{ route('admin.companies.index') }}" class="btn btn-default">
+                            <i class="fas fa-arrow-left"></i> Back to List
+                        </a>
+                    @endif
                 </div>
             </div>
         </div>
@@ -255,7 +273,9 @@
                         <ul class="list-group list-group-flush">
                             @foreach($company->users as $user)
                                 <li class="list-group-item">
-                                    <strong>{{ $user->username }}</strong>
+                                    <a href="{{ route('admin.users.show', $user) }}?{{ http_build_query(['from' => 'company', 'company_id' => $company->id]) }}">
+                                        <strong>{{ $user->username }}</strong>
+                                    </a>
                                     @if($user->is_admin)
                                         <span class="badge badge-success float-right">Admin</span>
                                     @else

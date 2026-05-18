@@ -221,10 +221,22 @@ class UserManagementController extends Controller
     /**
      * Display the specified user.
      */
-    public function show(User $user)
+    public function show(Request $request, User $user)
     {
         $user->load(['profile', 'company']);
-        return view('admin.users.show', compact('user'));
+
+        $showBackToCompany = false;
+        $backToCompanyUrl = null;
+
+        if ($request->query('from') === 'company' && $request->filled('company_id')) {
+            $companyId = (int) $request->query('company_id');
+            if ($user->company_id && $companyId === (int) $user->company_id) {
+                $showBackToCompany = true;
+                $backToCompanyUrl = route('admin.companies.show', $companyId);
+            }
+        }
+
+        return view('admin.users.show', compact('user', 'showBackToCompany', 'backToCompanyUrl'));
     }
 
     /**
