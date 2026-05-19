@@ -12,19 +12,33 @@ use Stevebauman\Purify\Facades\Purify;
 
 class CmsPageController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $sectionFilter = $request->query('section');
+        $allowedSections = array_keys(CmsPage::sectionOptions());
+
+        if ($sectionFilter !== null && $sectionFilter !== '' && ! in_array($sectionFilter, $allowedSections, true)) {
+            $sectionFilter = null;
+        }
+
         $pages = CmsPage::query()
+            ->when($sectionFilter, fn ($query) => $query->where('section', $sectionFilter))
+            ->orderBy('section')
+            ->orderBy('sort_order')
             ->orderBy('title')
             ->paginate(config('app.admin_list_per_page'))
             ->withQueryString();
 
-        return view('admin.cms-pages.index', compact('pages'));
+        $sections = CmsPage::sectionOptions();
+
+        return view('admin.cms-pages.index', compact('pages', 'sections', 'sectionFilter'));
     }
 
     public function create()
     {
-        return view('admin.cms-pages.create');
+        return view('admin.cms-pages.create', [
+            'sections' => CmsPage::sectionOptions(),
+        ]);
     }
 
     public function store(Request $request)
@@ -32,6 +46,8 @@ class CmsPageController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'slug' => 'required|string|max:255|regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/|unique:cms_pages,slug',
+            'section' => 'required|string|in:'.implode(',', array_keys(CmsPage::sectionOptions())),
+            'sort_order' => 'nullable|integer|min:0|max:9999',
             'content_html' => 'required|string',
             'is_published' => 'sometimes|boolean',
             'meta_title' => 'nullable|string|max:255',
@@ -41,6 +57,8 @@ class CmsPageController extends Controller
         CmsPage::create([
             'title' => $validated['title'],
             'slug' => $validated['slug'],
+            'section' => $validated['section'],
+            'sort_order' => (int) ($validated['sort_order'] ?? 0),
             'content_html' => Purify::config('wysiwyg')->clean($validated['content_html']),
             'is_published' => $request->boolean('is_published', true),
             'meta_title' => $validated['meta_title'] ?? null,
@@ -54,7 +72,10 @@ class CmsPageController extends Controller
 
     public function edit(CmsPage $cms_page)
     {
-        return view('admin.cms-pages.edit', ['cmsPage' => $cms_page]);
+        return view('admin.cms-pages.edit', [
+            'cmsPage' => $cms_page,
+            'sections' => CmsPage::sectionOptions(),
+        ]);
     }
 
     public function update(Request $request, CmsPage $cms_page)
@@ -62,6 +83,8 @@ class CmsPageController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'slug' => 'required|string|max:255|regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/|unique:cms_pages,slug,'.$cms_page->id,
+            'section' => 'required|string|in:'.implode(',', array_keys(CmsPage::sectionOptions())),
+            'sort_order' => 'nullable|integer|min:0|max:9999',
             'content_html' => 'required|string',
             'is_published' => 'sometimes|boolean',
             'meta_title' => 'nullable|string|max:255',
@@ -71,6 +94,8 @@ class CmsPageController extends Controller
         $cms_page->update([
             'title' => $validated['title'],
             'slug' => $validated['slug'],
+            'section' => $validated['section'],
+            'sort_order' => (int) ($validated['sort_order'] ?? 0),
             'content_html' => Purify::config('wysiwyg')->clean($validated['content_html']),
             'is_published' => $request->boolean('is_published', true),
             'meta_title' => $validated['meta_title'] ?? null,

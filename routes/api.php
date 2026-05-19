@@ -71,6 +71,7 @@ Route::get('/company-user-limit', [CompanyUserLimitController::class, 'getLimit'
 Route::get('/terms-and-conditions', [TermsAndConditionsController::class, 'index']);
 
 // CMS pages (public; HTML already sanitized when saved in admin)
+Route::get('/about-us-pages', [ApiCmsPageController::class, 'aboutUsIndex']);
 Route::get('/cms-pages', [ApiCmsPageController::class, 'index']);
 Route::get('/cms-pages/{slug}', [ApiCmsPageController::class, 'show']);
 

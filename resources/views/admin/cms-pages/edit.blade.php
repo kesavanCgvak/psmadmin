@@ -34,6 +34,11 @@
                     @error('slug')<span class="invalid-feedback">{{ $message }}</span>@enderror
                     <small class="form-text text-muted">Public URL: <span class="text-monospace">{{ url('/page/' . $cmsPage->slug) }}</span></small>
                 </div>
+                @include('admin.cms-pages.partials.section-fields', [
+                    'sections' => $sections,
+                    'selectedSection' => $cmsPage->section,
+                    'sortOrder' => $cmsPage->sort_order,
+                ])
                 <div class="form-group">
                     <label for="content_html">Content</label>
                     <textarea class="form-control @error('content_html') is-invalid @enderror" id="content_html" name="content_html" rows="18">{{ old('content_html', $cmsPage->content_html) }}</textarea>
