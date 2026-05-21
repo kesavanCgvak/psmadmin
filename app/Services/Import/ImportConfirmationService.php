@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Equipment;
 use App\Services\Import\ProductMatcherService;
 use App\Services\Import\TypeMatcherService;
+use App\Support\CompanyInventorySpecs;
 use App\Support\ProductNameNormalizer;
 use Illuminate\Support\Facades\DB;
 
@@ -65,29 +66,26 @@ class ImportConfirmationService
                     $importPrice = $item->price;
 
                     if ($existingEquipment) {
-                        // Equipment exists - ADD quantities
                         $updateData = [
                             'quantity' => $existingEquipment->quantity + $importQuantity,
-                            // Update software_code if provided and different
-                            // 'software_code' => $item->software_code ?? $existingEquipment->software_code,
                         ];
 
-                        // Only override price if a price was actually provided in the import
                         if ($importPrice !== null) {
                             $updateData['rental_price'] = $importPrice;
                         }
 
-                        $existingEquipment->update($updateData);
+                        $existingEquipment->update(array_merge(
+                            $updateData,
+                            CompanyInventorySpecs::attributesFromProduct($product)
+                        ));
                     } else {
-                        // Equipment doesn't exist - create new
-                        Equipment::create([
-                            'user_id' => $userId,
-                            'company_id' => $companyId,
-                            'product_id' => $rowData['product_id'],
-                            'quantity' => $importQuantity,
-                            'rental_price' => $importPrice,
-                            'software_code' => $item->software_code ?? null,
-                        ]);
+                        Equipment::create(
+                            $this->equipmentCreateWithProductSpecs($userId, $companyId, (int) $rowData['product_id'], $product, [
+                                'quantity' => $importQuantity,
+                                'rental_price' => $importPrice,
+                                'software_code' => $item->software_code ?? null,
+                            ])
+                        );
                     }
 
                     $attached++;
@@ -160,28 +158,25 @@ class ImportConfirmationService
                     $importPrice = $item->price;
 
                     if ($existingEquipment) {
-                        // Equipment exists - ADD quantities
                         $updateData = [
                             'quantity' => $existingEquipment->quantity + $importQuantity,
-                            // 'software_code' => $item->software_code ?? $existingEquipment->software_code,
                         ];
 
-                        // Only override price if a price was actually provided in the import
                         if ($importPrice !== null && !empty($importPrice)) {
                             $updateData['rental_price'] = $importPrice;
                         }
 
-                        $existingEquipment->update($updateData);
+                        $existingEquipment->update(
+                            $this->equipmentUpdateWithProductSpecs($existingEquipment, $product, $updateData)
+                        );
                     } else {
-                        // Equipment doesn't exist - create new
-                        Equipment::create([
-                            'user_id' => $userId,
-                            'company_id' => $companyId,
-                            'product_id' => $product->id,
-                            'quantity' => $importQuantity,
-                            'rental_price' => $importPrice,
-                            'software_code' => $item->software_code ?? null,
-                        ]);
+                        Equipment::create(
+                            $this->equipmentCreateWithProductSpecs($userId, $companyId, (int) $product->id, $product, [
+                                'quantity' => $importQuantity,
+                                'rental_price' => $importPrice,
+                                'software_code' => $item->software_code ?? null,
+                            ])
+                        );
                     }
 
                     $created++;
@@ -247,11 +242,40 @@ class ImportConfirmationService
         return $response;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | PSM Generation
-    |--------------------------------------------------------------------------
-    */
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    protected function equipmentCreateWithProductSpecs(
+        int $userId,
+        int $companyId,
+        int $productId,
+        Product $product,
+        array $overrides
+    ): array {
+        return array_merge([
+            'user_id' => $userId,
+            'company_id' => $companyId,
+            'product_id' => $productId,
+        ], CompanyInventorySpecs::attributesFromProduct($product), $overrides);
+    }
+
+    /**
+     * Fills empty company_inventory spec fields from inventory_master on attach/update.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    protected function equipmentUpdateWithProductSpecs(
+        Equipment $equipment,
+        Product $product,
+        array $overrides
+    ): array {
+        return array_merge(
+            $overrides,
+            CompanyInventorySpecs::patchFillEmpty($equipment, CompanyInventorySpecs::attributesFromProduct($product))
+        );
+    }
 
     protected function generateNextPsmCode(): string
     {

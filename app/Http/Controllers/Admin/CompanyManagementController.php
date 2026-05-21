@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Services\InventoryImportService;
+use App\Support\CompanyInventorySpecs;
 use App\Support\InventoryProductSearch;
 
 class CompanyManagementController extends Controller
@@ -520,13 +521,19 @@ class CompanyManagementController extends Controller
                 ->take($length)
                 ->get();
 
-            $rows->load(['product.brand:id,name']);
+            $rows->load([
+                'product.brand:id,name',
+                'linearUnit:id,code',
+                'weightUnit:id,code',
+            ]);
 
             $data = [];
             foreach ($rows as $equipment) {
                 $product = $equipment->product;
                 $rental = $equipment->rental_price;
                 $rentalDisplay = $rental === null ? '—' : '$' . number_format((float) $rental, 2);
+                $dimensionsDisplay = CompanyInventorySpecs::formatDimensions($equipment) ?? '—';
+                $weightDisplay = CompanyInventorySpecs::formatWeight($equipment) ?? '—';
 
                 $removeUrl = route('admin.companies.inventory.destroy', [$company, $equipment]);
 
@@ -536,6 +543,8 @@ class CompanyManagementController extends Controller
                     'model' => $product ? $product->model : '—',
                     'brand' => $product && $product->brand ? $product->brand->name : '—',
                     'psm_code' => $product && $product->psm_code ? $product->psm_code : '—',
+                    'dimensions' => $dimensionsDisplay,
+                    'weight' => $weightDisplay,
                     'quantity' => (int) $equipment->quantity,
                     'rental_price' => $rentalDisplay,
                     'software_code' => $equipment->software_code ?? '—',
@@ -590,17 +599,17 @@ class CompanyManagementController extends Controller
             $query->orderBy('model');
         }
 
-        $products = $query->limit(40)->get();
+        $products = $query->with(['linearUnit:id,code', 'weightUnit:id,code'])->limit(40)->get();
 
         $results = [];
         foreach ($products as $product) {
-            $results[] = [
+            $results[] = array_merge([
                 'id' => $product->id,
                 'model' => $product->model,
                 'psm_code' => $product->psm_code ?? '—',
                 'brand' => $product->brand ? $product->brand->name : '—',
                 'category' => $product->category ? $product->category->name : '—',
-            ];
+            ], CompanyInventorySpecs::productSpecsForJson($product));
         }
 
         return response()->json($results);
@@ -647,14 +656,16 @@ class CompanyManagementController extends Controller
             $quantity = 1;
         }
 
-        Equipment::create([
+        $product = Product::findOrFail($productId);
+
+        Equipment::create(array_merge([
             'company_id' => $company->id,
             'user_id' => $userId,
             'product_id' => $productId,
             'quantity' => (int) $quantity,
             'rental_price' => $request->input('rental_price'),
             'software_code' => $request->input('software_code'),
-        ]);
+        ], CompanyInventorySpecs::attributesFromProduct($product)));
 
         return response()->json([
             'success' => true,

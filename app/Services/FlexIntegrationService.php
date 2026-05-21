@@ -936,7 +936,7 @@ class FlexIntegrationService
 
     protected function authHeaders(): array
     {
-        $authType = config('flex.auth_header', 'bearer');
+        $authType = config('flex.auth_header', 'x_auth');
         if ($authType === 'x_auth') {
             return ['X-Auth-Token' => $this->apiKey];
         }

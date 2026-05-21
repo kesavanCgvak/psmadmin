@@ -56,6 +56,28 @@
                             @endif
                         </dd>
 
+                        <dt class="col-sm-3">Dimensions</dt>
+                        <dd class="col-sm-9">
+                            {{ \App\Support\CompanyInventorySpecs::formatDimensions($equipment) ?? 'N/A' }}
+                        </dd>
+
+                        <dt class="col-sm-3">Weight</dt>
+                        <dd class="col-sm-9">
+                            {{ \App\Support\CompanyInventorySpecs::formatWeight($equipment) ?? 'N/A' }}
+                        </dd>
+
+                        <dt class="col-sm-3">Country of origin</dt>
+                        <dd class="col-sm-9">{{ $equipment->country_of_origin ?? 'N/A' }}</dd>
+
+                        <dt class="col-sm-3">HSN code</dt>
+                        <dd class="col-sm-9">
+                            @if($equipment->hsn_code)
+                                <code>{{ $equipment->hsn_code }}</code>
+                            @else
+                                <span class="text-muted">N/A</span>
+                            @endif
+                        </dd>
+
                         <dt class="col-sm-3">Quantity</dt>
                         <dd class="col-sm-9">
                             <span class="badge badge-warning" style="font-size: 1.2em;">{{ $equipment->quantity }}</span>

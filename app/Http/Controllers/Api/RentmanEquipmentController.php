@@ -492,7 +492,12 @@ class RentmanEquipmentController extends Controller
                 'source' => 'rentman',
             ]);
 
-            Equipment::create([
+            $specAttributes = \App\Support\CompanyInventorySpecs::mergeWithProduct(
+                $product,
+                \App\Support\CompanyInventorySpecs::attributesFromRentmanRow($row, $linearUnitId, $weightUnitId)
+            );
+
+            Equipment::create(array_merge([
                 'user_id' => $user->id,
                 'company_id' => $companyId,
                 'product_id' => $product->id,
@@ -502,7 +507,7 @@ class RentmanEquipmentController extends Controller
                 'rental_price' => $rentalRate ?? 0,
                 'description' => $description,
                 'replacement_price' => null,
-            ]);
+            ], $specAttributes));
             $equipment = Equipment::where('company_id', $companyId)
                 ->where('rentman_equipment_id', $rentmanEquipmentId)
                 ->first();

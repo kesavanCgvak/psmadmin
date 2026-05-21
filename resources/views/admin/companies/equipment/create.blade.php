@@ -6,6 +6,8 @@
     <h1>Create New Equipment</h1>
 @stop
 
+@section('plugins.Select2', true)
+
 @section('css')
     @include('partials.responsive-css')
 @stop
@@ -61,26 +63,7 @@
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="product_id">Product <span class="text-danger">*</span></label>
-                    <select class="form-control @error('product_id') is-invalid @enderror"
-                            id="product_id"
-                            name="product_id"
-                            required>
-                        <option value="">-- Select Product --</option>
-                        @foreach($products as $product)
-                            <option value="{{ $product->id }}" {{ old('product_id') == $product->id ? 'selected' : '' }}>
-                                {{ $product->brand?->name }} {{ $product->model }}
-                                @if($product->psm_code)
-                                    ({{ $product->psm_code }})
-                                @endif
-                            </option>
-                        @endforeach
-                    </select>
-                    @error('product_id')
-                        <div class="invalid-feedback">{{ $message }}</div>
-                    @enderror
-                </div>
+                @include('admin.companies.equipment.partials.product-search-select', ['selectedProduct' => $selectedProduct ?? null])
 
                 <div class="row">
                     <div class="col-md-6">
@@ -146,6 +129,8 @@
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
                 </div>
+
+                @include('admin.companies.equipment.partials.physical-specs-fields', ['equipment' => null])
             </div>
 
             <div class="card-footer">
@@ -191,5 +176,8 @@
             });
         });
     </script>
+    @include('admin.companies.equipment.partials.product-search-select-init')
+    @include('admin.companies.equipment.partials.physical-specs-autofill')
 @stop
+
 

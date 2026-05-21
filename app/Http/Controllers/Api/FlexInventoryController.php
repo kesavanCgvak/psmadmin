@@ -440,7 +440,12 @@ class FlexInventoryController extends Controller
                 'company_id' => $companyId,
             ]);
 
-            $equipment = Equipment::create([
+            $specAttributes = \App\Support\CompanyInventorySpecs::mergeWithProduct(
+                $product,
+                \App\Support\CompanyInventorySpecs::attributesFromFlexDetails($details, $linearUnitId, $weightUnitId)
+            );
+
+            $equipment = Equipment::create(array_merge([
                 'user_id' => $user->id,
                 'company_id' => $companyId,
                 'product_id' => $product->id,
@@ -449,7 +454,7 @@ class FlexInventoryController extends Controller
                 'quantity' => $quantity,
                 'rental_price' => $rentalRate ?? 0,
                 'replacement_price' => $details['replacementCost'] ?? null,
-            ]);
+            ], $specAttributes));
 
             $this->createEquipmentImages($equipment->id, $details['imageUrls'] ?? []);
 

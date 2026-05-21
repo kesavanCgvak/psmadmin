@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Equipment;
+use App\Models\LinearUnit;
 use App\Models\Product;
 use App\Models\Company;
 use App\Models\User;
+use App\Models\WeightUnit;
+use App\Support\CompanyInventorySpecs;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -17,7 +20,15 @@ class EquipmentManagementController extends Controller
      */
     public function index()
     {
-        $equipments = Equipment::with(['company', 'product.brand', 'product.category', 'user'])->get();
+        $equipments = Equipment::with([
+            'company',
+            'product.brand',
+            'product.category',
+            'user',
+            'linearUnit:id,code',
+            'weightUnit:id,code',
+        ])->get();
+
         return view('admin.companies.equipment.index', compact('equipments'));
     }
 
@@ -27,10 +38,18 @@ class EquipmentManagementController extends Controller
     public function create()
     {
         $companies = Company::orderBy('name')->get();
-        $products = Product::with('brand')->orderBy('model')->get();
         $users = User::orderBy('username')->get();
+        $linearUnits = LinearUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+        $weightUnits = WeightUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+        $selectedProduct = $this->resolveSelectedProduct(old('product_id'));
 
-        return view('admin.companies.equipment.create', compact('companies', 'products', 'users'));
+        return view('admin.companies.equipment.create', compact(
+            'companies',
+            'users',
+            'linearUnits',
+            'weightUnits',
+            'selectedProduct'
+        ));
     }
 
     /**
@@ -38,15 +57,7 @@ class EquipmentManagementController extends Controller
      */
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'company_id' => 'required|exists:companies,id',
-            'user_id' => 'required|exists:users,id',
-            'product_id' => 'required|exists:inventory_master,id',
-            'quantity' => 'required|integer|min:1',
-            'rental_price' => 'required|numeric|min:0',
-            'software_code' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-        ]);
+        $validator = $this->makeValidator($request);
 
         if ($validator->fails()) {
             return redirect()->back()
@@ -54,7 +65,7 @@ class EquipmentManagementController extends Controller
                 ->withInput();
         }
 
-        Equipment::create($request->only(['company_id', 'user_id', 'product_id', 'quantity', 'rental_price', 'software_code', 'description']));
+        Equipment::create($this->equipmentPayload($request));
 
         return redirect()->route('admin.equipment.index')
             ->with('success', 'Equipment created successfully.');
@@ -65,7 +76,17 @@ class EquipmentManagementController extends Controller
      */
     public function show(Equipment $equipment)
     {
-        $equipment->load(['company', 'product.brand', 'product.category', 'product.subCategory', 'user', 'images']);
+        $equipment->load([
+            'company',
+            'product.brand',
+            'product.category',
+            'product.subCategory',
+            'user',
+            'images',
+            'linearUnit:id,code,name',
+            'weightUnit:id,code,name',
+        ]);
+
         return view('admin.companies.equipment.show', compact('equipment'));
     }
 
@@ -74,11 +95,21 @@ class EquipmentManagementController extends Controller
      */
     public function edit(Equipment $equipment)
     {
+        $equipment->load('product.brand');
         $companies = Company::orderBy('name')->get();
-        $products = Product::with('brand')->orderBy('model')->get();
         $users = User::where('company_id', $equipment->company_id)->orderBy('username')->get();
+        $linearUnits = LinearUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+        $weightUnits = WeightUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+        $selectedProduct = $this->resolveSelectedProduct(old('product_id', $equipment->product_id), $equipment->product);
 
-        return view('admin.companies.equipment.edit', compact('equipment', 'companies', 'products', 'users'));
+        return view('admin.companies.equipment.edit', compact(
+            'equipment',
+            'companies',
+            'users',
+            'linearUnits',
+            'weightUnits',
+            'selectedProduct'
+        ));
     }
 
     /**
@@ -86,15 +117,7 @@ class EquipmentManagementController extends Controller
      */
     public function update(Request $request, Equipment $equipment)
     {
-        $validator = Validator::make($request->all(), [
-            'company_id' => 'required|exists:companies,id',
-            'user_id' => 'required|exists:users,id',
-            'product_id' => 'required|exists:inventory_master,id',
-            'quantity' => 'required|integer|min:1',
-            'rental_price' => 'required|numeric|min:0',
-            'software_code' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-        ]);
+        $validator = $this->makeValidator($request);
 
         if ($validator->fails()) {
             return redirect()->back()
@@ -102,7 +125,7 @@ class EquipmentManagementController extends Controller
                 ->withInput();
         }
 
-        $equipment->update($request->only(['company_id', 'user_id', 'product_id', 'quantity', 'rental_price', 'software_code', 'description']));
+        $equipment->update($this->equipmentPayload($request));
 
         return redirect()->route('admin.equipment.index')
             ->with('success', 'Equipment updated successfully.');
@@ -114,7 +137,6 @@ class EquipmentManagementController extends Controller
     public function destroy(Equipment $equipment)
     {
         try {
-            // Delete associated images
             foreach ($equipment->images as $image) {
                 $imagePath = public_path($image->image_path);
                 if (file_exists($imagePath)) {
@@ -155,7 +177,6 @@ class EquipmentManagementController extends Controller
             }
 
             try {
-                // Delete associated images
                 foreach ($equipment->images as $image) {
                     $imagePath = public_path($image->image_path);
                     if (file_exists($imagePath)) {
@@ -215,5 +236,62 @@ class EquipmentManagementController extends Controller
             ->get(['id', 'username']);
 
         return response()->json($users);
+    }
+
+    /**
+     * Fetch inventory_master physical specs for equipment form auto-fill.
+     */
+    public function getProductInventorySpecs(Product $product)
+    {
+        return response()->json([
+            'success' => true,
+            'data' => CompanyInventorySpecs::productSpecsForJson($product),
+        ]);
+    }
+
+    private function makeValidator(Request $request): \Illuminate\Contracts\Validation\Validator
+    {
+        return Validator::make($request->all(), [
+            'company_id' => 'required|exists:companies,id',
+            'user_id' => 'required|exists:users,id',
+            'product_id' => 'required|exists:inventory_master,id',
+            'quantity' => 'required|integer|min:1',
+            'rental_price' => 'required|numeric|min:0',
+            'software_code' => 'nullable|string|max:255',
+            'description' => 'nullable|string',
+            'height' => 'nullable|numeric|min:0',
+            'width' => 'nullable|numeric|min:0',
+            'length' => 'nullable|numeric|min:0',
+            'weight' => 'nullable|numeric|min:0',
+            'linear_unit_id' => 'nullable|exists:linear_units,id',
+            'weight_unit_id' => 'nullable|exists:weight_units,id',
+            'country_of_origin' => 'nullable|string|max:100',
+            'hsn_code' => 'nullable|string|max:20',
+        ]);
+    }
+
+    private function resolveSelectedProduct(mixed $productId, ?Product $fallback = null): ?Product
+    {
+        if ($productId) {
+            return Product::with('brand:id,name')->find($productId) ?? $fallback;
+        }
+
+        return $fallback;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function equipmentPayload(Request $request): array
+    {
+        return $request->only(array_merge([
+            'company_id',
+            'user_id',
+            'product_id',
+            'quantity',
+            'rental_price',
+            'software_code',
+            'description',
+        ], CompanyInventorySpecs::FIELDS));
     }
 }

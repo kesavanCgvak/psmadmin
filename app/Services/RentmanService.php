@@ -6,6 +6,8 @@ use App\Models\CompanyIntegration;
 use App\Models\Equipment;
 use App\Models\Product;
 use App\Models\RentmanEquipment;
+use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryMeasurementUnits;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -207,9 +209,25 @@ class RentmanService
         ?float $overrideRentalRate = null,
         ?string $description = null
     ): Equipment {
-        Product::findOrFail($productId);
+        $product = Product::findOrFail($productId);
+        $row = RentmanEquipment::where('company_id', $companyId)
+            ->where('rentman_id', $rentmanEquipmentId)
+            ->first();
 
-        $equipment = Equipment::create([
+        if ($row) {
+            RentmanInventoryImportService::updateProductSpecsIfEmpty($product, $row);
+        }
+
+        $linearUnitId = InventoryMeasurementUnits::resolveRentmanLinearUnitId();
+        $weightUnitId = InventoryMeasurementUnits::resolveRentmanWeightUnitId();
+        $specAttributes = $row
+            ? CompanyInventorySpecs::mergeWithProduct(
+                $product,
+                CompanyInventorySpecs::attributesFromRentmanRow($row, $linearUnitId, $weightUnitId)
+            )
+            : CompanyInventorySpecs::attributesFromProduct($product);
+
+        $equipment = Equipment::create(array_merge([
             'user_id' => $userId,
             'company_id' => $companyId,
             'product_id' => $productId,
@@ -218,7 +236,7 @@ class RentmanService
             'quantity' => $quantity,
             'rental_price' => $overrideRentalRate,
             'description' => $description,
-        ]);
+        ], $specAttributes));
 
         return $equipment;
     }

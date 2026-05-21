@@ -225,6 +225,8 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
     // AJAX endpoints
     Route::get('/ajax/companies/{company}/users', [EquipmentManagementController::class, 'getUsersByCompany'])
         ->name('ajax.users-by-company');
+    Route::get('/ajax/products/{product}/inventory-specs', [EquipmentManagementController::class, 'getProductInventorySpecs'])
+        ->name('ajax.product-inventory-specs');
     Route::get('/ajax/check-username', [UserManagementController::class, 'checkUsername'])
         ->name('ajax.check-username');
     Route::get('/ajax/company/{company}/phone-format', [UserManagementController::class, 'getPhoneFormat'])

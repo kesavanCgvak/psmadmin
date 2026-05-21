@@ -7,6 +7,8 @@ use App\Models\CompanyIntegration;
 use App\Models\Equipment;
 use App\Models\EquipmentImage;
 use App\Models\Product;
+use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryMeasurementUnits;
 use App\Support\ProductNormalizer;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -51,7 +53,7 @@ class FlexService
 
     protected function getAuthHeaders(): array
     {
-        $authType = config('flex.auth_header', 'bearer');
+        $authType = config('flex.auth_header', 'x_auth');
         if ($authType === 'x_auth') {
             return ['X-Auth-Token' => $this->apiKey];
         }
@@ -640,6 +642,15 @@ class FlexService
             $productUpdates[$dbField] = $dbField === 'replacement_price' ? (float) $value : $value;
         }
 
+        $linearUnitId = InventoryMeasurementUnits::resolveLinearUnitIdFromFlexName($details['linearUnit'] ?? null);
+        $weightUnitId = InventoryMeasurementUnits::resolveWeightUnitIdFromFlexName($details['weightUnit'] ?? null);
+        if ($product->linear_unit_id === null && $linearUnitId !== null) {
+            $productUpdates['linear_unit_id'] = $linearUnitId;
+        }
+        if ($product->weight_unit_id === null && $weightUnitId !== null) {
+            $productUpdates['weight_unit_id'] = $weightUnitId;
+        }
+
         if (!empty($productUpdates)) {
             $product->update($productUpdates);
         }
@@ -651,8 +662,13 @@ class FlexService
             $replacementPrice = (float) $replacementCost;
         }
 
+        $specAttributes = CompanyInventorySpecs::mergeWithProduct(
+            $product,
+            CompanyInventorySpecs::attributesFromFlexDetails($details, $linearUnitId, $weightUnitId)
+        );
+
         // 5. Create company_inventory (rental_rate = null if Day Rate not found)
-        $equipment = Equipment::create([
+        $equipment = Equipment::create(array_merge([
             'user_id' => $userId,
             'company_id' => $companyId,
             'product_id' => $productId,
@@ -661,7 +677,7 @@ class FlexService
             'quantity' => $quantity,
             'rental_price' => $dayRate,
             'replacement_price' => $replacementPrice,
-        ]);
+        ], $specAttributes));
 
         // 6. Create equipment images
         foreach ($imageUrls as $url) {
