@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Services\InventoryImportService;
 use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryImageSyncService;
 use App\Support\InventoryProductSearch;
 
 class CompanyManagementController extends Controller
@@ -658,7 +659,7 @@ class CompanyManagementController extends Controller
 
         $product = Product::findOrFail($productId);
 
-        Equipment::create(array_merge([
+        $equipment = Equipment::create(array_merge([
             'company_id' => $company->id,
             'user_id' => $userId,
             'product_id' => $productId,
@@ -666,6 +667,8 @@ class CompanyManagementController extends Controller
             'rental_price' => $request->input('rental_price'),
             'software_code' => $request->input('software_code'),
         ], CompanyInventorySpecs::attributesFromProduct($product)));
+
+        InventoryImageSyncService::syncMasterToEquipment($productId, (int) $equipment->id, true);
 
         return response()->json([
             'success' => true,

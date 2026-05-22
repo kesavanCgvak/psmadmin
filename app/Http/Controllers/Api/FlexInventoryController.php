@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Equipment;
-use App\Models\EquipmentImage;
+use App\Support\InventoryImageSyncService;
 use App\Models\LinearUnit;
 use App\Models\Product;
 use App\Models\WeightUnit;
@@ -456,7 +456,13 @@ class FlexInventoryController extends Controller
                 'replacement_price' => $details['replacementCost'] ?? null,
             ], $specAttributes));
 
-            $this->createEquipmentImages($equipment->id, $details['imageUrls'] ?? []);
+            InventoryImageSyncService::importUrlsToMasterAndEquipment(
+                (int) $product->id,
+                (int) $equipment->id,
+                $details['imageUrls'] ?? [],
+                'flex',
+                (int) $user->id
+            );
 
             DB::commit();
             return response()->json([
@@ -469,23 +475,6 @@ class FlexInventoryController extends Controller
                 return response()->json(['status' => 'already_in_inventory'], 409);
             }
             throw $e;
-        }
-    }
-
-    /**
-     * Create equipment_images records for Flex image URLs.
-     */
-    protected function createEquipmentImages(int $equipmentId, array $imageUrls): void
-    {
-        foreach ($imageUrls as $url) {
-            $url = trim($url);
-            if (empty($url)) {
-                continue;
-            }
-            EquipmentImage::create([
-                'equipment_id' => $equipmentId,
-                'image_path' => $url,
-            ]);
         }
     }
 

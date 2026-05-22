@@ -54,7 +54,9 @@ class Equipment extends Model
 
     public function images()
     {
-        return $this->hasMany(EquipmentImage::class);
+        return $this->hasMany(EquipmentImage::class)
+            ->orderBy('sort_order')
+            ->orderBy('id');
     }
 
     public function company()

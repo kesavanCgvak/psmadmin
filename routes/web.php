@@ -112,6 +112,12 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('products.search');
     Route::get('/products/{product}/clone', [ProductController::class, 'clone'])
         ->name('products.clone');
+    Route::post('/products/{product}/master-images', [ProductController::class, 'storeMasterImage'])
+        ->name('products.master-images.store');
+    Route::delete('/products/{product}/master-images/{masterImage}', [ProductController::class, 'destroyMasterImage'])
+        ->name('products.master-images.destroy');
+    Route::post('/products/{product}/master-images/{masterImage}/primary', [ProductController::class, 'setPrimaryMasterImage'])
+        ->name('products.master-images.primary');
     Route::resource('products', ProductController::class);
     Route::post('/products/bulk-delete', [ProductController::class, 'bulkDelete'])
         ->name('products.bulk-delete');

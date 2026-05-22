@@ -3,9 +3,9 @@
 namespace App\Services;
 
 use App\Models\Equipment;
-use App\Models\EquipmentImage;
 use App\Models\Product;
 use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryImageSyncService;
 use App\Support\InventoryMeasurementUnits;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -134,23 +134,21 @@ class InventoryImportService
     }
 
     /**
-     * Append Flex image URLs to company_inventory (dedupe by URL).
+     * Store Flex images on master catalog and copy missing paths to company_inventory.
      */
-    public static function appendEquipmentImagesFromFlex(int $equipmentId, array $imageUrls): void
-    {
-        foreach ($imageUrls as $url) {
-            $url = trim((string) $url);
-            if ($url === '') {
-                continue;
-            }
-            if (EquipmentImage::where('equipment_id', $equipmentId)->where('image_path', $url)->exists()) {
-                continue;
-            }
-            EquipmentImage::create([
-                'equipment_id' => $equipmentId,
-                'image_path' => $url,
-            ]);
-        }
+    public static function appendEquipmentImagesFromFlex(
+        int $inventoryMasterId,
+        int $equipmentId,
+        array $imageUrls,
+        ?int $userId = null
+    ): void {
+        InventoryImageSyncService::importUrlsToMasterAndEquipment(
+            $inventoryMasterId,
+            $equipmentId,
+            $imageUrls,
+            'flex',
+            $userId
+        );
     }
 
     /**
@@ -198,7 +196,7 @@ class InventoryImportService
                 'quantity' => $quantity,
                 'rental_price' => $rentalOverride !== null ? $rentalOverride : $existingByFlex->rental_price,
             ], $specPatch));
-            self::appendEquipmentImagesFromFlex($existingByFlex->id, $imageUrls);
+            self::appendEquipmentImagesFromFlex($productId, (int) $existingByFlex->id, $imageUrls, $userId);
 
             return $existingByFlex->fresh();
         }
@@ -220,7 +218,7 @@ class InventoryImportService
             $equipment = Equipment::where('company_id', $companyId)
                 ->where('flex_resource_id', $flexId)
                 ->firstOrFail();
-            self::appendEquipmentImagesFromFlex($equipment->id, $imageUrls);
+            self::appendEquipmentImagesFromFlex($productId, (int) $equipment->id, $imageUrls, $userId);
 
             return $equipment;
         }
@@ -373,6 +371,22 @@ class InventoryImportService
                 $inventoryUpdates['quantity'] = $quantity;
             }
             $inventory->update($inventoryUpdates);
+
+            $imageUrls = $details['imageUrls'] ?? [];
+            if (!empty($imageUrls) && $inventory->product_id) {
+                InventoryImageSyncService::importUrlsToMasterAndEquipment(
+                    (int) $inventory->product_id,
+                    (int) $inventory->id,
+                    $imageUrls,
+                    'flex'
+                );
+            } elseif ($inventory->product_id) {
+                InventoryImageSyncService::syncMasterToEquipment(
+                    (int) $inventory->product_id,
+                    (int) $inventory->id,
+                    true
+                );
+            }
 
             DB::commit();
 

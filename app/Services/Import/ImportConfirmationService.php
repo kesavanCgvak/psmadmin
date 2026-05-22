@@ -8,6 +8,7 @@ use App\Models\Equipment;
 use App\Services\Import\ProductMatcherService;
 use App\Services\Import\TypeMatcherService;
 use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryImageSyncService;
 use App\Support\ProductNameNormalizer;
 use Illuminate\Support\Facades\DB;
 
@@ -78,8 +79,9 @@ class ImportConfirmationService
                             $updateData,
                             CompanyInventorySpecs::attributesFromProduct($product)
                         ));
+                        $equipment = $existingEquipment->fresh();
                     } else {
-                        Equipment::create(
+                        $equipment = Equipment::create(
                             $this->equipmentCreateWithProductSpecs($userId, $companyId, (int) $rowData['product_id'], $product, [
                                 'quantity' => $importQuantity,
                                 'rental_price' => $importPrice,
@@ -87,6 +89,12 @@ class ImportConfirmationService
                             ])
                         );
                     }
+
+                    InventoryImageSyncService::syncMasterToEquipment(
+                        (int) $rowData['product_id'],
+                        (int) $equipment->id,
+                        true
+                    );
 
                     $attached++;
                     $successfulRows[] = $rowData['row'];
@@ -169,8 +177,9 @@ class ImportConfirmationService
                         $existingEquipment->update(
                             $this->equipmentUpdateWithProductSpecs($existingEquipment, $product, $updateData)
                         );
+                        $equipment = $existingEquipment->fresh();
                     } else {
-                        Equipment::create(
+                        $equipment = Equipment::create(
                             $this->equipmentCreateWithProductSpecs($userId, $companyId, (int) $product->id, $product, [
                                 'quantity' => $importQuantity,
                                 'rental_price' => $importPrice,
@@ -178,6 +187,12 @@ class ImportConfirmationService
                             ])
                         );
                     }
+
+                    InventoryImageSyncService::syncMasterToEquipment(
+                        (int) $product->id,
+                        (int) $equipment->id,
+                        true
+                    );
 
                     $created++;
                     $successfulRows[] = $rowData['row'];

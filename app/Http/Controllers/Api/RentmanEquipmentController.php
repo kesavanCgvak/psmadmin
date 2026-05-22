@@ -512,7 +512,13 @@ class RentmanEquipmentController extends Controller
                 ->where('rentman_equipment_id', $rentmanEquipmentId)
                 ->first();
             if ($equipment) {
-                RentmanInventoryImportService::appendEquipmentImagesFromRentman($companyId, $rentmanEquipmentId, (int) $equipment->id);
+                RentmanInventoryImportService::appendEquipmentImagesFromRentman(
+                    (int) $product->id,
+                    $companyId,
+                    $rentmanEquipmentId,
+                    (int) $equipment->id,
+                    (int) $user->id
+                );
             }
 
             RentmanInventoryImportService::markRentmanCacheImported($companyId, $rentmanEquipmentId);

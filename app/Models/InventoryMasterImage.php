@@ -3,17 +3,17 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class EquipmentImage extends Model
+class InventoryMasterImage extends Model
 {
-    use HasFactory;
-
     protected $fillable = [
-        'equipment_id',
+        'inventory_master_id',
         'image_path',
         'is_primary',
         'sort_order',
+        'source',
+        'created_by',
     ];
 
     protected $casts = [
@@ -21,8 +21,8 @@ class EquipmentImage extends Model
         'sort_order' => 'integer',
     ];
 
-    public function equipment()
+    public function product(): BelongsTo
     {
-        return $this->belongsTo(Equipment::class);
+        return $this->belongsTo(Product::class, 'inventory_master_id');
     }
 }

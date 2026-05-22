@@ -10,6 +10,7 @@ use App\Models\Company;
 use App\Models\User;
 use App\Models\WeightUnit;
 use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryImageSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -65,7 +66,11 @@ class EquipmentManagementController extends Controller
                 ->withInput();
         }
 
-        Equipment::create($this->equipmentPayload($request));
+        $equipment = Equipment::create($this->equipmentPayload($request));
+        $productId = (int) $request->input('product_id');
+        if ($productId > 0) {
+            InventoryImageSyncService::syncMasterToEquipment($productId, (int) $equipment->id, true);
+        }
 
         return redirect()->route('admin.equipment.index')
             ->with('success', 'Equipment created successfully.');
@@ -81,6 +86,7 @@ class EquipmentManagementController extends Controller
             'product.brand',
             'product.category',
             'product.subCategory',
+            'product.masterImages',
             'user',
             'images',
             'linearUnit:id,code,name',
@@ -125,7 +131,12 @@ class EquipmentManagementController extends Controller
                 ->withInput();
         }
 
+        $previousProductId = (int) $equipment->product_id;
         $equipment->update($this->equipmentPayload($request));
+        $newProductId = (int) $equipment->fresh()->product_id;
+        if ($newProductId > 0 && $newProductId !== $previousProductId) {
+            InventoryImageSyncService::syncMasterToEquipment($newProductId, (int) $equipment->id, true);
+        }
 
         return redirect()->route('admin.equipment.index')
             ->with('success', 'Equipment updated successfully.');
@@ -243,9 +254,21 @@ class EquipmentManagementController extends Controller
      */
     public function getProductInventorySpecs(Product $product)
     {
+        $product->load(['masterImages' => fn ($q) => $q->orderBy('sort_order')->orderBy('id')]);
+
         return response()->json([
             'success' => true,
-            'data' => CompanyInventorySpecs::productSpecsForJson($product),
+            'data' => array_merge(
+                CompanyInventorySpecs::productSpecsForJson($product),
+                [
+                    'master_images' => $product->masterImages->map(fn ($img) => [
+                        'id' => $img->id,
+                        'image_path' => $img->image_path,
+                        'is_primary' => (bool) $img->is_primary,
+                        'sort_order' => $img->sort_order,
+                    ])->values()->all(),
+                ]
+            ),
         ]);
     }
 

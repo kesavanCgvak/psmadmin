@@ -119,6 +119,28 @@
         </div>
 
         <div class="col-md-4">
+            @if($equipment->product && $equipment->product->masterImages->count() > 0)
+                <div class="card card-outline card-info mb-3">
+                    <div class="card-header">
+                        <h3 class="card-title">Catalog (master) images</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            @foreach($equipment->product->masterImages as $image)
+                                <div class="col-md-6 mb-3 text-center">
+                                    <img src="{{ str_starts_with($image->image_path, 'http') ? $image->image_path : asset($image->image_path) }}"
+                                         class="img-fluid img-thumbnail"
+                                         alt="Master image">
+                                    @if($image->is_primary)
+                                        <span class="badge badge-success mt-1">Primary</span>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <!-- Equipment Images -->
             <div class="card">
                 <div class="card-header">
@@ -128,10 +150,13 @@
                     @if($equipment->images->count() > 0)
                         <div class="row">
                             @foreach($equipment->images as $image)
-                                <div class="col-md-6 mb-3">
-                                    <img src="{{ asset($image->image_path) }}"
+                                <div class="col-md-6 mb-3 text-center">
+                                    <img src="{{ str_starts_with($image->image_path, 'http') ? $image->image_path : asset($image->image_path) }}"
                                          class="img-fluid img-thumbnail"
                                          alt="Equipment Image">
+                                    @if($image->is_primary)
+                                        <span class="badge badge-success mt-1">Primary</span>
+                                    @endif
                                 </div>
                             @endforeach
                         </div>

@@ -5,9 +5,9 @@ namespace App\Services;
 use App\Models\Brand;
 use App\Models\CompanyIntegration;
 use App\Models\Equipment;
-use App\Models\EquipmentImage;
 use App\Models\Product;
 use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryImageSyncService;
 use App\Support\InventoryMeasurementUnits;
 use App\Support\ProductNormalizer;
 use Illuminate\Support\Facades\Cache;
@@ -679,17 +679,13 @@ class FlexService
             'replacement_price' => $replacementPrice,
         ], $specAttributes));
 
-        // 6. Create equipment images
-        foreach ($imageUrls as $url) {
-            $url = trim($url);
-            if (empty($url)) {
-                continue;
-            }
-            EquipmentImage::create([
-                'equipment_id' => $equipment->id,
-                'image_path' => $url,
-            ]);
-        }
+        InventoryImageSyncService::importUrlsToMasterAndEquipment(
+            $productId,
+            (int) $equipment->id,
+            $imageUrls,
+            'flex',
+            $userId
+        );
 
         return $equipment;
     }

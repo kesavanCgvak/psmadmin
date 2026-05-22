@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryMasterImage;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\SubCategory;
@@ -10,8 +11,9 @@ use App\Models\Brand;
 use App\Models\LinearUnit;
 use App\Models\WeightUnit;
 use App\Services\BulkDeletionService;
-use App\Support\ProductNameNormalizer;
+use App\Support\InventoryImageSyncService;
 use App\Support\InventoryProductSearch;
+use App\Support\ProductNameNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
@@ -364,7 +366,16 @@ class ProductController extends Controller
      */
     public function show(Product $product)
     {
-        $product->load(['category', 'subCategory', 'brand', 'equipments', 'linearUnit', 'weightUnit']);
+        $product->load([
+            'category',
+            'subCategory',
+            'brand',
+            'equipments',
+            'linearUnit',
+            'weightUnit',
+            'masterImages',
+        ]);
+
         return view('admin.products.products.show', compact('product'));
     }
 
@@ -917,6 +928,59 @@ class ProductController extends Controller
                 'message' => 'Error verifying products: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function storeMasterImage(Request $request, Product $product)
+    {
+        $validator = Validator::make($request->all(), [
+            'image_path' => 'required|string|max:2048',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        InventoryImageSyncService::storeMasterImagesFromUrls(
+            (int) $product->id,
+            [(string) $request->input('image_path')],
+            'admin',
+            auth()->id()
+        );
+
+        return redirect()
+            ->route('admin.products.show', $product)
+            ->with('success', 'Master image added.');
+    }
+
+    public function destroyMasterImage(Product $product, InventoryMasterImage $masterImage)
+    {
+        if ((int) $masterImage->inventory_master_id !== (int) $product->id) {
+            abort(404);
+        }
+
+        $masterImage->delete();
+        InventoryImageSyncService::ensureMasterPrimary((int) $product->id);
+
+        return redirect()
+            ->route('admin.products.show', $product)
+            ->with('success', 'Master image removed.');
+    }
+
+    public function setPrimaryMasterImage(Product $product, InventoryMasterImage $masterImage)
+    {
+        if ((int) $masterImage->inventory_master_id !== (int) $product->id) {
+            abort(404);
+        }
+
+        InventoryMasterImage::query()
+            ->where('inventory_master_id', $product->id)
+            ->update(['is_primary' => false]);
+
+        $masterImage->update(['is_primary' => true]);
+
+        return redirect()
+            ->route('admin.products.show', $product)
+            ->with('success', 'Primary master image updated.');
     }
 }
 

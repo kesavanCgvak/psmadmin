@@ -64,6 +64,7 @@
                 </div>
 
                 @include('admin.companies.equipment.partials.product-search-select', ['selectedProduct' => $selectedProduct ?? null])
+                @include('admin.companies.equipment.partials.master-images-preview')
 
                 <div class="row">
                     <div class="col-md-6">
