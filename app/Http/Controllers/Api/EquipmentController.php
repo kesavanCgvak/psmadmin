@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Equipment;
 use App\Models\EquipmentImage;
+use App\Http\Requests\UpdateEquipmentMarketplaceDetailsRequest;
+use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryImageManagementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -121,7 +124,12 @@ class EquipmentController extends Controller
 
             $search = $request->input('search', null);
 
-            $query = Equipment::with(['product.brand', 'images'])
+            $query = Equipment::with([
+                'product.brand',
+                'images',
+                'linearUnit:id,code,name',
+                'weightUnit:id,code,name',
+            ])
                 ->where('company_id', $user->company_id);
 
             if ($search) {
@@ -153,7 +161,7 @@ class EquipmentController extends Controller
                 $brandName = $product->brand->name ?? null;
                 $modelName = $product->model ?? 'Unknown Model';
 
-                return [
+                return array_merge([
                     'id' => $equipment->id,
                     'product_id' => $product->id,
                     'product_label' => $brandName
@@ -171,11 +179,11 @@ class EquipmentController extends Controller
                     'images' => $equipment->images->map(function ($img) {
                         return [
                             'id' => $img->id,
-                            // 'path' => $img->image_path,
-                            'url' => asset($img->image_path)
+                            'url' => InventoryImageManagementService::publicUrl($img->image_path),
+                            'is_primary' => (bool) $img->is_primary,
                         ];
-                    })
-                ];
+                    }),
+                ], CompanyInventorySpecs::equipmentSpecsForJson($equipment));
             });
 
 
@@ -197,6 +205,38 @@ class EquipmentController extends Controller
                 'message' => 'Unable to fetch company equipments'
             ], 500);
         }
+    }
+
+    /**
+     * Update marketplace physical/detail fields on company inventory.
+     */
+    public function updateMarketplaceDetails(
+        UpdateEquipmentMarketplaceDetailsRequest $request,
+        Equipment $equipment
+    ) {
+        $user = $this->getAuthenticatedUser();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        if ($equipment->company_id !== $user->company_id) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $equipment->update($request->validated());
+        $equipment->load(['linearUnit:id,code,name', 'weightUnit:id,code,name']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Equipment details updated successfully.',
+            'data' => array_merge(
+                [
+                    'id' => $equipment->id,
+                    'product_id' => $equipment->product_id,
+                ],
+                CompanyInventorySpecs::equipmentSpecsForJson($equipment)
+            ),
+        ], 200);
     }
 
     /**

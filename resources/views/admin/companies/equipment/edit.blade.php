@@ -142,6 +142,15 @@
             </div>
         </form>
     </div>
+
+    @include('admin.partials.image-gallery-manager', [
+        'title' => 'Equipment Images',
+        'entityType' => 'equipment',
+        'entity' => $equipment,
+        'images' => $equipment->images,
+        'emptyMessage' => 'No equipment images yet.',
+        'cardClass' => 'mt-3',
+    ])
 @stop
 
 @section('js')

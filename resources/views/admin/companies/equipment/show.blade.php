@@ -120,51 +120,24 @@
 
         <div class="col-md-4">
             @if($equipment->product && $equipment->product->masterImages->count() > 0)
-                <div class="card card-outline card-info mb-3">
-                    <div class="card-header">
-                        <h3 class="card-title">Catalog (master) images</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            @foreach($equipment->product->masterImages as $image)
-                                <div class="col-md-6 mb-3 text-center">
-                                    <img src="{{ str_starts_with($image->image_path, 'http') ? $image->image_path : asset($image->image_path) }}"
-                                         class="img-fluid img-thumbnail"
-                                         alt="Master image">
-                                    @if($image->is_primary)
-                                        <span class="badge badge-success mt-1">Primary</span>
-                                    @endif
-                                </div>
-                            @endforeach
-                        </div>
-                    </div>
-                </div>
+                @include('admin.partials.image-gallery-manager', [
+                    'title' => 'Catalog (master) images',
+                    'entityType' => 'product',
+                    'entity' => $equipment->product,
+                    'images' => $equipment->product->masterImages,
+                    'readOnly' => true,
+                    'cardClass' => 'card-outline card-info mb-3',
+                    'emptyMessage' => 'No catalog images.',
+                ])
             @endif
 
-            <!-- Equipment Images -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Equipment Images</h3>
-                </div>
-                <div class="card-body">
-                    @if($equipment->images->count() > 0)
-                        <div class="row">
-                            @foreach($equipment->images as $image)
-                                <div class="col-md-6 mb-3 text-center">
-                                    <img src="{{ str_starts_with($image->image_path, 'http') ? $image->image_path : asset($image->image_path) }}"
-                                         class="img-fluid img-thumbnail"
-                                         alt="Equipment Image">
-                                    @if($image->is_primary)
-                                        <span class="badge badge-success mt-1">Primary</span>
-                                    @endif
-                                </div>
-                            @endforeach
-                        </div>
-                    @else
-                        <p class="text-muted">No images uploaded yet.</p>
-                    @endif
-                </div>
-            </div>
+            @include('admin.partials.image-gallery-manager', [
+                'title' => 'Equipment Images',
+                'entityType' => 'equipment',
+                'entity' => $equipment,
+                'images' => $equipment->images,
+                'emptyMessage' => 'No equipment images yet. Upload or sync from catalog.',
+            ])
 
             <!-- Calculation -->
             <div class="card card-success">

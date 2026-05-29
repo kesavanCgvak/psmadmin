@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Equipment;
+use App\Models\EquipmentImage;
 use App\Models\LinearUnit;
 use App\Models\Product;
 use App\Models\Company;
 use App\Models\User;
 use App\Models\WeightUnit;
 use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryImageManagementService;
 use App\Support\InventoryImageSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -88,7 +90,7 @@ class EquipmentManagementController extends Controller
             'product.subCategory',
             'product.masterImages',
             'user',
-            'images',
+            'images' => fn ($q) => $q->orderBy('sort_order')->orderBy('id'),
             'linearUnit:id,code,name',
             'weightUnit:id,code,name',
         ]);
@@ -101,7 +103,10 @@ class EquipmentManagementController extends Controller
      */
     public function edit(Equipment $equipment)
     {
-        $equipment->load('product.brand');
+        $equipment->load([
+            'product.brand',
+            'images' => fn ($q) => $q->orderBy('sort_order')->orderBy('id'),
+        ]);
         $companies = Company::orderBy('name')->get();
         $users = User::where('company_id', $equipment->company_id)->orderBy('username')->get();
         $linearUnits = LinearUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
@@ -149,10 +154,7 @@ class EquipmentManagementController extends Controller
     {
         try {
             foreach ($equipment->images as $image) {
-                $imagePath = public_path($image->image_path);
-                if (file_exists($imagePath)) {
-                    unlink($imagePath);
-                }
+                InventoryImageManagementService::deleteLocalFileIfStored($image->image_path);
                 $image->delete();
             }
 
@@ -189,10 +191,7 @@ class EquipmentManagementController extends Controller
 
             try {
                 foreach ($equipment->images as $image) {
-                    $imagePath = public_path($image->image_path);
-                    if (file_exists($imagePath)) {
-                        unlink($imagePath);
-                    }
+                    InventoryImageManagementService::deleteLocalFileIfStored($image->image_path);
                     $image->delete();
                 }
 
@@ -316,5 +315,104 @@ class EquipmentManagementController extends Controller
             'software_code',
             'description',
         ], CompanyInventorySpecs::FIELDS));
+    }
+
+    public function storeImage(Request $request, Equipment $equipment)
+    {
+        $validator = Validator::make($request->all(), [
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'image_path' => 'nullable|string|max:512',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        if (!$request->hasFile('image') && !$request->filled('image_path')) {
+            return redirect()->back()
+                ->withErrors(['image' => 'Provide an image file or URL/path.'])
+                ->withInput();
+        }
+
+        try {
+            InventoryImageManagementService::addEquipmentImage(
+                (int) $equipment->id,
+                $request->file('image'),
+                $request->input('image_path')
+            );
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->back()->withErrors(['image_path' => $e->getMessage()])->withInput();
+        }
+
+        return redirect()->back()->with('success', 'Equipment image added.');
+    }
+
+    public function updateImage(Request $request, Equipment $equipment, EquipmentImage $equipmentImage)
+    {
+        if ((int) $equipmentImage->equipment_id !== (int) $equipment->id) {
+            abort(404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'image_path' => 'nullable|string|max:512',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator);
+        }
+
+        if (!$request->hasFile('image') && !$request->filled('image_path')) {
+            return redirect()->back()->withErrors(['image' => 'Provide a file or URL/path to update.']);
+        }
+
+        try {
+            if ($request->hasFile('image')) {
+                InventoryImageManagementService::replaceEquipmentImageFile($equipmentImage, $request->file('image'));
+            } else {
+                InventoryImageManagementService::replaceEquipmentImagePath($equipmentImage, (string) $request->input('image_path'));
+            }
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->back()->withErrors(['image_path' => $e->getMessage()]);
+        }
+
+        return redirect()->back()->with('success', 'Equipment image updated.');
+    }
+
+    public function destroyImage(Equipment $equipment, EquipmentImage $equipmentImage)
+    {
+        if ((int) $equipmentImage->equipment_id !== (int) $equipment->id) {
+            abort(404);
+        }
+
+        InventoryImageManagementService::deleteEquipmentImage($equipmentImage);
+
+        return redirect()->back()->with('success', 'Equipment image removed.');
+    }
+
+    public function setPrimaryImage(Equipment $equipment, EquipmentImage $equipmentImage)
+    {
+        InventoryImageManagementService::setEquipmentPrimary((int) $equipment->id, $equipmentImage);
+
+        return redirect()->back()->with('success', 'Primary equipment image updated.');
+    }
+
+    public function reorderImages(Request $request, Equipment $equipment)
+    {
+        $request->validate([
+            'order' => 'required|array|min:1',
+            'order.*' => 'integer',
+        ]);
+
+        try {
+            InventoryImageManagementService::reorderEquipmentImages(
+                (int) $equipment->id,
+                $request->input('order', [])
+            );
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->back()->withErrors(['order' => $e->getMessage()]);
+        }
+
+        return redirect()->back()->with('success', 'Image order saved.');
     }
 }

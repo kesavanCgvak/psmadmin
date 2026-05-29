@@ -194,58 +194,13 @@
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Master Product Images</h3>
-                </div>
-                <div class="card-body">
-                    @if($product->masterImages->count() > 0)
-                        <div class="row mb-3">
-                            @foreach($product->masterImages as $image)
-                                <div class="col-md-4 mb-3 text-center">
-                                    <img src="{{ str_starts_with($image->image_path, 'http') ? $image->image_path : asset($image->image_path) }}"
-                                         class="img-fluid img-thumbnail"
-                                         alt="Master image">
-                                    @if($image->is_primary)
-                                        <span class="badge badge-success mt-1">Primary</span>
-                                    @endif
-                                    @if($image->source)
-                                        <span class="badge badge-secondary mt-1">{{ $image->source }}</span>
-                                    @endif
-                                    <div class="mt-2">
-                                        @if(!$image->is_primary)
-                                            <form action="{{ route('admin.products.master-images.primary', [$product, $image]) }}" method="POST" class="d-inline">
-                                                @csrf
-                                                <button type="submit" class="btn btn-xs btn-outline-primary">Set primary</button>
-                                            </form>
-                                        @endif
-                                        <form action="{{ route('admin.products.master-images.destroy', [$product, $image]) }}" method="POST" class="d-inline" onsubmit="return confirm('Remove this master image?');">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" class="btn btn-xs btn-outline-danger">Remove</button>
-                                        </form>
-                                    </div>
-                                </div>
-                            @endforeach
-                        </div>
-                    @else
-                        <p class="text-muted">No master images yet. Images from Flex/Rentman imports or the form below are stored here.</p>
-                    @endif
-
-                    <form action="{{ route('admin.products.master-images.store', $product) }}" method="POST" class="mt-2">
-                        @csrf
-                        <div class="form-group">
-                            <label for="image_path">Image URL or path</label>
-                            <input type="text" name="image_path" id="image_path" class="form-control @error('image_path') is-invalid @enderror"
-                                   value="{{ old('image_path') }}" placeholder="https://... or uploads/...">
-                            @error('image_path')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
-                        <button type="submit" class="btn btn-sm btn-primary">Add master image</button>
-                    </form>
-                </div>
-            </div>
+            @include('admin.partials.image-gallery-manager', [
+                'title' => 'Master Product Images',
+                'entityType' => 'product',
+                'entity' => $product,
+                'images' => $product->masterImages,
+                'emptyMessage' => 'No master images yet. Upload here or import via Flex/Rentman.',
+            ])
 
             @if($product->equipments->count() > 0)
                 <div class="card">

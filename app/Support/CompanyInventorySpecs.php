@@ -135,6 +135,41 @@ final class CompanyInventorySpecs
         ]);
     }
 
+    /**
+     * Physical/detail attributes for company_inventory API responses.
+     *
+     * @return array<string, mixed>
+     */
+    public static function equipmentSpecsForJson(Equipment $equipment): array
+    {
+        $equipment->loadMissing(['linearUnit:id,code,name', 'weightUnit:id,code,name']);
+
+        return [
+            'height' => $equipment->height,
+            'width' => $equipment->width,
+            'length' => $equipment->length,
+            'weight' => $equipment->weight,
+            'linear_unit_id' => $equipment->linear_unit_id,
+            'weight_unit_id' => $equipment->weight_unit_id,
+            'linear_unit' => $equipment->linearUnit ? [
+                'id' => $equipment->linearUnit->id,
+                'code' => $equipment->linearUnit->code,
+                'name' => $equipment->linearUnit->name,
+            ] : null,
+            'weight_unit' => $equipment->weightUnit ? [
+                'id' => $equipment->weightUnit->id,
+                'code' => $equipment->weightUnit->code,
+                'name' => $equipment->weightUnit->name,
+            ] : null,
+            'linear_unit_code' => $equipment->linearUnit?->code,
+            'weight_unit_code' => $equipment->weightUnit?->code,
+            'country_of_origin' => $equipment->country_of_origin,
+            'hsn_code' => $equipment->hsn_code,
+            'dimensions_display' => self::formatDimensions($equipment),
+            'weight_display' => self::formatWeight($equipment),
+        ];
+    }
+
     public static function formatDimensions(Model $model): ?string
     {
         if ($model->height === null && $model->width === null && $model->length === null) {

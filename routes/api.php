@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\IssueTypeController;
 use App\Http\Controllers\Api\JobNegotiationController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MailTestController;
+use App\Http\Controllers\Api\MeasurementUnitController;
 use App\Http\Controllers\Api\PaymentStatusController;
 use App\Http\Controllers\Api\PartnerProductController;
 use App\Http\Controllers\Api\PricingSchemeController;
@@ -119,6 +120,8 @@ Route::middleware('jwt.verify')->group(function () {
     Route::get('/rental-softwares', [RentalSoftwareController::class, 'index']);
     Route::get('/currencies', [CurrencyController::class, 'index']);
     Route::get('/date-formats', [DateFormatController::class, 'index']);
+    Route::get('/linear-units', [MeasurementUnitController::class, 'linearUnits']);
+    Route::get('/weight-units', [MeasurementUnitController::class, 'weightUnits']);
     Route::get('/pricing-schemes', [PricingSchemeController::class, 'index']);
 });
 
@@ -236,6 +239,7 @@ Route::middleware(['jwt.verify'])->group(function () {
     Route::put('/equipments/{equipment}/price', [EquipmentController::class, 'updatePrice']);
     Route::put('/equipments/{equipment}/software-code', [EquipmentController::class, 'updateSoftwareCode']);
     Route::put('/equipments/{equipment}/description', [EquipmentController::class, 'updateDescription']);
+    Route::put('/equipments/{equipment}/marketplace-details', [EquipmentController::class, 'updateMarketplaceDetails']);
 
     // Images
     Route::post('/equipments/{equipment}/images', [EquipmentController::class, 'addImages']);
