@@ -785,6 +785,7 @@ class CompanyController extends Controller
                     'companies.rating_override as company_rating_override',
                     'companies.default_contact_id',
                     'companies.city_id',
+                    'company_inventory.id as equipment_id',
                     'company_inventory.product_id',
                     'company_inventory.quantity',
                     // 'inventory_master.model as product_name',
@@ -906,6 +907,7 @@ class CompanyController extends Controller
                         $availableQty = $item->quantity ?? 0;
 
                         return [
+                            'equipment_id' => (int) $item->equipment_id,
                             'product_id' => $item->product_id,
                             'product_name' => $item->product_name,
                             'requested_quantity' => (int) $requestedQty,

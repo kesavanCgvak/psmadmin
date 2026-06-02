@@ -136,7 +136,7 @@ final class CompanyInventorySpecs
     }
 
     /**
-     * Physical/detail attributes for company_inventory API responses.
+     * Full physical/detail attributes for company_inventory (admin/internal use).
      *
      * @return array<string, mixed>
      */
@@ -163,6 +163,23 @@ final class CompanyInventorySpecs
             ] : null,
             'linear_unit_code' => $equipment->linearUnit?->code,
             'weight_unit_code' => $equipment->weightUnit?->code,
+            'country_of_origin' => $equipment->country_of_origin,
+            'hsn_code' => $equipment->hsn_code,
+            'dimensions_display' => self::formatDimensions($equipment),
+            'weight_display' => self::formatWeight($equipment),
+        ];
+    }
+
+    /**
+     * Marketplace equipment API: display + trade fields only (no raw dimensions/units).
+     *
+     * @return array<string, mixed>
+     */
+    public static function equipmentMarketplaceSpecsForApi(Equipment $equipment): array
+    {
+        $equipment->loadMissing(['linearUnit:id,code,name', 'weightUnit:id,code,name']);
+
+        return [
             'country_of_origin' => $equipment->country_of_origin,
             'hsn_code' => $equipment->hsn_code,
             'dimensions_display' => self::formatDimensions($equipment),

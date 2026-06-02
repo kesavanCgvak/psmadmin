@@ -232,6 +232,8 @@ Route::middleware(['jwt.verify'])->group(function () {
     // Equipment CRUD
     Route::post('/equipments', [EquipmentController::class, 'store']);
     Route::get('/equipments', [EquipmentController::class, 'getCompanyEquipments']);
+    Route::get('/company-equipments/{id}', [EquipmentController::class, 'showCompanyEquipment'])
+        ->whereNumber('id');
     Route::delete('/equipments/{equipment}', [EquipmentController::class, 'destroy']);
 
     // Updates
