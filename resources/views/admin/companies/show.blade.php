@@ -318,6 +318,8 @@
                                 <th>Model</th>
                                 <th>Brand</th>
                                 <th>PSM Code</th>
+                                <th>Dimensions</th>
+                                <th>Weight</th>
                                 <th>Qty</th>
                                 <th>Rental price</th>
                                 <th>Software code</th>
@@ -416,6 +418,8 @@
                         }
                     },
                     { data: 'psm_code', name: 'psm_code' },
+                    { data: 'dimensions', name: 'dimensions', orderable: false, searchable: false },
+                    { data: 'weight', name: 'weight', orderable: false, searchable: false },
                     {
                         data: 'quantity',
                         name: 'quantity',
@@ -498,9 +502,22 @@
                             $item.on('click', function (e) {
                                 e.preventDefault();
                                 $('#selectedProductId').val(p.id);
+                                var summary = 'Selected: ' + p.model + ' (' + p.psm_code + ') — ' + p.brand;
+                                if (p.dimensions_display) {
+                                    summary += ' | Dimensions: ' + p.dimensions_display;
+                                }
+                                if (p.weight_display) {
+                                    summary += ' | Weight: ' + p.weight_display;
+                                }
+                                if (p.country_of_origin) {
+                                    summary += ' | Origin: ' + p.country_of_origin;
+                                }
+                                if (p.hsn_code) {
+                                    summary += ' | HSN: ' + p.hsn_code;
+                                }
                                 $('#selectedProductSummary')
                                     .removeClass('d-none')
-                                    .text('Selected: ' + p.model + ' (' + p.psm_code + ') — ' + p.brand);
+                                    .text(summary);
                                 $('#confirmAddInventoryBtn').prop('disabled', false);
                                 $results.find('.list-group-item').removeClass('active');
                                 $item.addClass('active');

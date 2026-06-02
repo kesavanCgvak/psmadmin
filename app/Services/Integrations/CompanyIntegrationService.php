@@ -134,16 +134,15 @@ class CompanyIntegrationService
     {
         $baseUrl = rtrim((string) ($validatedData['api_base_url'] ?? ''), '/');
         $apiKey = (string) ($validatedData['api_key'] ?? '');
-        $requestUrl = $baseUrl . '/f5/api/contact';
+        $requestUrl = $baseUrl . '/f5/api/contact?page=0&size=20';
 
         try {
             $response = Http::timeout(15)
-                ->withHeaders([
-                    'Authorization' => 'Bearer ' . $apiKey,
-                    'Accept' => 'application/json',
+                ->withHeaders(array_merge($this->flexAuthHeaders($apiKey), [
+                    'Accept' => '*/*',
                     'Content-Type' => 'application/json',
-                ])
-                ->get($requestUrl, ['page' => 0, 'size' => 1]);
+                ]))
+                ->get($requestUrl);
 
             if (!$response->successful()) {
                 $this->logValidationFailure('flex', $requestUrl, $response->status(), 'Flex test request failed');
@@ -215,6 +214,19 @@ class CompanyIntegrationService
             $this->logValidationFailure('rentman', $requestUrl, null, $e->getMessage());
             throw new IntegrationValidationException('Unable to validate Rentman integration credentials.', 422, 'VALIDATION_FAILED');
         }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function flexAuthHeaders(string $apiKey): array
+    {
+        $authType = config('flex.auth_header', 'x_auth');
+        if ($authType === 'x_auth') {
+            return ['X-Auth-Token' => $apiKey];
+        }
+
+        return ['Authorization' => 'Bearer ' . $apiKey];
     }
 
     private function logValidationFailure(

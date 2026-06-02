@@ -3,10 +3,12 @@
 namespace App\Services;
 
 use App\Models\Equipment;
-use App\Models\EquipmentImage;
 use App\Models\LinearUnit;
 use App\Models\Product;
 use App\Models\RentmanEquipment;
+use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryImageSyncService;
+use App\Support\InventoryMeasurementUnits;
 use App\Models\WeightUnit;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -102,8 +104,13 @@ class RentmanInventoryImportService
             ]);
     }
 
-    public static function appendEquipmentImagesFromRentman(int $companyId, string $rentmanId, int $equipmentId): void
-    {
+    public static function appendEquipmentImagesFromRentman(
+        int $inventoryMasterId,
+        int $companyId,
+        string $rentmanId,
+        int $equipmentId,
+        ?int $userId = null
+    ): void {
         try {
             $imageUrls = RentmanService::getEquipmentImageUrls($companyId, $rentmanId);
         } catch (\Throwable $e) {
@@ -114,22 +121,18 @@ class RentmanInventoryImportService
                 'error' => $e->getMessage(),
             ]);
 
+            InventoryImageSyncService::syncMasterToEquipment($inventoryMasterId, $equipmentId, true);
+
             return;
         }
 
-        foreach ($imageUrls as $url) {
-            $url = trim((string) $url);
-            if ($url === '') {
-                continue;
-            }
-            if (EquipmentImage::where('equipment_id', $equipmentId)->where('image_path', $url)->exists()) {
-                continue;
-            }
-            EquipmentImage::create([
-                'equipment_id' => $equipmentId,
-                'image_path' => $url,
-            ]);
-        }
+        InventoryImageSyncService::importUrlsToMasterAndEquipment(
+            $inventoryMasterId,
+            $equipmentId,
+            $imageUrls,
+            'rentman',
+            $userId
+        );
     }
 
     /**
@@ -170,13 +173,28 @@ class RentmanInventoryImportService
             if ((int) $existingByRentman->product_id !== (int) $productId) {
                 throw new \RuntimeException('This Rentman equipment is already imported for this company.');
             }
-            $existingByRentman->update([
+            $linearUnitId = InventoryMeasurementUnits::resolveRentmanLinearUnitId();
+            $weightUnitId = InventoryMeasurementUnits::resolveRentmanWeightUnitId();
+            $specPatch = $row
+                ? CompanyInventorySpecs::patchFillEmpty(
+                    $existingByRentman,
+                    CompanyInventorySpecs::mergeWithProduct(
+                        $product,
+                        CompanyInventorySpecs::attributesFromRentmanRow($row, $linearUnitId, $weightUnitId)
+                    )
+                )
+                : CompanyInventorySpecs::patchFillEmpty(
+                    $existingByRentman,
+                    CompanyInventorySpecs::attributesFromProduct($product)
+                );
+
+            $existingByRentman->update(array_merge([
                 'quantity' => $quantity,
                 'rental_price' => $rentalOverride !== null ? $rentalOverride : $existingByRentman->rental_price,
                 'software_code' => $resolvedSoftwareCode,
                 'description' => $description ?? $existingByRentman->description,
-            ]);
-            self::appendEquipmentImagesFromRentman($companyId, $rentmanId, (int) $existingByRentman->id);
+            ], $specPatch));
+            self::appendEquipmentImagesFromRentman($productId, $companyId, $rentmanId, (int) $existingByRentman->id, $userId);
             self::markRentmanCacheImported($companyId, $rentmanId);
 
             return $existingByRentman->fresh();
@@ -207,7 +225,7 @@ class RentmanInventoryImportService
             $equipment = Equipment::where('company_id', $companyId)
                 ->where('rentman_equipment_id', $rentmanId)
                 ->firstOrFail();
-            self::appendEquipmentImagesFromRentman($companyId, $rentmanId, (int) $equipment->id);
+            self::appendEquipmentImagesFromRentman($productId, $companyId, $rentmanId, (int) $equipment->id, $userId);
 
             return $equipment;
         }
@@ -222,7 +240,7 @@ class RentmanInventoryImportService
             $rentalOverride,
             $description
         );
-        self::appendEquipmentImagesFromRentman($companyId, $rentmanId, (int) $equipment->id);
+        self::appendEquipmentImagesFromRentman($productId, $companyId, $rentmanId, (int) $equipment->id, $userId);
         self::markRentmanCacheImported($companyId, $rentmanId);
 
         return $equipment;
@@ -278,6 +296,11 @@ class RentmanInventoryImportService
 
         if ((string) $inventory->rentman_equipment_id === $rentmanId) {
             if ($quantity !== null || $rentalOverride !== null || $description !== null || $code !== '') {
+                $product = Product::find($inventory->product_id);
+                if ($product) {
+                    self::updateProductSpecsIfEmpty($product, $row);
+                }
+
                 $patch = [];
                 if ($quantity !== null) {
                     $patch['quantity'] = $quantity;
@@ -290,6 +313,20 @@ class RentmanInventoryImportService
                 }
                 if ($code !== '') {
                     $patch['software_code'] = $code;
+                }
+                if ($product) {
+                    $linearUnitId = InventoryMeasurementUnits::resolveRentmanLinearUnitId();
+                    $weightUnitId = InventoryMeasurementUnits::resolveRentmanWeightUnitId();
+                    $patch = array_merge(
+                        $patch,
+                        CompanyInventorySpecs::patchFillEmpty(
+                            $inventory,
+                            CompanyInventorySpecs::mergeWithProduct(
+                                $product,
+                                CompanyInventorySpecs::attributesFromRentmanRow($row, $linearUnitId, $weightUnitId)
+                            )
+                        )
+                    );
                 }
                 if ($patch !== []) {
                     $inventory->update($patch);
@@ -311,7 +348,14 @@ class RentmanInventoryImportService
             }
 
             self::markRentmanCacheImported($companyId, $rentmanId);
-            self::appendEquipmentImagesFromRentman($companyId, $rentmanId, (int) $inventory->id);
+            if ($inventory->product_id) {
+                self::appendEquipmentImagesFromRentman(
+                    (int) $inventory->product_id,
+                    $companyId,
+                    $rentmanId,
+                    (int) $inventory->id
+                );
+            }
 
             return [
                 'success' => true,
@@ -326,10 +370,25 @@ class RentmanInventoryImportService
                 self::updateProductSpecsIfEmpty($product, $row);
             }
 
-            $inventoryUpdates = [
+            $linearUnitId = InventoryMeasurementUnits::resolveRentmanLinearUnitId();
+            $weightUnitId = InventoryMeasurementUnits::resolveRentmanWeightUnitId();
+            $specPatch = $product
+                ? CompanyInventorySpecs::patchFillEmpty(
+                    $inventory,
+                    CompanyInventorySpecs::mergeWithProduct(
+                        $product,
+                        CompanyInventorySpecs::attributesFromRentmanRow($row, $linearUnitId, $weightUnitId)
+                    )
+                )
+                : CompanyInventorySpecs::patchFillEmpty(
+                    $inventory,
+                    CompanyInventorySpecs::attributesFromRentmanRow($row, $linearUnitId, $weightUnitId)
+                );
+
+            $inventoryUpdates = array_merge([
                 'rentman_equipment_id' => $rentmanId,
                 'software_code' => $code !== '' ? $code : ($inventory->software_code ?? $rentmanId),
-            ];
+            ], $specPatch);
             if ($quantity !== null) {
                 $inventoryUpdates['quantity'] = $quantity;
             }
@@ -341,6 +400,15 @@ class RentmanInventoryImportService
             }
             $inventory->update($inventoryUpdates);
 
+            if ($inventory->product_id) {
+                self::appendEquipmentImagesFromRentman(
+                    (int) $inventory->product_id,
+                    $companyId,
+                    $rentmanId,
+                    (int) $inventory->id
+                );
+            }
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
@@ -348,7 +416,6 @@ class RentmanInventoryImportService
         }
 
         self::markRentmanCacheImported($companyId, $rentmanId);
-        self::appendEquipmentImagesFromRentman($companyId, $rentmanId, (int) $inventory->id);
 
         return [
             'success' => true,
@@ -356,7 +423,7 @@ class RentmanInventoryImportService
         ];
     }
 
-    protected static function updateProductSpecsIfEmpty(Product $product, RentmanEquipment $row): void
+    public static function updateProductSpecsIfEmpty(Product $product, RentmanEquipment $row): void
     {
         $productUpdates = [];
         if ($product->height === null && $row->height !== null) {

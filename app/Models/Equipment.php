@@ -20,6 +20,21 @@ class Equipment extends Model
         'company_id',
         'flex_resource_id',
         'rentman_equipment_id',
+        'height',
+        'width',
+        'length',
+        'weight',
+        'linear_unit_id',
+        'weight_unit_id',
+        'country_of_origin',
+        'hsn_code',
+    ];
+
+    protected $casts = [
+        'height' => 'decimal:2',
+        'width' => 'decimal:2',
+        'length' => 'decimal:2',
+        'weight' => 'decimal:2',
     ];
 
     public function user()
@@ -39,11 +54,23 @@ class Equipment extends Model
 
     public function images()
     {
-        return $this->hasMany(EquipmentImage::class);
+        return $this->hasMany(EquipmentImage::class)
+            ->orderBy('sort_order')
+            ->orderBy('id');
     }
 
     public function company()
     {
         return $this->belongsTo(Company::class, 'company_id');
+    }
+
+    public function linearUnit()
+    {
+        return $this->belongsTo(LinearUnit::class);
+    }
+
+    public function weightUnit()
+    {
+        return $this->belongsTo(WeightUnit::class);
     }
 }

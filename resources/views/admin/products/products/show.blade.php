@@ -194,6 +194,14 @@
                 </div>
             </div>
 
+            @include('admin.partials.image-gallery-manager', [
+                'title' => 'Master Product Images',
+                'entityType' => 'product',
+                'entity' => $product,
+                'images' => $product->masterImages,
+                'emptyMessage' => 'No master images yet. Upload here or import via Flex/Rentman.',
+            ])
+
             @if($product->equipments->count() > 0)
                 <div class="card">
                     <div class="card-header">

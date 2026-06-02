@@ -49,6 +49,8 @@
                         <th>Product</th>
                         <th>Brand</th>
                         <th>Category</th>
+                        <th>Dimensions</th>
+                        <th>Weight</th>
                         <th>Quantity</th>
                         <th>Rental Price</th>
                         <th>Software Code</th>
@@ -74,6 +76,8 @@
                             <td>
                                 <span class="badge badge-info">{{ $equipment->product->category?->name ?? 'N/A' }}</span>
                             </td>
+                            <td>{{ \App\Support\CompanyInventorySpecs::formatDimensions($equipment) ?? '—' }}</td>
+                            <td>{{ \App\Support\CompanyInventorySpecs::formatWeight($equipment) ?? '—' }}</td>
                             <td><span class="badge badge-warning">{{ $equipment->quantity }}</span></td>
                             <td>${{ number_format($equipment->rental_price, 2) }}</td>
                             <td>{{ $equipment->software_code ?? 'N/A' }}</td>

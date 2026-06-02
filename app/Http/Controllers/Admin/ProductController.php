@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryMasterImage;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\SubCategory;
@@ -10,8 +11,10 @@ use App\Models\Brand;
 use App\Models\LinearUnit;
 use App\Models\WeightUnit;
 use App\Services\BulkDeletionService;
-use App\Support\ProductNameNormalizer;
+use App\Support\InventoryImageManagementService;
+use App\Support\InventoryImageSyncService;
 use App\Support\InventoryProductSearch;
+use App\Support\ProductNameNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
@@ -364,7 +367,16 @@ class ProductController extends Controller
      */
     public function show(Product $product)
     {
-        $product->load(['category', 'subCategory', 'brand', 'equipments', 'linearUnit', 'weightUnit']);
+        $product->load([
+            'category',
+            'subCategory',
+            'brand',
+            'equipments',
+            'linearUnit',
+            'weightUnit',
+            'masterImages' => fn ($q) => $q->orderBy('sort_order')->orderBy('id'),
+        ]);
+
         return view('admin.products.products.show', compact('product'));
     }
 
@@ -391,6 +403,8 @@ class ProductController extends Controller
 
         $linearUnits = LinearUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
         $weightUnits = WeightUnit::where('is_active', true)->orderBy('code')->get(['id', 'name', 'code']);
+
+        $product->load(['masterImages' => fn ($q) => $q->orderBy('sort_order')->orderBy('id')]);
 
         return view('admin.products.products.edit', compact('product', 'categories', 'subCategories', 'brands', 'linearUnits', 'weightUnits'));
     }
@@ -917,6 +931,106 @@ class ProductController extends Controller
                 'message' => 'Error verifying products: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function storeMasterImage(Request $request, Product $product)
+    {
+        $validator = Validator::make($request->all(), [
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'image_path' => 'nullable|string|max:512',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        if (!$request->hasFile('image') && !$request->filled('image_path')) {
+            return redirect()->back()
+                ->withErrors(['image' => 'Provide an image file or URL/path.'])
+                ->withInput();
+        }
+
+        try {
+            InventoryImageManagementService::addMasterImage(
+                (int) $product->id,
+                $request->file('image'),
+                $request->input('image_path'),
+                auth()->id()
+            );
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->back()->withErrors(['image_path' => $e->getMessage()])->withInput();
+        }
+
+        return redirect()->back()->with('success', 'Master image added.');
+    }
+
+    public function updateMasterImage(Request $request, Product $product, InventoryMasterImage $masterImage)
+    {
+        if ((int) $masterImage->inventory_master_id !== (int) $product->id) {
+            abort(404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'image_path' => 'nullable|string|max:512',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->withErrors($validator);
+        }
+
+        if (!$request->hasFile('image') && !$request->filled('image_path')) {
+            return redirect()->back()->withErrors(['image' => 'Provide a file or URL/path to update.']);
+        }
+
+        try {
+            if ($request->hasFile('image')) {
+                InventoryImageManagementService::replaceMasterImageFile($masterImage, $request->file('image'));
+            } else {
+                InventoryImageManagementService::replaceMasterImagePath($masterImage, (string) $request->input('image_path'));
+            }
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->back()->withErrors(['image_path' => $e->getMessage()]);
+        }
+
+        return redirect()->back()->with('success', 'Master image updated.');
+    }
+
+    public function destroyMasterImage(Product $product, InventoryMasterImage $masterImage)
+    {
+        if ((int) $masterImage->inventory_master_id !== (int) $product->id) {
+            abort(404);
+        }
+
+        InventoryImageManagementService::deleteMasterImage($masterImage);
+
+        return redirect()->back()->with('success', 'Master image removed.');
+    }
+
+    public function setPrimaryMasterImage(Product $product, InventoryMasterImage $masterImage)
+    {
+        InventoryImageManagementService::setMasterPrimary((int) $product->id, $masterImage);
+
+        return redirect()->back()->with('success', 'Primary master image updated.');
+    }
+
+    public function reorderMasterImages(Request $request, Product $product)
+    {
+        $request->validate([
+            'order' => 'required|array|min:1',
+            'order.*' => 'integer',
+        ]);
+
+        try {
+            InventoryImageManagementService::reorderMasterImages(
+                (int) $product->id,
+                $request->input('order', [])
+            );
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->back()->withErrors(['order' => $e->getMessage()]);
+        }
+
+        return redirect()->back()->with('success', 'Image order saved.');
     }
 }
 

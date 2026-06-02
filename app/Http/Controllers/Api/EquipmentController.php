@@ -3,8 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
+use App\Models\CompanyBlock;
 use App\Models\Equipment;
 use App\Models\EquipmentImage;
+use App\Http\Requests\UpdateEquipmentMarketplaceDetailsRequest;
+use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryImageManagementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -121,7 +126,12 @@ class EquipmentController extends Controller
 
             $search = $request->input('search', null);
 
-            $query = Equipment::with(['product.brand', 'images'])
+            $query = Equipment::with([
+                'product.brand',
+                'images',
+                'linearUnit:id,code,name',
+                'weightUnit:id,code,name',
+            ])
                 ->where('company_id', $user->company_id);
 
             if ($search) {
@@ -148,35 +158,7 @@ class EquipmentController extends Controller
             //     ];
             // });
 
-            $formatted = $equipments->map(function ($equipment) {
-                $product   = $equipment->product;
-                $brandName = $product->brand->name ?? null;
-                $modelName = $product->model ?? 'Unknown Model';
-
-                return [
-                    'id' => $equipment->id,
-                    'product_id' => $product->id,
-                    'product_label' => $brandName
-                        ? "{$brandName} - {$modelName}"
-                        : $modelName, // show only model if brand is missing
-                    'psm_code' => $product->psm_code,
-                    'webpage_url' => $product->webpage_url, // 🔗 product webpage URL
-                    'flex_resource_id' => $equipment->flex_resource_id,
-                    'rentman_equipment_id' => $equipment->rentman_equipment_id,
-                    'software_code' => $equipment->software_code,
-                    'quantity' => $equipment->quantity,
-                    'price' => $equipment->rental_price,
-                    'description' => $equipment->description,
-                    'is_verified' => $product->is_verified,
-                    'images' => $equipment->images->map(function ($img) {
-                        return [
-                            'id' => $img->id,
-                            // 'path' => $img->image_path,
-                            'url' => asset($img->image_path)
-                        ];
-                    })
-                ];
-            });
+            $formatted = $equipments->map(fn ($equipment) => $this->formatCompanyEquipmentForApi($equipment));
 
 
             return response()->json([
@@ -197,6 +179,115 @@ class EquipmentController extends Controller
                 'message' => 'Unable to fetch company equipments'
             ], 500);
         }
+    }
+
+    /**
+     * Get a single company equipment record (marketplace inventory details).
+     */
+    public function showCompanyEquipment(int $id)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+
+            if (!$user->company_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User does not belong to any company.',
+                ], 404);
+            }
+
+            $equipment = Equipment::with([
+                'product.brand',
+                'images',
+                'linearUnit:id,code,name',
+                'weightUnit:id,code,name',
+            ])->find($id);
+
+            if (!$equipment) {
+                Log::warning('showCompanyEquipment: record does not exist', [
+                    'equipment_id' => $id,
+                    'user_id' => $user->id,
+                    'user_company_id' => $user->company_id,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Equipment not found',
+                ], 404);
+            }
+
+            if (!$this->userCanViewEquipment($user, $equipment)) {
+                Log::warning('showCompanyEquipment: access denied', [
+                    'equipment_id' => $equipment->id,
+                    'equipment_company_id' => $equipment->company_id,
+                    'user_id' => $user->id,
+                    'user_company_id' => $user->company_id,
+                    'is_own_company' => (int) $equipment->company_id === (int) $user->company_id,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Equipment not found',
+                ], 404);
+            }
+
+            Log::info('showCompanyEquipment: loaded', [
+                'equipment_id' => $equipment->id,
+                'equipment_company_id' => $equipment->company_id,
+                'user_id' => $user->id,
+                'user_company_id' => $user->company_id,
+                'product_id' => $equipment->product_id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Equipment details fetched successfully',
+                'data' => $this->formatCompanyEquipmentForApi($equipment),
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error fetching company equipment details', [
+                'equipment_id' => $id,
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to fetch equipment details',
+            ], 500);
+        }
+    }
+
+    /**
+     * Update marketplace physical/detail fields on company inventory.
+     */
+    public function updateMarketplaceDetails(
+        UpdateEquipmentMarketplaceDetailsRequest $request,
+        Equipment $equipment
+    ) {
+        $user = $this->getAuthenticatedUser();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        if ($equipment->company_id !== $user->company_id) {
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $equipment->update($request->validated());
+        $equipment->load(['linearUnit:id,code,name', 'weightUnit:id,code,name']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Equipment details updated successfully.',
+            'data' => array_merge(
+                [
+                    'id' => $equipment->id,
+                    'product_id' => $equipment->product_id,
+                ],
+                CompanyInventorySpecs::equipmentMarketplaceSpecsForApi($equipment)
+            ),
+        ], 200);
     }
 
     /**
@@ -449,5 +540,64 @@ class EquipmentController extends Controller
         $equipment->delete();
 
         return response()->json(['success' => true, 'message' => 'Equipment deleted']);
+    }
+
+    /**
+     * Own company inventory, or provider inventory visible via gear finder (e.g. companies/search).
+     */
+    private function userCanViewEquipment($user, Equipment $equipment): bool
+    {
+        if ((int) $equipment->company_id === (int) $user->company_id) {
+            return true;
+        }
+
+        $provider = Company::query()
+            ->whereKey($equipment->company_id)
+            ->whereNull('blocked_by_admin_at')
+            ->where('hide_from_gear_finder', 0)
+            ->first();
+
+        if (!$provider) {
+            return false;
+        }
+
+        return !CompanyBlock::query()
+            ->where('user_id', $user->id)
+            ->where('company_id', $provider->id)
+            ->exists();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function formatCompanyEquipmentForApi(Equipment $equipment): array
+    {
+        $product = $equipment->product;
+        $brandName = $product?->brand?->name;
+        $modelName = $product?->model ?? 'Unknown Model';
+
+        return array_merge([
+            'id' => $equipment->id,
+            'product_id' => $product?->id,
+            'product_label' => $brandName
+                ? "{$brandName} - {$modelName}"
+                : $modelName,
+            'psm_code' => $product?->psm_code,
+            'webpage_url' => $product?->webpage_url,
+            'flex_resource_id' => $equipment->flex_resource_id,
+            'rentman_equipment_id' => $equipment->rentman_equipment_id,
+            'software_code' => $equipment->software_code,
+            'quantity' => $equipment->quantity,
+            'price' => $equipment->rental_price,
+            'description' => $equipment->description,
+            'is_verified' => $product?->is_verified,
+            'images' => $equipment->images->map(function ($img) {
+                return [
+                    'id' => $img->id,
+                    'url' => InventoryImageManagementService::publicUrl($img->image_path),
+                    'is_primary' => (bool) $img->is_primary,
+                ];
+            }),
+        ], CompanyInventorySpecs::equipmentMarketplaceSpecsForApi($equipment));
     }
 }

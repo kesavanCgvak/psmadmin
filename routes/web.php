@@ -112,6 +112,16 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('products.search');
     Route::get('/products/{product}/clone', [ProductController::class, 'clone'])
         ->name('products.clone');
+    Route::post('/products/{product}/master-images', [ProductController::class, 'storeMasterImage'])
+        ->name('products.master-images.store');
+    Route::delete('/products/{product}/master-images/{masterImage}', [ProductController::class, 'destroyMasterImage'])
+        ->name('products.master-images.destroy');
+    Route::post('/products/{product}/master-images/{masterImage}/primary', [ProductController::class, 'setPrimaryMasterImage'])
+        ->name('products.master-images.primary');
+    Route::put('/products/{product}/master-images/{masterImage}', [ProductController::class, 'updateMasterImage'])
+        ->name('products.master-images.update');
+    Route::post('/products/{product}/master-images/reorder', [ProductController::class, 'reorderMasterImages'])
+        ->name('products.master-images.reorder');
     Route::resource('products', ProductController::class);
     Route::post('/products/bulk-delete', [ProductController::class, 'bulkDelete'])
         ->name('products.bulk-delete');
@@ -171,6 +181,16 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('admin.rental-software.bulk-delete');
 
     // Equipment
+    Route::post('/equipment/{equipment}/images', [EquipmentManagementController::class, 'storeImage'])
+        ->name('equipment.images.store');
+    Route::put('/equipment/{equipment}/images/{equipmentImage}', [EquipmentManagementController::class, 'updateImage'])
+        ->name('equipment.images.update');
+    Route::delete('/equipment/{equipment}/images/{equipmentImage}', [EquipmentManagementController::class, 'destroyImage'])
+        ->name('equipment.images.destroy');
+    Route::post('/equipment/{equipment}/images/{equipmentImage}/primary', [EquipmentManagementController::class, 'setPrimaryImage'])
+        ->name('equipment.images.primary');
+    Route::post('/equipment/{equipment}/images/reorder', [EquipmentManagementController::class, 'reorderImages'])
+        ->name('equipment.images.reorder');
     Route::resource('equipment', EquipmentManagementController::class);
     Route::post('/equipment/bulk-delete', [EquipmentManagementController::class, 'bulkDelete'])
         ->name('admin.equipment.bulk-delete');
@@ -225,6 +245,8 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
     // AJAX endpoints
     Route::get('/ajax/companies/{company}/users', [EquipmentManagementController::class, 'getUsersByCompany'])
         ->name('ajax.users-by-company');
+    Route::get('/ajax/products/{product}/inventory-specs', [EquipmentManagementController::class, 'getProductInventorySpecs'])
+        ->name('ajax.product-inventory-specs');
     Route::get('/ajax/check-username', [UserManagementController::class, 'checkUsername'])
         ->name('ajax.check-username');
     Route::get('/ajax/company/{company}/phone-format', [UserManagementController::class, 'getPhoneFormat'])

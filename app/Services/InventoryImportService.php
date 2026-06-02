@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\Equipment;
-use App\Models\EquipmentImage;
 use App\Models\Product;
+use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryImageSyncService;
+use App\Support\InventoryMeasurementUnits;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -132,23 +134,21 @@ class InventoryImportService
     }
 
     /**
-     * Append Flex image URLs to company_inventory (dedupe by URL).
+     * Store Flex images on master catalog and copy missing paths to company_inventory.
      */
-    public static function appendEquipmentImagesFromFlex(int $equipmentId, array $imageUrls): void
-    {
-        foreach ($imageUrls as $url) {
-            $url = trim((string) $url);
-            if ($url === '') {
-                continue;
-            }
-            if (EquipmentImage::where('equipment_id', $equipmentId)->where('image_path', $url)->exists()) {
-                continue;
-            }
-            EquipmentImage::create([
-                'equipment_id' => $equipmentId,
-                'image_path' => $url,
-            ]);
-        }
+    public static function appendEquipmentImagesFromFlex(
+        int $inventoryMasterId,
+        int $equipmentId,
+        array $imageUrls,
+        ?int $userId = null
+    ): void {
+        InventoryImageSyncService::importUrlsToMasterAndEquipment(
+            $inventoryMasterId,
+            $equipmentId,
+            $imageUrls,
+            'flex',
+            $userId
+        );
     }
 
     /**
@@ -174,11 +174,29 @@ class InventoryImportService
             if ((int) $existingByFlex->product_id !== (int) $productId) {
                 throw new \RuntimeException('This Flex resource is already imported for this company.');
             }
-            $existingByFlex->update([
+            $details = FlexService::getInventoryDetails($companyId, $flexId);
+            $linearUnitId = InventoryMeasurementUnits::resolveLinearUnitIdFromFlexName($details['linearUnit'] ?? null);
+            $weightUnitId = InventoryMeasurementUnits::resolveWeightUnitIdFromFlexName($details['weightUnit'] ?? null);
+            $product = Product::find($productId);
+            if ($product) {
+                self::updateProductSpecsFromFlexIfEmpty($product, $details, $linearUnitId, $weightUnitId);
+            }
+
+            $specPatch = $product
+                ? CompanyInventorySpecs::patchFillEmpty(
+                    $existingByFlex,
+                    CompanyInventorySpecs::mergeWithProduct(
+                        $product,
+                        CompanyInventorySpecs::attributesFromFlexDetails($details, $linearUnitId, $weightUnitId)
+                    )
+                )
+                : [];
+
+            $existingByFlex->update(array_merge([
                 'quantity' => $quantity,
                 'rental_price' => $rentalOverride !== null ? $rentalOverride : $existingByFlex->rental_price,
-            ]);
-            self::appendEquipmentImagesFromFlex($existingByFlex->id, $imageUrls);
+            ], $specPatch));
+            self::appendEquipmentImagesFromFlex($productId, (int) $existingByFlex->id, $imageUrls, $userId);
 
             return $existingByFlex->fresh();
         }
@@ -200,7 +218,7 @@ class InventoryImportService
             $equipment = Equipment::where('company_id', $companyId)
                 ->where('flex_resource_id', $flexId)
                 ->firstOrFail();
-            self::appendEquipmentImagesFromFlex($equipment->id, $imageUrls);
+            self::appendEquipmentImagesFromFlex($productId, (int) $equipment->id, $imageUrls, $userId);
 
             return $equipment;
         }
@@ -263,12 +281,32 @@ class InventoryImportService
         // If this inventory already has this flex_id, allow quantity / rental updates when provided
         if ($inventory->flex_resource_id === $flexId) {
             if ($quantity !== null || $rentalOverride !== null) {
+                $details = FlexService::getInventoryDetails($companyId, $flexId);
+                $linearUnitId = InventoryMeasurementUnits::resolveLinearUnitIdFromFlexName($details['linearUnit'] ?? null);
+                $weightUnitId = InventoryMeasurementUnits::resolveWeightUnitIdFromFlexName($details['weightUnit'] ?? null);
+                $product = Product::find($inventory->product_id);
+                if ($product) {
+                    self::updateProductSpecsFromFlexIfEmpty($product, $details, $linearUnitId, $weightUnitId);
+                }
+
                 $patch = [];
                 if ($quantity !== null) {
                     $patch['quantity'] = $quantity;
                 }
                 if ($rentalOverride !== null) {
                     $patch['rental_price'] = $rentalOverride;
+                }
+                if ($product) {
+                    $patch = array_merge(
+                        $patch,
+                        CompanyInventorySpecs::patchFillEmpty(
+                            $inventory,
+                            CompanyInventorySpecs::mergeWithProduct(
+                                $product,
+                                CompanyInventorySpecs::attributesFromFlexDetails($details, $linearUnitId, $weightUnitId)
+                            )
+                        )
+                    );
                 }
                 if ($patch !== []) {
                     $inventory->update($patch);
@@ -298,48 +336,56 @@ class InventoryImportService
         // 2. Get Flex item details
         $details = FlexService::getInventoryDetails($companyId, $flexId);
         $replacementCost = $details['replacementCost'] ?? null;
-        $height = $details['height'] ?? null;
-        $width = $details['width'] ?? null;
-        $length = $details['modelLength'] ?? null;
-        $weight = $details['weight'] ?? null;
+        $linearUnitId = InventoryMeasurementUnits::resolveLinearUnitIdFromFlexName($details['linearUnit'] ?? null);
+        $weightUnitId = InventoryMeasurementUnits::resolveWeightUnitIdFromFlexName($details['weightUnit'] ?? null);
         $sku = $details['sku'] ?? null;
 
         DB::beginTransaction();
         try {
+            $product = Product::find($inventory->product_id);
+            if ($product) {
+                self::updateProductSpecsFromFlexIfEmpty($product, $details, $linearUnitId, $weightUnitId);
+            }
+
+            $specPatch = $product
+                ? CompanyInventorySpecs::patchFillEmpty(
+                    $inventory,
+                    CompanyInventorySpecs::mergeWithProduct(
+                        $product,
+                        CompanyInventorySpecs::attributesFromFlexDetails($details, $linearUnitId, $weightUnitId)
+                    )
+                )
+                : CompanyInventorySpecs::patchFillEmpty(
+                    $inventory,
+                    CompanyInventorySpecs::attributesFromFlexDetails($details, $linearUnitId, $weightUnitId)
+                );
+
             // 3. Update company_inventory
-            $inventoryUpdates = [
+            $inventoryUpdates = array_merge([
                 'flex_resource_id' => $flexId,
                 'rental_price' => $dayRate !== null ? $dayRate : $inventory->rental_price,
                 'software_code' => $sku,
                 'replacement_price' => $replacementCost !== null && $replacementCost !== '' ? (float) $replacementCost : $inventory->replacement_price,
-            ];
+            ], $specPatch);
             if ($quantity !== null) {
                 $inventoryUpdates['quantity'] = $quantity;
             }
             $inventory->update($inventoryUpdates);
 
-            // 4. Update inventory_master ONLY if values are empty
-            $product = Product::find($inventory->product_id);
-            if ($product) {
-                $productUpdates = [];
-                if ($product->height === null && $height !== null && $height !== '') {
-                    $productUpdates['height'] = $height;
-                }
-                if ($product->width === null && $width !== null && $width !== '') {
-                    $productUpdates['width'] = $width;
-                }
-                if ($product->length === null && $length !== null && $length !== '') {
-                    $productUpdates['length'] = $length;
-                }
-                if ($product->weight === null && $weight !== null && $weight !== '') {
-                    $productUpdates['weight'] = $weight;
-                }
-                if ($product->replacement_price === null && $replacementCost !== null && $replacementCost !== '' && (float) $replacementCost > 0) {
-                    $productUpdates['replacement_price'] = (float) $replacementCost;
-                }
-                if (!empty($productUpdates)) {
-                    $product->update($productUpdates);
-                }
+            $imageUrls = $details['imageUrls'] ?? [];
+            if (!empty($imageUrls) && $inventory->product_id) {
+                InventoryImageSyncService::importUrlsToMasterAndEquipment(
+                    (int) $inventory->product_id,
+                    (int) $inventory->id,
+                    $imageUrls,
+                    'flex'
+                );
+            } elseif ($inventory->product_id) {
+                InventoryImageSyncService::syncMasterToEquipment(
+                    (int) $inventory->product_id,
+                    (int) $inventory->id,
+                    true
+                );
             }
 
             DB::commit();
@@ -351,6 +397,52 @@ class InventoryImportService
         } catch (\Exception $e) {
             DB::rollBack();
             throw $e;
+        }
+    }
+
+    private static function updateProductSpecsFromFlexIfEmpty(
+        Product $product,
+        array $details,
+        ?int $linearUnitId,
+        ?int $weightUnitId
+    ): void {
+        $productUpdates = [];
+        $mapping = [
+            'height' => 'height',
+            'width' => 'width',
+            'length' => 'modelLength',
+            'weight' => 'weight',
+        ];
+
+        foreach ($mapping as $dbField => $flexKey) {
+            if ($product->{$dbField} !== null && $product->{$dbField} !== '') {
+                continue;
+            }
+            $value = $details[$flexKey] ?? null;
+            if ($value !== null && $value !== '') {
+                $productUpdates[$dbField] = $value;
+            }
+        }
+
+        $replacementCost = $details['replacementCost'] ?? null;
+        if (
+            $product->replacement_price === null
+            && $replacementCost !== null
+            && $replacementCost !== ''
+            && (float) $replacementCost > 0
+        ) {
+            $productUpdates['replacement_price'] = (float) $replacementCost;
+        }
+
+        if ($product->linear_unit_id === null && $linearUnitId !== null) {
+            $productUpdates['linear_unit_id'] = $linearUnitId;
+        }
+        if ($product->weight_unit_id === null && $weightUnitId !== null) {
+            $productUpdates['weight_unit_id'] = $weightUnitId;
+        }
+
+        if ($productUpdates !== []) {
+            $product->update($productUpdates);
         }
     }
 }

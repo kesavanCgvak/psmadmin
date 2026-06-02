@@ -26,7 +26,7 @@ return [
     | - 'bearer'  => Authorization: Bearer {api_key}
     | - 'x_auth'  => X-Auth-Token: {api_key} (Flex docs often use this)
     */
-    'auth_header' => env('FLEX_AUTH_HEADER', 'bearer'),
+    'auth_header' => env('FLEX_AUTH_HEADER', 'x_auth'),
 
     /*
     |--------------------------------------------------------------------------

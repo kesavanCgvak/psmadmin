@@ -112,6 +112,13 @@ class Product extends Model
         return $this->hasMany(Equipment::class, 'product_id', 'id');
     }
 
+    public function masterImages()
+    {
+        return $this->hasMany(InventoryMasterImage::class, 'inventory_master_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
 
     public function rentalJobProducts()
     {
