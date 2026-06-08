@@ -48,6 +48,8 @@ return [
 
     'rentman' => [
         'base_url' => env('RENTMAN_API_BASE_URL', 'https://api.rentman.net'),
+        'default_linear_unit' => env('RENTMAN_DEFAULT_LINEAR_UNIT', 'inches'),
+        'default_weight_unit' => env('RENTMAN_DEFAULT_WEIGHT_UNIT', 'lbs'),
         'default_linear_unit_id' => env('RENTMAN_DEFAULT_LINEAR_UNIT_ID'),
         'default_weight_unit_id' => env('RENTMAN_DEFAULT_WEIGHT_UNIT_ID'),
     ],

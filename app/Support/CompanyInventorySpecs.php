@@ -136,6 +136,66 @@ final class CompanyInventorySpecs
     }
 
     /**
+     * PSM-side snapshot for Rentman/Flex import-check when a catalog or inventory match exists.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function importCheckPsmPayload(?Product $product, ?Equipment $equipment = null): ?array
+    {
+        if (!$product && !$equipment) {
+            return null;
+        }
+
+        if (!$product && $equipment) {
+            $product = $equipment->product;
+        }
+
+        $specModel = self::resolveImportCheckSpecModel($product, $equipment);
+
+        return [
+            'code' => $equipment?->software_code,
+            'current_quantity' => $equipment?->quantity,
+            'subrental_costs' => $equipment?->rental_price !== null ? (float) $equipment->rental_price : null,
+            'height' => $specModel->height,
+            'width' => $specModel->width,
+            'length' => $specModel->length,
+            'weight' => $specModel->weight,
+            'country_of_origin' => $specModel->country_of_origin,
+            'hsn_code' => $specModel->hsn_code,
+            'dimensions_display' => self::formatDimensions($specModel),
+            'weight_display' => self::formatWeight($specModel),
+        ];
+    }
+
+    private static function resolveImportCheckSpecModel(?Product $product, ?Equipment $equipment): Model
+    {
+        if ($equipment && $product) {
+            $effective = $equipment->replicate();
+            foreach (self::FIELDS as $field) {
+                if ($effective->{$field} === null || $effective->{$field} === '') {
+                    $effective->{$field} = $product->{$field};
+                }
+            }
+            $effective->loadMissing(['linearUnit:id,code,name', 'weightUnit:id,code,name']);
+            if (!$effective->linear_unit_id && $product->linear_unit_id) {
+                $product->loadMissing(['linearUnit:id,code,name']);
+                $effective->setRelation('linearUnit', $product->linearUnit);
+            }
+            if (!$effective->weight_unit_id && $product->weight_unit_id) {
+                $product->loadMissing(['weightUnit:id,code,name']);
+                $effective->setRelation('weightUnit', $product->weightUnit);
+            }
+
+            return $effective;
+        }
+
+        $model = $equipment ?? $product;
+        $model->loadMissing(['linearUnit:id,code,name', 'weightUnit:id,code,name']);
+
+        return $model;
+    }
+
+    /**
      * Full physical/detail attributes for company_inventory (admin/internal use).
      *
      * @return array<string, mixed>

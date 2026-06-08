@@ -105,6 +105,7 @@ class FlexInventoryController extends Controller
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
                     'flex' => $result['flex'] ?? null,
+                    'psm' => $result['psm'] ?? null,
                 ], 200);
             }
 
@@ -115,6 +116,7 @@ class FlexInventoryController extends Controller
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
                     'flex' => $result['flex'] ?? null,
+                    'psm' => $result['psm'] ?? null,
                 ], 200);
             }
 
@@ -126,6 +128,7 @@ class FlexInventoryController extends Controller
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
                     'flex' => $result['flex'] ?? null,
+                    'psm' => $result['psm'] ?? null,
                 ], 200);
             }
 
@@ -431,6 +434,7 @@ class FlexInventoryController extends Controller
                 'linear_unit_id' => $linearUnitId,
                 'weight_unit_id' => $weightUnitId,
                 'replacement_price' => $details['replacementCost'] ?? null,
+                'country_of_origin' => $details['manufactureCountry'] ?? null,
                 'source' => 'flex',
             ]);
 
@@ -451,6 +455,7 @@ class FlexInventoryController extends Controller
                 'product_id' => $product->id,
                 'flex_resource_id' => $flexResourceId,
                 'software_code' => $softwareCode,
+                'country_of_origin' => $details['manufactureCountry'] ?? null,
                 'quantity' => $quantity,
                 'rental_price' => $rentalRate ?? 0,
                 'replacement_price' => $details['replacementCost'] ?? null,

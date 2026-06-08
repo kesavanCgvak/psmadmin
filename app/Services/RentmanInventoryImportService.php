@@ -3,13 +3,11 @@
 namespace App\Services;
 
 use App\Models\Equipment;
-use App\Models\LinearUnit;
 use App\Models\Product;
 use App\Models\RentmanEquipment;
 use App\Support\CompanyInventorySpecs;
 use App\Support\InventoryImageSyncService;
 use App\Support\InventoryMeasurementUnits;
-use App\Models\WeightUnit;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -47,6 +45,7 @@ class RentmanInventoryImportService
                 'brand_name' => $product?->brand?->name ?? null,
                 'model' => $product?->model ?? null,
                 'rentman' => $rentman,
+                'psm' => CompanyInventorySpecs::importCheckPsmPayload($product, $existingByRentman),
             ];
         }
 
@@ -74,6 +73,7 @@ class RentmanInventoryImportService
                     'brand_name' => $brandName,
                     'model' => $model,
                     'rentman' => $rentman,
+                    'psm' => CompanyInventorySpecs::importCheckPsmPayload($existingProduct, $existingInventory),
                 ];
             }
 
@@ -84,6 +84,7 @@ class RentmanInventoryImportService
                 'brand_name' => $brandName,
                 'model' => $model,
                 'rentman' => $rentman,
+                'psm' => CompanyInventorySpecs::importCheckPsmPayload($existingProduct),
             ];
         }
 
@@ -101,6 +102,24 @@ class RentmanInventoryImportService
             ->update([
                 'is_imported' => true,
                 'imported_at' => now(),
+            ]);
+    }
+
+    /**
+     * Allow re-import after company_inventory linked to this Rentman item is removed.
+     */
+    public static function unmarkRentmanCacheImported(int $companyId, string $rentmanId): void
+    {
+        $rentmanId = trim($rentmanId);
+        if ($rentmanId === '') {
+            return;
+        }
+
+        RentmanEquipment::where('company_id', $companyId)
+            ->where('rentman_id', $rentmanId)
+            ->update([
+                'is_imported' => false,
+                'imported_at' => null,
             ]);
     }
 
@@ -442,48 +461,15 @@ class RentmanInventoryImportService
             $productUpdates['country_of_origin'] = $row->country_of_origin;
         }
         if ($product->linear_unit_id === null) {
-            $configuredLinearId = config('services.rentman.default_linear_unit_id');
-            if (is_numeric($configuredLinearId)) {
-                $configuredLinearId = (int) $configuredLinearId;
-                if (!LinearUnit::whereKey($configuredLinearId)->exists()) {
-                    Log::error('Invalid Rentman linear unit configuration', [
-                        'configured_linear_unit_id' => $configuredLinearId,
-                    ]);
-                    throw new \RuntimeException(
-                        'Invalid Rentman configuration: RENTMAN_DEFAULT_LINEAR_UNIT_ID (' . $configuredLinearId . ') does not exist in linear_units.'
-                    );
-                }
-                $productUpdates['linear_unit_id'] = $configuredLinearId;
-            } else {
-                $linearUnit = LinearUnit::whereRaw('LOWER(name) = ?', ['inch'])->first()
-                    ?: LinearUnit::whereRaw('LOWER(name) = ?', ['inches'])->first()
-                    ?: LinearUnit::whereRaw('LOWER(name) = ?', ['in'])->first();
-                if ($linearUnit) {
-                    $productUpdates['linear_unit_id'] = $linearUnit->id;
-                }
+            $linearUnitId = InventoryMeasurementUnits::resolveRentmanLinearUnitId();
+            if ($linearUnitId !== null) {
+                $productUpdates['linear_unit_id'] = $linearUnitId;
             }
         }
         if ($product->weight_unit_id === null) {
-            $configuredWeightId = config('services.rentman.default_weight_unit_id');
-            if (is_numeric($configuredWeightId)) {
-                $configuredWeightId = (int) $configuredWeightId;
-                if (!WeightUnit::whereKey($configuredWeightId)->exists()) {
-                    Log::error('Invalid Rentman weight unit configuration', [
-                        'configured_weight_unit_id' => $configuredWeightId,
-                    ]);
-                    throw new \RuntimeException(
-                        'Invalid Rentman configuration: RENTMAN_DEFAULT_WEIGHT_UNIT_ID (' . $configuredWeightId . ') does not exist in weight_units.'
-                    );
-                }
-                $productUpdates['weight_unit_id'] = $configuredWeightId;
-            } else {
-                $weightUnit = WeightUnit::whereRaw('LOWER(name) = ?', ['pound'])->first()
-                    ?: WeightUnit::whereRaw('LOWER(name) = ?', ['pounds'])->first()
-                    ?: WeightUnit::whereRaw('LOWER(name) = ?', ['lbs'])->first()
-                    ?: WeightUnit::whereRaw('LOWER(name) = ?', ['lb'])->first();
-                if ($weightUnit) {
-                    $productUpdates['weight_unit_id'] = $weightUnit->id;
-                }
+            $weightUnitId = InventoryMeasurementUnits::resolveRentmanWeightUnitId();
+            if ($weightUnitId !== null) {
+                $productUpdates['weight_unit_id'] = $weightUnitId;
             }
         }
 

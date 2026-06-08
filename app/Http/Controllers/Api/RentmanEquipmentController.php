@@ -6,13 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SyncRentmanEquipmentJob;
 use App\Models\CompanyIntegration;
 use App\Models\Equipment;
-use App\Models\LinearUnit;
 use App\Models\Product;
 use App\Models\RentmanEquipment;
-use App\Models\WeightUnit;
 use App\Services\FlexService;
 use App\Services\RentmanInventoryImportService;
 use App\Services\RentmanService;
+use App\Support\InventoryMeasurementUnits;
 use App\Support\PsmCodeGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -139,6 +138,7 @@ class RentmanEquipmentController extends Controller
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
                     'rentman' => $result['rentman'] ?? null,
+                    'psm' => $result['psm'] ?? null,
                 ], 200);
             }
 
@@ -149,6 +149,7 @@ class RentmanEquipmentController extends Controller
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
                     'rentman' => $result['rentman'] ?? null,
+                    'psm' => $result['psm'] ?? null,
                 ], 200);
             }
 
@@ -160,6 +161,7 @@ class RentmanEquipmentController extends Controller
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
                     'rentman' => $result['rentman'] ?? null,
+                    'psm' => $result['psm'] ?? null,
                 ], 200);
             }
 
@@ -469,8 +471,8 @@ class RentmanEquipmentController extends Controller
     ): JsonResponse {
         $brandId = $parsed['brand_id'] ?? null;
         $model = $parsed['model'] ?? RentmanService::primaryLabel($row) ?: 'Unknown';
-        $linearUnitId = $this->resolveRentmanLinearUnitId();
-        $weightUnitId = $this->resolveRentmanWeightUnitId();
+        $linearUnitId = InventoryMeasurementUnits::resolveRentmanLinearUnitId();
+        $weightUnitId = InventoryMeasurementUnits::resolveRentmanWeightUnitId();
 
         DB::beginTransaction();
         try {
@@ -545,55 +547,6 @@ class RentmanEquipmentController extends Controller
         } catch (\Exception $e) {
             return null;
         }
-    }
-
-    protected function resolveRentmanLinearUnitId(): ?int
-    {
-        $configuredId = config('services.rentman.default_linear_unit_id');
-        if (is_numeric($configuredId)) {
-            $configuredId = (int) $configuredId;
-            if (!LinearUnit::whereKey($configuredId)->exists()) {
-                Log::error('Invalid Rentman linear unit configuration', [
-                    'configured_linear_unit_id' => $configuredId,
-                ]);
-                throw new \RuntimeException(
-                    'Invalid Rentman configuration: RENTMAN_DEFAULT_LINEAR_UNIT_ID (' . $configuredId . ') does not exist in linear_units.'
-                );
-            }
-
-            return $configuredId;
-        }
-
-        $unit = LinearUnit::whereRaw('LOWER(name) = ?', ['inch'])->first()
-            ?: LinearUnit::whereRaw('LOWER(name) = ?', ['inches'])->first()
-            ?: LinearUnit::whereRaw('LOWER(name) = ?', ['in'])->first();
-
-        return $unit?->id;
-    }
-
-    protected function resolveRentmanWeightUnitId(): ?int
-    {
-        $configuredId = config('services.rentman.default_weight_unit_id');
-        if (is_numeric($configuredId)) {
-            $configuredId = (int) $configuredId;
-            if (!WeightUnit::whereKey($configuredId)->exists()) {
-                Log::error('Invalid Rentman weight unit configuration', [
-                    'configured_weight_unit_id' => $configuredId,
-                ]);
-                throw new \RuntimeException(
-                    'Invalid Rentman configuration: RENTMAN_DEFAULT_WEIGHT_UNIT_ID (' . $configuredId . ') does not exist in weight_units.'
-                );
-            }
-
-            return $configuredId;
-        }
-
-        $unit = WeightUnit::whereRaw('LOWER(name) = ?', ['pound'])->first()
-            ?: WeightUnit::whereRaw('LOWER(name) = ?', ['pounds'])->first()
-            ?: WeightUnit::whereRaw('LOWER(name) = ?', ['lbs'])->first()
-            ?: WeightUnit::whereRaw('LOWER(name) = ?', ['lb'])->first();
-
-        return $unit?->id;
     }
 
     protected function assertRentmanMandatoryFields(RentmanEquipment $row): void

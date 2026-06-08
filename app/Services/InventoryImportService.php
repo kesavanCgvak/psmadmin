@@ -50,6 +50,7 @@ class InventoryImportService
                 'brand_name' => $product?->brand?->name ?? null,
                 'model' => $product?->model ?? null,
                 'flex' => $flex,
+                'psm' => CompanyInventorySpecs::importCheckPsmPayload($product, $existingByFlex),
             ];
         }
 
@@ -93,6 +94,7 @@ class InventoryImportService
                     'brand_name' => $brandName,
                     'model' => $model,
                     'flex' => $flex,
+                    'psm' => CompanyInventorySpecs::importCheckPsmPayload($existingProduct, $existingInventory),
                 ];
             }
 
@@ -103,6 +105,7 @@ class InventoryImportService
                 'brand_name' => $brandName,
                 'model' => $model,
                 'flex' => $flex,
+                'psm' => CompanyInventorySpecs::importCheckPsmPayload($existingProduct),
             ];
         }
 

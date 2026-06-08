@@ -208,6 +208,7 @@ class FlexService
                 'replacementCost' => $data['replacementCost'] ?? null,
                 'sku' => $data['sku'] ?? null,
                 'partNumber' => $data['partNumber'] ?? null,
+                'manufactureCountry' => $data['manufactureCountry'] ?? null,
                 'linearUnit' => $linearUnit,
                 'weightUnit' => $weightUnit,
                 'imageUrls' => array_values(array_unique(array_filter($imageUrls))),

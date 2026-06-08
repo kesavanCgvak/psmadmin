@@ -175,6 +175,8 @@ Route::middleware('jwt.verify')->group(function () {
 
 });
 
+Route::middleware('jwt.verify')->get('/products/{product_id}', [ProductController::class, 'show'])
+    ->whereNumber('product_id');
 Route::middleware('jwt.verify')->post('/products/create-or-attach', [ProductController::class, 'createOrAttach']);
 Route::middleware('jwt.verify')->post('/products/import', [ProductController::class, 'importProducts']); // Legacy endpoint
 

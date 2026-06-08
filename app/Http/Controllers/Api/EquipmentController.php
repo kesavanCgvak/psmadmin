@@ -8,6 +8,7 @@ use App\Models\CompanyBlock;
 use App\Models\Equipment;
 use App\Models\EquipmentImage;
 use App\Http\Requests\UpdateEquipmentMarketplaceDetailsRequest;
+use App\Services\RentmanInventoryImportService;
 use App\Support\CompanyInventorySpecs;
 use App\Support\InventoryImageManagementService;
 use Illuminate\Http\Request;
@@ -530,6 +531,14 @@ class EquipmentController extends Controller
 
         if ($equipment->company_id !== $user->company_id) {
             return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+
+        $rentmanEquipmentId = trim((string) ($equipment->rentman_equipment_id ?? ''));
+        if ($rentmanEquipmentId !== '') {
+            RentmanInventoryImportService::unmarkRentmanCacheImported(
+                (int) $equipment->company_id,
+                $rentmanEquipmentId
+            );
         }
 
         foreach ($equipment->images as $img) {
