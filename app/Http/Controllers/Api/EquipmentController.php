@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\CompanyBlock;
 use App\Models\Equipment;
+use App\Models\Product;
 use App\Models\EquipmentImage;
 use App\Http\Requests\UpdateEquipmentMarketplaceDetailsRequest;
 use App\Services\RentmanInventoryImportService;
@@ -82,14 +83,16 @@ class EquipmentController extends Controller
             // -------------------------------
             // 🔹 Create Equipment
             // -------------------------------
-            $equipment = Equipment::create([
+            $product = Product::findOrFail($request->product_id);
+
+            $equipment = Equipment::create(array_merge([
                 'user_id' => $user->id,
                 'company_id' => $user->company_id,
                 'product_id' => $request->product_id,
                 'quantity' => $request->quantity,
                 'rental_price' => $request->rental_price,
                 'software_code' => $request->software_code,
-            ]);
+            ], CompanyInventorySpecs::attributesFromProduct($product)));
 
             return response()->json([
                 'success' => true,

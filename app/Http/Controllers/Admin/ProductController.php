@@ -129,7 +129,7 @@ class ProductController extends Controller
                     $h = $product->height ?? '—';
                     $w = $product->width ?? '—';
                     $l = $product->length ?? '—';
-                    $dimensions = "{$h} × {$w} × {$l}";
+                    $dimensions = "{$l} × {$w} × {$h}";
                     if ($product->linearUnit) {
                         $dimensions .= ' ' . $product->linearUnit->code;
                     }

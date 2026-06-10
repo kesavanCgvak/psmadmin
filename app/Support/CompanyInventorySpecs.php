@@ -37,6 +37,7 @@ final class CompanyInventorySpecs
             'weight_unit_id' => $product->weight_unit_id,
             'country_of_origin' => $product->country_of_origin,
             'hsn_code' => $product->hsn_code,
+            'replacement_price' => $product->replacement_price,
         ];
     }
 
@@ -256,7 +257,7 @@ final class CompanyInventorySpecs
         $height = self::formatNumber($model->height) ?? '—';
         $width = self::formatNumber($model->width) ?? '—';
         $length = self::formatNumber($model->length) ?? '—';
-        $formatted = "{$height} x {$width} x {$length}";
+        $formatted = "{$length} x {$width} x {$height}";
 
         $unitCode = self::resolveLinearUnitCode($model);
         if ($unitCode !== null) {
