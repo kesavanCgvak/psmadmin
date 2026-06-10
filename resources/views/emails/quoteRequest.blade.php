@@ -55,6 +55,7 @@
                 <p style="margin-bottom: 10px;">
                     <strong>Rental Name:</strong> {{ $rental_name }}<br>
                     <strong>Rental Dates:</strong> {{ $from_date }} to {{ $to_date }}<br>
+                    <strong>Shipping Method:</strong> {{ $shipping_method }}<br>
                     <strong>Delivery Address:</strong> {{ $delivery_address }}
                 </p>
 

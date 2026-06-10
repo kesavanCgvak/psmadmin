@@ -356,6 +356,8 @@ class SupplyJobController extends Controller
                 'return_date' => $supplyJob->return_date,
                 'unpacking_date' => $supplyJob->unpacking_date,
                 'delivery_address' => $supplyJob->rentalJob->delivery_address,
+                'shipping_method' => $supplyJob->rentalJob->shipping_method,
+                'shipping_method_label' => \App\Support\RentalShippingMethods::label($supplyJob->rentalJob->shipping_method),
                 'status' => $effectiveStatus,
                 'company' => [
                     'id' => $company->id,

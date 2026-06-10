@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\UserProfile;
 use App\Models\JobOffer;
 use App\Models\JobRating;
+use App\Support\RentalShippingMethods;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\RentalJobBasicsUpdated;
 use App\Mail\RentalJobQuantityUpdated;
@@ -23,7 +24,7 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 class RentalJobActionsController extends Controller
 {
     /**
-     * Update basics: name, delivery_address, from_date, to_date.
+     * Update basics: name, delivery_address, shipping_method, from_date, to_date.
      * Only the job owner or admin can update.
      */
     public function updateBasics(Request $request, int $id)
@@ -36,7 +37,8 @@ class RentalJobActionsController extends Controller
 
         $data = $request->validate([
             'name' => 'sometimes|string|min:3|max:255',
-            'delivery_address' => 'sometimes|string|min:3|max:255',
+            'shipping_method' => 'sometimes|string|' . RentalShippingMethods::validationRule(),
+            'delivery_address' => 'sometimes|nullable|string|min:3|max:255',
             'from_date' => 'sometimes|date',
             'to_date' => 'sometimes|date|after_or_equal:from_date',
             'status' => 'prohibited',
@@ -48,6 +50,33 @@ class RentalJobActionsController extends Controller
             // Permission check
             if ($job->user_id !== $user->id && !$user->is_admin) {
                 return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
+            }
+
+            if (array_key_exists('shipping_method', $data) || array_key_exists('delivery_address', $data)) {
+                $shippingMethod = $data['shipping_method'] ?? $job->shipping_method ?? RentalShippingMethods::default();
+
+                if (array_key_exists('delivery_address', $data)) {
+                    $deliveryAddress = RentalShippingMethods::resolveDeliveryAddress(
+                        $shippingMethod,
+                        $data['delivery_address']
+                    );
+                } elseif (array_key_exists('shipping_method', $data)) {
+                    $deliveryAddress = RentalShippingMethods::resolveDeliveryAddress(
+                        $shippingMethod,
+                        $job->delivery_address
+                    );
+                } else {
+                    $deliveryAddress = $job->delivery_address;
+                }
+
+                if (RentalShippingMethods::addressRequired($shippingMethod) && empty($deliveryAddress)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Delivery address is required for the selected shipping method.',
+                    ], 422);
+                }
+
+                $data['delivery_address'] = $deliveryAddress;
             }
 
             // Update the job

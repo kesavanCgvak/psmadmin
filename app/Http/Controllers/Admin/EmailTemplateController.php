@@ -245,6 +245,8 @@ class EmailTemplateController extends Controller
                     . '</tbody></table>';
             } elseif (stripos($varName, 'from_date') !== false || stripos($varName, 'to_date') !== false) {
                 $sampleData[$varName] = date('M d, Y');
+            } elseif (stripos($varName, 'shipping_method') !== false) {
+                $sampleData[$varName] = 'You deliver to me';
             } elseif (stripos($varName, 'delivery_address') !== false) {
                 $sampleData[$varName] = '123 Main St, City, State';
             } elseif (stripos($varName, 'user_company') !== false) {

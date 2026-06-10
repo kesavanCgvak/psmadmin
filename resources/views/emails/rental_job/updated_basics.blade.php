@@ -30,8 +30,12 @@
                         <td>{{ $rentalJob->name }}</td>
                     </tr>
                     <tr>
+                        <td><strong>Shipping Method:</strong></td>
+                        <td>{{ \App\Support\RentalShippingMethods::label($rentalJob->shipping_method) }}</td>
+                    </tr>
+                    <tr>
                         <td><strong>Delivery Address:</strong></td>
-                        <td>{{ $rentalJob->delivery_address }}</td>
+                        <td>{{ $rentalJob->delivery_address ?: 'N/A' }}</td>
                     </tr>
                     <tr>
                         <td><strong>From Date:</strong></td>

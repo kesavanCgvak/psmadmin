@@ -158,7 +158,7 @@ class EmailTemplateSeeder extends Seeder
                 'name' => 'quoteRequest',
                 'subject' => 'New Quote Request - Pro Subrental Marketplace',
                 'description' => 'Email sent to supplier when a quote/rental request is received',
-                'variables' => ['rental_name', 'from_date', 'to_date', 'delivery_address', 'provider_contact_name', 'user_name', 'user_email', 'user_mobile', 'user_company', 'currency_symbol', 'global_message_section', 'offer_requirements_section', 'private_message_section', 'initial_offer_section', 'products_table_html', 'similar_request_note', 'current_year'],
+                'variables' => ['rental_name', 'from_date', 'to_date', 'shipping_method', 'delivery_address', 'provider_contact_name', 'user_name', 'user_email', 'user_mobile', 'user_company', 'currency_symbol', 'global_message_section', 'offer_requirements_section', 'private_message_section', 'initial_offer_section', 'products_table_html', 'similar_request_note', 'current_year'],
                 'file' => 'quoteRequest.blade.php',
             ],
             [

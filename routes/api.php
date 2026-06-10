@@ -250,6 +250,8 @@ Route::middleware(['jwt.verify'])->group(function () {
     Route::delete('/equipments/images/{id}', [EquipmentController::class, 'deleteImage']);
 });
 
+Route::get('/rental-shipping-methods', [RentalRequestController::class, 'shippingMethods']);
+
 Route::middleware(['jwt.verify'])->group(function () {
     Route::post('/rental-requests', [RentalRequestController::class, 'store']);
 });

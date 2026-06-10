@@ -22,6 +22,7 @@ use App\Models\UserProfile;
 use App\Models\Company;
 use App\Models\Product;
 use App\Models\Equipment;
+use App\Support\RentalShippingMethods;
 
 class RentalJobController extends Controller
 {
@@ -124,6 +125,8 @@ class RentalJobController extends Controller
                     'from_date' => $job->from_date,
                     'to_date' => $job->to_date,
                     'delivery_address' => $job->delivery_address,
+                    'shipping_method' => $job->shipping_method ?? RentalShippingMethods::default(),
+                    'shipping_method_label' => RentalShippingMethods::label($job->shipping_method),
                     'status' => $job->status,
                     'products' => $job->products->map(function ($rp) {
                         $brand = $rp->product->brand->name ?? '';
@@ -255,6 +258,8 @@ class RentalJobController extends Controller
                 'from_date' => $job->from_date,
                 'to_date' => $job->to_date,
                 'delivery_address' => $job->delivery_address,
+                'shipping_method' => $job->shipping_method ?? RentalShippingMethods::default(),
+                'shipping_method_label' => RentalShippingMethods::label($job->shipping_method),
                 'status' => $job->status,
                 'suppliers' => $suppliers,
             ];
