@@ -57,11 +57,11 @@ class EmailTemplateSeeder extends Seeder
                 'file' => 'jobRatingRequest.blade.php',
             ],
             [
-                'name' => 'rentalJobOffer',
-                'subject' => 'New Offer Received from Pro Subrental Marketplace',
-                'description' => 'Email sent when a new offer is received for a rental job',
-                'variables' => ['user_name', 'job_name', 'amount', 'currency_symbol', 'sent_at', 'current_year'],
-                'file' => 'rentalJobOffer.blade.php',
+                'name' => 'jobOfferNotification',
+                'subject' => 'New Job Offer Received - Pro Subrental Marketplace',
+                'description' => 'Email sent during job negotiation when a new offer is sent between renter and provider',
+                'variables' => ['sender_company_name', 'receiver_contact_name', 'version', 'total_price', 'status', 'products_section', 'current_year'],
+                'file' => 'jobOfferNotification.blade.php',
             ],
             [
                 'name' => 'supplyNewOffer',
@@ -212,6 +212,24 @@ class EmailTemplateSeeder extends Seeder
                 $this->command->info("Migrated template: {$templateData['name']}");
             } else {
                 $this->command->warn("Template file not found: {$templateData['file']}");
+            }
+        }
+
+        foreach (config('email_templates.deprecated', []) as $name => $meta) {
+            $template = EmailTemplate::where('name', $name)->first();
+
+            if ($template) {
+                $description = 'DEPRECATED: ' . ($meta['reason'] ?? 'No longer used.');
+                if (!empty($meta['replaced_by'])) {
+                    $description .= ' Use ' . $meta['replaced_by'] . ' instead.';
+                }
+
+                $template->update([
+                    'is_active' => false,
+                    'description' => $description,
+                ]);
+
+                $this->command->warn("Deprecated template deactivated: {$name}");
             }
         }
 

@@ -13,8 +13,6 @@ use App\Models\{
 };
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
-use App\Mail\JobOfferNotificationMail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\Request;
 use Log;
@@ -169,7 +167,7 @@ class JobNegotiationController extends Controller
                 $currencySymbol = $currency ? $currency->symbol : '';
             }
 
-            // Supply job product list
+            // Supply job product list for email
             $offerProducts = SupplyJobProduct::with(['product.getEquipment'])
                 ->where('supply_job_id', $supplyJob->id)
                 ->get()
@@ -184,14 +182,51 @@ class JobNegotiationController extends Controller
                 })
                 ->toArray();
 
+            $productsSection = '';
+            if (!empty($offerProducts)) {
+                $rows = '';
+                foreach ($offerProducts as $product) {
+                    $qty = (int) ($product['quantity'] ?? 0);
+                    $price = (float) ($product['price'] ?? 0);
+                    $lineTotal = $qty * $price;
+                    $rows .= '<tr style="border-bottom: 1px solid #eee;">'
+                        . '<td>' . e($product['psm_code'] ?? '—') . '</td>'
+                        . '<td>' . e($product['model'] ?? '—') . '</td>'
+                        . '<td>' . e($product['software_code'] ?? '—') . '</td>'
+                        . '<td>' . $qty . '</td>'
+                        . '<td>' . $currencySymbol . number_format($price, 2) . '</td>'
+                        . '<td>' . $currencySymbol . number_format($lineTotal, 2) . '</td>'
+                        . '</tr>';
+                }
+
+                $productsSection = '<h3 style="color: #1a73e8;">Offered Equipment Details</h3>'
+                    . '<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px; font-size: 14px;">'
+                    . '<thead style="background-color: #f0f0f0; border-bottom: 2px solid #ddd;">'
+                    . '<tr>'
+                    . '<th align="left">PSM Code</th>'
+                    . '<th align="left">Model</th>'
+                    . '<th align="left">Software Code</th>'
+                    . '<th align="left">Qty</th>'
+                    . '<th align="left">Price</th>'
+                    . '<th align="left">Total Price</th>'
+                    . '</tr>'
+                    . '</thead>'
+                    . '<tbody>'
+                    . $rows
+                    . '<tr style="background-color: #f9f9f9; border-top: 2px solid #ddd; font-weight: bold;">'
+                    . '<td colspan="5" align="right">Total Amount:</td>'
+                    . '<td>' . $currencySymbol . number_format((float) $offer->total_price, 2) . '</td>'
+                    . '</tr>'
+                    . '</tbody></table>';
+            }
+
             $mailContent = [
                 'sender_company_name' => $senderCompany->name,
                 'receiver_contact_name' => $receiverContact?->profile?->full_name ?? 'there',
                 'version' => $offer->version,
-                'total_price' => $offer->total_price,
-                'currency' => $currencySymbol,
+                'total_price' => $currencySymbol . number_format((float) $offer->total_price, 2),
                 'status' => ucfirst($offer->status),
-                'products' => $offerProducts,
+                'products_section' => $productsSection,
             ];
 
             // Collect receiver emails
@@ -212,12 +247,13 @@ class JobNegotiationController extends Controller
             $emails = array_unique(array_filter($emails));
 
             // ------------------------------
-            // 🔹 Send Email (Using Mailable)
+            // Send Email (via template system)
             // ------------------------------
             foreach ($emails as $email) {
-                Mail::to($email)->send(
-                    new JobOfferNotificationMail($mailContent)
-                );
+                \App\Helpers\EmailHelper::send('jobOfferNotification', $mailContent, function ($message) use ($email) {
+                    $message->to($email)
+                        ->from(config('mail.from.address'), config('mail.from.name'));
+                });
             }
 
 

@@ -42,7 +42,6 @@ use App\Http\Controllers\Api\SupplyJobActionsController;
 use App\Http\Controllers\Api\SupplyJobController;
 use App\Http\Controllers\Api\SupportRequestController;
 use App\Http\Controllers\Api\TermsAndConditionsController;
-use App\Http\Controllers\Api\UserOfferController;
 use App\Http\Controllers\Api\UserProfileController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -359,6 +358,3 @@ Route::middleware('jwt.verify')->group(function () {
 });
 
 // Contact Sales API (public, no authentication required)
-// Route::middleware(['jwt.verify'])->group(function () {
-//     Route::post('/rental-jobs/{jobId}/offers', [UserOfferController::class, 'sendOfferToProvider']);
-// });

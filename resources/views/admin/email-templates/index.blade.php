@@ -130,6 +130,56 @@
         </div>
     </div>
 
+    @if($deprecatedTemplates->isNotEmpty())
+        <div class="card card-secondary collapsed-card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-archive"></i> Deprecated Templates
+                </h3>
+                <div class="card-tools">
+                    <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">
+                    These templates are no longer used by the application and cannot be reactivated.
+                </p>
+                <table class="table table-bordered table-sm">
+                    <thead>
+                        <tr>
+                            <th>Template Name</th>
+                            <th>Replaced By</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($deprecatedTemplates as $template)
+                            @php
+                                $meta = config('email_templates.deprecated.' . $template->name, []);
+                            @endphp
+                            <tr>
+                                <td>
+                                    <strong>{{ $template->name }}</strong>
+                                    <span class="badge badge-warning ml-1">Deprecated</span>
+                                </td>
+                                <td>
+                                    @if(!empty($meta['replaced_by']))
+                                        <code>{{ $meta['replaced_by'] }}</code>
+                                    @else
+                                        <span class="text-muted">—</span>
+                                    @endif
+                                </td>
+                                <td>{{ $meta['reason'] ?? $template->description }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
+
     <div class="card">
         <div class="card-header">
             <h3 class="card-title">
