@@ -119,7 +119,7 @@ final class InventoryMeasurementUnits
         return $configuredId;
     }
 
-    private static function resolveLinearUnitIdByCodeOrName(string $value): ?int
+    public static function resolveLinearUnitIdByCodeOrName(string $value): ?int
     {
         $normalized = strtolower(trim($value));
         if ($normalized === '') {
@@ -136,7 +136,7 @@ final class InventoryMeasurementUnits
         return $unit?->id;
     }
 
-    private static function resolveWeightUnitIdByCodeOrName(string $value): ?int
+    public static function resolveWeightUnitIdByCodeOrName(string $value): ?int
     {
         $normalized = strtolower(trim($value));
         if ($normalized === '') {

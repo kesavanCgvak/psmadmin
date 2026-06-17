@@ -110,12 +110,7 @@ class ProductController extends Controller
             // Get filtered count
             $filteredRecords = $query->count();
 
-            // Ordering: relevance when searching; otherwise DataTables column sort
-            if ($searchValue !== '') {
-                InventoryProductSearch::applyRelevanceOrderToProductQuery($query, $searchValue);
-            } else {
-                $query->orderBy('inventory_master.' . $orderColumnName, $orderDir);
-            }
+            $this->applyProductsTableOrder($query, $orderColumnName, $orderDir);
 
             $products = $query->skip($start)
                 ->take($length)
@@ -176,6 +171,40 @@ class ProductController extends Controller
                 'error' => 'Error loading products data: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Apply DataTables column sort to the products query (works with or without an active search).
+     */
+    private function applyProductsTableOrder($query, string $orderColumnName, string $orderDir): void
+    {
+        $orderDir = in_array($orderDir, ['asc', 'desc'], true) ? $orderDir : 'desc';
+
+        switch ($orderColumnName) {
+            case 'brand_id':
+                $query->orderBy(
+                    Brand::query()->select('name')->whereColumn('brands.id', 'inventory_master.brand_id')->limit(1),
+                    $orderDir
+                );
+                break;
+            case 'category_id':
+                $query->orderBy(
+                    Category::query()->select('name')->whereColumn('categories.id', 'inventory_master.category_id')->limit(1),
+                    $orderDir
+                );
+                break;
+            case 'sub_category_id':
+                $query->orderBy(
+                    SubCategory::query()->select('name')->whereColumn('sub_categories.id', 'inventory_master.sub_category_id')->limit(1),
+                    $orderDir
+                );
+                break;
+            default:
+                $query->orderBy('inventory_master.' . $orderColumnName, $orderDir);
+                break;
+        }
+
+        $query->orderBy('inventory_master.id', 'asc');
     }
 
     /**
