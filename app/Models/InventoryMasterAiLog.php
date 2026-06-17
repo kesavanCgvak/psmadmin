@@ -23,6 +23,7 @@ class InventoryMasterAiLog extends Model
         'confidence_score',
         'source_url',
         'updated_by',
+        'reviewed_by',
         'created_at',
     ];
 
@@ -34,5 +35,10 @@ class InventoryMasterAiLog extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'inventory_master_id');
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
     }
 }

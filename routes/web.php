@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\DateFormatManagementController;
 use App\Http\Controllers\Admin\EmailLogController;
 use App\Http\Controllers\Admin\EmailTemplateController;
 use App\Http\Controllers\Admin\EquipmentManagementController;
+use App\Http\Controllers\Admin\InventoryAiSpecificationController;
 use App\Http\Controllers\Admin\IssueTypeController;
 use App\Http\Controllers\Admin\JobRatingsController;
 use App\Http\Controllers\Admin\LinearUnitController;
@@ -129,6 +130,18 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('products.merge');
     Route::post('/products/bulk-verify', [ProductController::class, 'bulkVerify'])
         ->name('products.bulk-verify');
+
+    // AI specification enrichment review
+    Route::prefix('ai-specifications')->name('ai-specifications.')->group(function () {
+        Route::get('/', [InventoryAiSpecificationController::class, 'index'])->name('index');
+        Route::get('/data', [InventoryAiSpecificationController::class, 'data'])->name('data');
+        Route::get('/audit-logs', [InventoryAiSpecificationController::class, 'auditLogs'])->name('audit-logs');
+        Route::get('/audit-logs/data', [InventoryAiSpecificationController::class, 'auditLogsData'])->name('audit-logs.data');
+        Route::get('/{aiSpec}', [InventoryAiSpecificationController::class, 'show'])->name('show');
+        Route::put('/{aiSpec}', [InventoryAiSpecificationController::class, 'update'])->name('update');
+        Route::post('/{aiSpec}/approve', [InventoryAiSpecificationController::class, 'approve'])->name('approve');
+        Route::post('/{aiSpec}/reject', [InventoryAiSpecificationController::class, 'reject'])->name('reject');
+    });
 
     // AJAX endpoint for getting subcategories by category
     Route::get('/ajax/categories/{category}/subcategories', [ProductController::class, 'getSubCategoriesByCategory'])

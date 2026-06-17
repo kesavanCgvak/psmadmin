@@ -19,11 +19,19 @@ class EnrichInventorySpecificationsBatchJob implements ShouldQueue
 
     public int $tries = 1;
 
+    /** @var list<int> */
+    public array $inventoryMasterIds;
+
+    /** Default ensures queued jobs serialized before this property existed still run. */
+    public bool $retryIncomplete = false;
+
     /**
      * @param  list<int>  $inventoryMasterIds
      */
-    public function __construct(public array $inventoryMasterIds)
+    public function __construct(array $inventoryMasterIds, bool $retryIncomplete = false)
     {
+        $this->inventoryMasterIds = $inventoryMasterIds;
+        $this->retryIncomplete = $retryIncomplete;
         $this->onQueue((string) config('inventory_ai.queue', 'default'));
     }
 
@@ -31,11 +39,12 @@ class EnrichInventorySpecificationsBatchJob implements ShouldQueue
     {
         Log::info('Inventory specification enrichment batch started.', [
             'count' => count($this->inventoryMasterIds),
+            'retry_incomplete' => $this->retryIncomplete,
         ]);
 
         foreach ($this->inventoryMasterIds as $inventoryMasterId) {
             try {
-                EnrichInventorySpecificationJob::dispatch($inventoryMasterId);
+                EnrichInventorySpecificationJob::dispatch($inventoryMasterId, $this->retryIncomplete);
             } catch (Throwable $e) {
                 Log::error('Failed to dispatch inventory enrichment job.', [
                     'inventory_master_id' => $inventoryMasterId,

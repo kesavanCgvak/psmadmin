@@ -133,4 +133,90 @@ final class InventoryAiSpecValidator
             'fills_missing' => $fillsMissing,
         ];
     }
+
+    /**
+     * @param  array<string, mixed>  $values  height, width, length, weight, linear_unit_id, weight_unit_id
+     * @param  list<string>  $missingProductFields
+     * @return array{valid: bool, errors: list<string>}
+     */
+    public function validateManualApprovalValues(array $values, array $missingProductFields): array
+    {
+        $errors = [];
+
+        foreach (self::DIMENSION_FIELDS as $field) {
+            if (!in_array($field, $missingProductFields, true)) {
+                continue;
+            }
+
+            $value = $values[$field] ?? null;
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            if (!is_numeric($value) || (float) $value <= 0) {
+                $errors[] = "{$field} must be greater than zero.";
+            }
+        }
+
+        if (in_array('weight', $missingProductFields, true)) {
+            $weight = $values['weight'] ?? null;
+            if ($weight !== null && $weight !== '') {
+                if (!is_numeric($weight) || (float) $weight <= 0) {
+                    $errors[] = 'weight must be greater than zero.';
+                }
+            }
+        }
+
+        $hasDimensionValue = false;
+        foreach (self::DIMENSION_FIELDS as $field) {
+            if (in_array($field, $missingProductFields, true)
+                && isset($values[$field])
+                && $values[$field] !== null
+                && $values[$field] !== ''
+            ) {
+                $hasDimensionValue = true;
+                break;
+            }
+        }
+
+        if ($hasDimensionValue
+            && in_array('linear_unit_id', $missingProductFields, true)
+            && empty($values['linear_unit_id'])
+        ) {
+            $errors[] = 'linear_unit is required when dimension values are provided.';
+        }
+
+        $hasWeightValue = in_array('weight', $missingProductFields, true)
+            && isset($values['weight'])
+            && $values['weight'] !== null
+            && $values['weight'] !== '';
+
+        if ($hasWeightValue
+            && in_array('weight_unit_id', $missingProductFields, true)
+            && empty($values['weight_unit_id'])
+        ) {
+            $errors[] = 'weight_unit is required when weight is provided.';
+        }
+
+        $fillsAny = false;
+        foreach (InventoryMasterSpecEnrichment::SPEC_FIELDS as $field) {
+            if (in_array($field, $missingProductFields, true)
+                && isset($values[$field])
+                && $values[$field] !== null
+                && $values[$field] !== ''
+            ) {
+                $fillsAny = true;
+                break;
+            }
+        }
+
+        if (!$fillsAny) {
+            $errors[] = 'At least one specification value must be provided for approval.';
+        }
+
+        return [
+            'valid' => $errors === [],
+            'errors' => $errors,
+        ];
+    }
 }

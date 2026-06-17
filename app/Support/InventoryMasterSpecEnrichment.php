@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\InventoryMasterAiSpec;
 use App\Models\Product;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 final class InventoryMasterSpecEnrichment
 {
@@ -61,6 +62,112 @@ final class InventoryMasterSpecEnrichment
             ->where('inventory_master_id', $inventoryMasterId)
             ->where('status', InventoryMasterAiSpec::STATUS_PENDING)
             ->exists();
+    }
+
+    public static function hasApprovedEnrichment(int $inventoryMasterId): bool
+    {
+        return InventoryMasterAiSpec::query()
+            ->where('inventory_master_id', $inventoryMasterId)
+            ->where('status', InventoryMasterAiSpec::STATUS_APPROVED)
+            ->exists();
+    }
+
+    /**
+     * Approved AI enrichment exists but inventory_master still has empty spec fields.
+     */
+    public static function hasApprovedPartialEnrichment(Product $product): bool
+    {
+        if (self::hasCompletePhysicalSpecs($product)) {
+            return false;
+        }
+
+        return self::hasApprovedEnrichment($product->id);
+    }
+
+    /**
+     * @param  list<string>  $missingProductFields
+     * @param  list<string>  $fillsMissing
+     */
+    public static function allMissingFieldsCovered(array $missingProductFields, array $fillsMissing): bool
+    {
+        foreach ($missingProductFields as $field) {
+            if (!in_array($field, $fillsMissing, true)) {
+                return false;
+            }
+        }
+
+        return $missingProductFields !== [];
+    }
+
+    /**
+     * Re-open the latest approved spec when inventory_master is still incomplete.
+     */
+    public static function reopenLatestApprovedSpecForReview(int $inventoryMasterId): ?InventoryMasterAiSpec
+    {
+        if (self::hasPendingEnrichment($inventoryMasterId)) {
+            return null;
+        }
+
+        $spec = InventoryMasterAiSpec::query()
+            ->where('inventory_master_id', $inventoryMasterId)
+            ->where('status', InventoryMasterAiSpec::STATUS_APPROVED)
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$spec) {
+            return null;
+        }
+
+        $spec->update(['status' => InventoryMasterAiSpec::STATUS_PENDING]);
+
+        return $spec->fresh();
+    }
+
+    /**
+     * @return list<int>
+     */
+    public static function inventoryMasterIdsWithApprovedPartialEnrichment(): array
+    {
+        return Product::query()
+            ->select('inventory_master.id')
+            ->tap(fn (Builder $builder) => self::scopeMissingPhysicalSpecs($builder))
+            ->whereExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('inventory_master_ai_specs')
+                    ->whereColumn('inventory_master_ai_specs.inventory_master_id', 'inventory_master.id')
+                    ->where('inventory_master_ai_specs.status', InventoryMasterAiSpec::STATUS_APPROVED);
+            })
+            ->whereNotExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('inventory_master_ai_specs')
+                    ->whereColumn('inventory_master_ai_specs.inventory_master_id', 'inventory_master.id')
+                    ->where('inventory_master_ai_specs.status', InventoryMasterAiSpec::STATUS_PENDING);
+            })
+            ->orderBy('inventory_master.id')
+            ->pluck('id')
+            ->all();
+    }
+
+    public static function scopeEligibleForEnrichment(Builder $query, bool $retryIncomplete = false): Builder
+    {
+        $query->tap(fn (Builder $builder) => self::scopeMissingPhysicalSpecs($builder))
+            ->whereNotExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('inventory_master_ai_specs')
+                    ->whereColumn('inventory_master_ai_specs.inventory_master_id', 'inventory_master.id')
+                    ->where('inventory_master_ai_specs.status', InventoryMasterAiSpec::STATUS_PENDING);
+            });
+
+        if (!$retryIncomplete) {
+            $query->whereNotExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('inventory_master_ai_specs')
+                    ->whereColumn('inventory_master_ai_specs.inventory_master_id', 'inventory_master.id')
+                    ->where('inventory_master_ai_specs.status', InventoryMasterAiSpec::STATUS_APPROVED);
+            });
+        }
+
+        return $query;
     }
 
     public static function scopeMissingPhysicalSpecs(Builder $query): Builder

@@ -29,6 +29,9 @@ class InventoryMasterAiSpec extends Model
         'source_url',
         'ai_response',
         'status',
+        'reviewed_by',
+        'reviewed_at',
+        'review_notes',
     ];
 
     protected $casts = [
@@ -38,6 +41,7 @@ class InventoryMasterAiSpec extends Model
         'weight' => 'decimal:2',
         'confidence_score' => 'integer',
         'ai_response' => 'array',
+        'reviewed_at' => 'datetime',
     ];
 
     public function product(): BelongsTo
@@ -53,5 +57,10 @@ class InventoryMasterAiSpec extends Model
     public function weightUnit(): BelongsTo
     {
         return $this->belongsTo(WeightUnit::class);
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
     }
 }

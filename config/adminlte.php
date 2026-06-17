@@ -385,6 +385,19 @@ return [
             'icon' => 'fas fa-fw fa-cubes',
             'icon_color' => 'warning',
         ],
+        ['header' => 'INVENTORY MANAGEMENT'],
+        [
+            'text' => 'AI Specification Reviews',
+            'route' => 'admin.ai-specifications.index',
+            'icon' => 'fas fa-fw fa-robot',
+            'icon_color' => 'info',
+        ],
+        [
+            'text' => 'AI Specification Audit Logs',
+            'route' => 'admin.ai-specifications.audit-logs',
+            'icon' => 'fas fa-fw fa-history',
+            'icon_color' => 'secondary',
+        ],
         ['header' => 'COMPANY MANAGEMENT'],
         [
             'text' => 'Companies',

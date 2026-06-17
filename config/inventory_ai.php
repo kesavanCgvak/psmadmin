@@ -4,13 +4,16 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | OpenAI / AI Provider
+    | Legacy OpenAI settings (backward compatible)
     |--------------------------------------------------------------------------
+    |
+    | Prefer config('ai.providers.openai.*') and AI_PROVIDER for new setups.
+    |
     */
     'api_key' => env('OPENAI_API_KEY'),
     'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
     'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-    'timeout' => (int) env('OPENAI_TIMEOUT', 60),
+    'timeout' => (int) env('OPENAI_TIMEOUT', env('AI_TIMEOUT', 60)),
 
     /*
     |--------------------------------------------------------------------------
@@ -24,11 +27,13 @@ return [
     |--------------------------------------------------------------------------
     | Confidence thresholds
     |--------------------------------------------------------------------------
+    |
+    | Scores >= auto_approve_threshold are auto-approved and applied to inventory_master.
+    | Scores below auto_approve_threshold are staged as pending for manual review.
+    | Validation failures are still rejected regardless of confidence score.
+    |
     */
-    'auto_approve_threshold' => 75,
-    'pending_min_threshold' => 60,
-    'pending_max_threshold' => 74,
-    'reject_threshold' => 50,
+    'auto_approve_threshold' => (int) env('INVENTORY_AI_AUTO_APPROVE_THRESHOLD', 60),
 
     /*
     |--------------------------------------------------------------------------
@@ -43,5 +48,12 @@ return [
         'linear_unit_id',
         'weight_unit_id',
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Audit log field name for manual rejection entries
+    |--------------------------------------------------------------------------
+    */
+    'rejection_log_field_name' => '_rejection',
 
 ];
