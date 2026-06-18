@@ -52,7 +52,6 @@ class CompanyIntegrationService
             'integration_type' => ['required', 'string', Rule::in(self::supportedTypes())],
             'api_base_url' => $apiBaseUrlRule,
             'api_key' => $apiKeyRule,
-            'settings' => ['nullable', 'array'],
             'client_id' => ['nullable', 'string', 'max:500'],
             'client_secret' => ['nullable', 'string', 'max:1000'],
         ];
@@ -73,7 +72,6 @@ class CompanyIntegrationService
             'api_base_url' => ($typeConfig['requires_api_base_url'] ?? false)
                 ? ($validatedData['api_base_url'] ?? null)
                 : $this->resolveOptionalBaseUrl($integrationType, $validatedData),
-            'settings' => $validatedData['settings'] ?? null,
         ];
 
         if (($typeConfig['uses_api_key'] ?? false) && array_key_exists('api_key', $validatedData)) {

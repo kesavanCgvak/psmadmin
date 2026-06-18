@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Services\InventoryAi\AiRequestPacer;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -42,9 +43,12 @@ class EnrichInventorySpecificationsBatchJob implements ShouldQueue
             'retry_incomplete' => $this->retryIncomplete,
         ]);
 
-        foreach ($this->inventoryMasterIds as $inventoryMasterId) {
+        foreach ($this->inventoryMasterIds as $index => $inventoryMasterId) {
             try {
-                EnrichInventorySpecificationJob::dispatch($inventoryMasterId, $this->retryIncomplete);
+                $delaySeconds = (int) round($index * AiRequestPacer::secondsBetweenRequests());
+
+                EnrichInventorySpecificationJob::dispatch($inventoryMasterId, $this->retryIncomplete)
+                    ->delay(now()->addSeconds($delaySeconds));
             } catch (Throwable $e) {
                 Log::error('Failed to dispatch inventory enrichment job.', [
                     'inventory_master_id' => $inventoryMasterId,

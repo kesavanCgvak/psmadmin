@@ -11,7 +11,6 @@ class CompanyIntegration extends Model
         'integration_type',
         'api_base_url',
         'api_key',
-        'settings',
         'client_id',
         'client_secret',
         'access_token',
@@ -27,7 +26,6 @@ class CompanyIntegration extends Model
         'last_synced_at' => 'datetime',
         'client_secret' => 'encrypted',
         'api_key' => 'encrypted',
-        'settings' => 'array',
     ];
 
     protected $hidden = [

@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Http;
 class GeminiProductSpecificationProvider implements ProductSpecificationAiProvider
 {
     use HandlesAiProviderHttpErrors;
+    use PerformsRateLimitedAiRequests;
 
     private string $apiKey;
 
@@ -56,10 +57,6 @@ class GeminiProductSpecificationProvider implements ProductSpecificationAiProvid
             ? (int) $lookupContext['inventory_master_id']
             : null;
 
-        $inventoryMasterId = isset($lookupContext['inventory_master_id'])
-            ? (int) $lookupContext['inventory_master_id']
-            : null;
-
         $this->logRequestStart($this->providerName(), $this->model, $inventoryMasterId);
 
         $endpoint = $this->generateContentEndpoint();
@@ -69,9 +66,14 @@ class GeminiProductSpecificationProvider implements ProductSpecificationAiProvid
         );
 
         try {
-            $response = Http::timeout($this->timeout)
-                ->acceptJson()
-                ->post($endpoint, $payload);
+            $response = $this->sendWithRateLimitHandling(
+                fn () => Http::timeout($this->timeout)
+                    ->acceptJson()
+                    ->post($endpoint, $payload),
+                $this->providerName(),
+                $this->endpointWithoutKey($endpoint),
+                ['model' => $this->model],
+            );
         } catch (ConnectionException $e) {
             throw $this->wrapConnectionException($e, $this->providerName());
         }
@@ -109,9 +111,14 @@ class GeminiProductSpecificationProvider implements ProductSpecificationAiProvid
         );
 
         try {
-            $response = Http::timeout($this->timeout)
-                ->acceptJson()
-                ->post($endpoint, $payload);
+            $response = $this->sendWithRateLimitHandling(
+                fn () => Http::timeout($this->timeout)
+                    ->acceptJson()
+                    ->post($endpoint, $payload),
+                $this->providerName(),
+                $this->endpointWithoutKey($endpoint),
+                ['model' => $this->model],
+            );
         } catch (ConnectionException $e) {
             throw $this->wrapConnectionException($e, $this->providerName());
         }
@@ -172,6 +179,7 @@ class GeminiProductSpecificationProvider implements ProductSpecificationAiProvid
             ],
             'generationConfig' => [
                 'temperature' => 0.2,
+                'maxOutputTokens' => max(64, (int) config('ai.rate_limit.max_output_tokens', 512)),
                 'responseMimeType' => 'application/json',
             ],
         ];

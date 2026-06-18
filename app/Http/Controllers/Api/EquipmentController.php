@@ -11,7 +11,6 @@ use App\Models\EquipmentImage;
 use App\Http\Requests\UpdateEquipmentMarketplaceDetailsRequest;
 use App\Services\RentmanInventoryImportService;
 use App\Support\CompanyInventorySpecs;
-use App\Support\InventoryImageManagementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -131,7 +130,10 @@ class EquipmentController extends Controller
             $search = $request->input('search', null);
 
             $query = Equipment::with([
-                'product.brand',
+                'product.brand:id,name',
+                'product.category:id,name',
+                'product.subCategory:id,name,category_id',
+                'product.masterImages',
                 'images',
                 'linearUnit:id,code,name',
                 'weightUnit:id,code,name',
@@ -201,7 +203,10 @@ class EquipmentController extends Controller
             }
 
             $equipment = Equipment::with([
-                'product.brand',
+                'product.brand:id,name',
+                'product.category:id,name',
+                'product.subCategory:id,name,category_id',
+                'product.masterImages',
                 'images',
                 'linearUnit:id,code,name',
                 'weightUnit:id,code,name',
@@ -584,32 +589,6 @@ class EquipmentController extends Controller
      */
     private function formatCompanyEquipmentForApi(Equipment $equipment): array
     {
-        $product = $equipment->product;
-        $brandName = $product?->brand?->name;
-        $modelName = $product?->model ?? 'Unknown Model';
-
-        return array_merge([
-            'id' => $equipment->id,
-            'product_id' => $product?->id,
-            'product_label' => $brandName
-                ? "{$brandName} - {$modelName}"
-                : $modelName,
-            'psm_code' => $product?->psm_code,
-            'webpage_url' => $product?->webpage_url,
-            'flex_resource_id' => $equipment->flex_resource_id,
-            'rentman_equipment_id' => $equipment->rentman_equipment_id,
-            'software_code' => $equipment->software_code,
-            'quantity' => $equipment->quantity,
-            'price' => $equipment->rental_price,
-            'description' => $equipment->description,
-            'is_verified' => $product?->is_verified,
-            'images' => $equipment->images->map(function ($img) {
-                return [
-                    'id' => $img->id,
-                    'url' => InventoryImageManagementService::publicUrl($img->image_path),
-                    'is_primary' => (bool) $img->is_primary,
-                ];
-            }),
-        ], CompanyInventorySpecs::equipmentMarketplaceSpecsForApi($equipment));
+        return CompanyInventorySpecs::equipmentDetailsForApi($equipment);
     }
 }

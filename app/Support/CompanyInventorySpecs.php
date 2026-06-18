@@ -232,6 +232,84 @@ final class CompanyInventorySpecs
     }
 
     /**
+     * Full company equipment payload for API (single record + list).
+     *
+     * @return array<string, mixed>
+     */
+    public static function equipmentDetailsForApi(Equipment $equipment): array
+    {
+        $equipment->loadMissing([
+            'product.brand:id,name',
+            'product.category:id,name',
+            'product.subCategory:id,name,category_id',
+            'product.masterImages',
+            'images',
+            'linearUnit:id,code,name',
+            'weightUnit:id,code,name',
+        ]);
+
+        $product = $equipment->product;
+        $brandName = $product?->brand?->name;
+        $modelName = $product?->model ?? 'Unknown Model';
+        $rentalPrice = $equipment->rental_price !== null ? (float) $equipment->rental_price : null;
+
+        return array_merge([
+            'id' => $equipment->id,
+            'company_id' => $equipment->company_id,
+            'product_id' => $product?->id,
+            'product_label' => $brandName
+                ? "{$brandName} - {$modelName}"
+                : $modelName,
+            'model' => $product?->model,
+            'psm_code' => $product?->psm_code,
+            'webpage_url' => $product?->webpage_url,
+            'is_verified' => $product?->is_verified,
+            'source' => $product?->source,
+            'brand' => $product?->brand ? [
+                'id' => $product->brand->id,
+                'name' => $product->brand->name,
+            ] : null,
+            'category' => $product?->category ? [
+                'id' => $product->category->id,
+                'name' => $product->category->name,
+            ] : null,
+            'sub_category' => $product?->subCategory ? [
+                'id' => $product->subCategory->id,
+                'name' => $product->subCategory->name,
+                'category_id' => $product->subCategory->category_id,
+            ] : null,
+            'flex_resource_id' => $equipment->flex_resource_id,
+            'rentman_equipment_id' => $equipment->rentman_equipment_id,
+            'software_code' => $equipment->software_code,
+            'quantity' => $equipment->quantity,
+            'price' => $rentalPrice,
+            'rental_price' => $rentalPrice,
+            'replacement_price' => $equipment->replacement_price !== null
+                ? (float) $equipment->replacement_price
+                : null,
+            'description' => $equipment->description,
+            'images' => $equipment->images->map(function ($img) {
+                return [
+                    'id' => $img->id,
+                    'url' => InventoryImageManagementService::publicUrl($img->image_path),
+                    'is_primary' => (bool) $img->is_primary,
+                    'sort_order' => $img->sort_order,
+                ];
+            })->values(),
+            'master_images' => $product?->masterImages->map(function ($img) {
+                return [
+                    'id' => $img->id,
+                    'url' => InventoryImageManagementService::publicUrl($img->image_path),
+                    'is_primary' => (bool) $img->is_primary,
+                    'sort_order' => $img->sort_order,
+                ];
+            })->values() ?? [],
+            'created_at' => $equipment->created_at?->toIso8601String(),
+            'updated_at' => $equipment->updated_at?->toIso8601String(),
+        ], self::equipmentSpecsForJson($equipment));
+    }
+
+    /**
      * Marketplace equipment API: display + trade fields only (no raw dimensions/units).
      *
      * @return array<string, mixed>

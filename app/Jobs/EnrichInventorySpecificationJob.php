@@ -19,10 +19,21 @@ class EnrichInventorySpecificationJob implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
-    public int $tries = 3;
+    public int $tries = 5;
 
-    /** @var list<int> */
-    public array $backoff = [60, 180, 600];
+    public function backoff(): array
+    {
+        $initial = max(1, (int) config('ai.rate_limit.initial_backoff_seconds', 1));
+        $max = max($initial, (int) config('ai.rate_limit.max_backoff_seconds', 60));
+
+        return [
+            $initial,
+            min($max, $initial * 4),
+            min($max, $initial * 10),
+            min($max, $initial * 20),
+            $max,
+        ];
+    }
 
     public int $inventoryMasterId;
 

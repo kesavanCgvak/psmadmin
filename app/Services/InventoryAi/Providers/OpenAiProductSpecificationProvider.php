@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Http;
 class OpenAiProductSpecificationProvider implements ProductSpecificationAiProvider
 {
     use HandlesAiProviderHttpErrors;
+    use PerformsRateLimitedAiRequests;
 
     private string $apiKey;
 
@@ -58,10 +59,15 @@ class OpenAiProductSpecificationProvider implements ProductSpecificationAiProvid
         );
 
         try {
-            $response = Http::withToken($this->apiKey)
-                ->timeout($this->timeout)
-                ->acceptJson()
-                ->post($endpoint, $payload);
+            $response = $this->sendWithRateLimitHandling(
+                fn () => Http::withToken($this->apiKey)
+                    ->timeout($this->timeout)
+                    ->acceptJson()
+                    ->post($endpoint, $payload),
+                $this->providerName(),
+                $endpoint,
+                ['model' => $this->model],
+            );
         } catch (ConnectionException $e) {
             throw $this->wrapConnectionException($e, $this->providerName());
         }
@@ -109,10 +115,15 @@ class OpenAiProductSpecificationProvider implements ProductSpecificationAiProvid
         );
 
         try {
-            $response = Http::withToken($this->apiKey)
-                ->timeout($this->timeout)
-                ->acceptJson()
-                ->post($endpoint, $payload);
+            $response = $this->sendWithRateLimitHandling(
+                fn () => Http::withToken($this->apiKey)
+                    ->timeout($this->timeout)
+                    ->acceptJson()
+                    ->post($endpoint, $payload),
+                $this->providerName(),
+                $endpoint,
+                ['model' => $this->model],
+            );
         } catch (ConnectionException $e) {
             throw $this->wrapConnectionException($e, $this->providerName());
         }
@@ -150,6 +161,7 @@ class OpenAiProductSpecificationProvider implements ProductSpecificationAiProvid
         return [
             'model' => $this->model,
             'temperature' => 0.2,
+            'max_tokens' => max(64, (int) config('ai.rate_limit.max_output_tokens', 512)),
             'response_format' => ['type' => 'json_object'],
             'messages' => [
                 ['role' => 'system', 'content' => $systemPrompt],

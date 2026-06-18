@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Jobs\EnrichInventorySpecificationsBatchJob;
 use App\Models\InventoryMasterAiSpec;
 use App\Models\Product;
+use App\Services\InventoryAi\AiRequestPacer;
 use App\Support\InventoryMasterSpecEnrichment;
 use App\Services\InventoryAi\AiProviderFactory;
 use Illuminate\Console\Command;
@@ -17,6 +18,7 @@ class EnrichInventorySpecifications extends Command
                             {--limit= : Maximum number of products to queue}
                             {--sync : Process synchronously in this process instead of queueing}
                             {--retry-incomplete : Re-queue products that already have an approved AI spec}
+                            {--requests-per-minute= : Override AI_REQUESTS_PER_MINUTE pacing for this run}
                             {--dry-run : Show counts without dispatching jobs}';
 
     protected $description = 'Queue AI enrichment for inventory_master products missing physical specifications';
@@ -28,6 +30,13 @@ class EnrichInventorySpecifications extends Command
         $dryRun = (bool) $this->option('dry-run');
         $sync = (bool) $this->option('sync');
         $retryIncomplete = (bool) $this->option('retry-incomplete');
+        $requestsPerMinuteOverride = $this->option('requests-per-minute');
+
+        if ($requestsPerMinuteOverride !== null) {
+            config([
+                'ai.rate_limit.requests_per_minute' => max(1, (int) $requestsPerMinuteOverride),
+            ]);
+        }
 
         if ($batchSize < 1) {
             $this->error('Batch size must be at least 1.');
@@ -102,6 +111,7 @@ class EnrichInventorySpecifications extends Command
                 ['Blocked by prior approved AI spec', $approvedBlocked],
                 ['Selected for this run', $toProcess],
                 ['Batch size', $batchSize],
+                ['AI requests per minute (pacing)', config('ai.rate_limit.requests_per_minute')],
                 ['Mode', $dryRun ? 'dry-run' : ($sync ? 'sync' : 'queued')],
             ]
         );
@@ -119,6 +129,12 @@ class EnrichInventorySpecifications extends Command
         }
 
         if ($sync) {
+            $this->comment(sprintf(
+                'Sync mode paces requests at %d RPM (~%ds between calls).',
+                config('ai.rate_limit.requests_per_minute'),
+                (int) ceil(AiRequestPacer::secondsBetweenRequests()),
+            ));
+
             $service = app(\App\Services\InventoryAi\InventorySpecificationEnrichmentService::class);
             $stats = [
                 'approved' => 0,

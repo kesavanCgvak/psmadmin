@@ -164,7 +164,7 @@ class FlexIntegrationService
     }
 
     /**
-     * GET element definition fields (cached). Non-empty env / company_integrations.settings always override these.
+     * GET element definition fields (cached). Non-empty env values always override these.
      */
     protected function fetchQuoteDefaultsFromElementFields(): array
     {
@@ -523,7 +523,7 @@ class FlexIntegrationService
     {
         $settings = $this->quoteSettings();
         if (empty($settings['sales_quote_definition_id'])) {
-            throw new \RuntimeException('Flex sales quote definition id is not configured (env FLEX_SALES_QUOTE_DEFINITION_ID or company_integrations.settings).');
+            throw new \RuntimeException('Flex sales quote definition id is not configured (set FLEX_SALES_QUOTE_DEFINITION_ID in .env).');
         }
 
         $referralSourceId = $this->getProSubrentalReferralSourceId();
@@ -922,15 +922,13 @@ class FlexIntegrationService
 
     protected function quoteSettings(): array
     {
-        $s = $this->integration->settings ?? [];
-
         return [
-            'sales_quote_definition_id' => $s['sales_quote_definition_id'] ?? $s['definitionId'] ?? config('flex.sales_quote_definition_id'),
-            'currency_id' => $s['currency_id'] ?? $s['currencyId'] ?? null,
-            'status_id' => $s['status_id'] ?? $s['statusId'] ?? config('flex.sales_quote_status_id'),
-            'person_responsible_id' => $s['person_responsible_id'] ?? $s['personResponsibleId'] ?? config('flex.sales_quote_person_responsible_id'),
-            'location_id' => $s['location_id'] ?? $s['locationId'] ?? config('flex.sales_quote_location_id'),
-            'default_pricing_model_id' => $s['default_pricing_model_id'] ?? $s['defaultPricingModelId'] ?? config('flex.sales_quote_default_pricing_model_id'),
+            'sales_quote_definition_id' => config('flex.sales_quote_definition_id'),
+            'currency_id' => null,
+            'status_id' => config('flex.sales_quote_status_id'),
+            'person_responsible_id' => config('flex.sales_quote_person_responsible_id'),
+            'location_id' => config('flex.sales_quote_location_id'),
+            'default_pricing_model_id' => config('flex.sales_quote_default_pricing_model_id'),
         ];
     }
 
@@ -1090,7 +1088,7 @@ class FlexIntegrationService
 
         $missingBlockers = [];
         if (empty($settings['sales_quote_definition_id'])) {
-            $missingBlockers[] = 'definitionId (FLEX_SALES_QUOTE_DEFINITION_ID or company_integrations.settings)';
+            $missingBlockers[] = 'definitionId (FLEX_SALES_QUOTE_DEFINITION_ID)';
         }
 
         $optionalUnsetInSettings = [];
@@ -1129,7 +1127,7 @@ class FlexIntegrationService
             'provider_company_id' => $this->providerCompanyId,
             'auth_header_mode' => config('flex.auth_header'),
             'missing_blocker_settings' => $missingBlockers,
-            'optional_quote_fields_not_in_env_or_settings' => $optionalUnsetInSettings,
+            'optional_quote_fields_not_in_env' => $optionalUnsetInSettings,
             'use_element_fields_api' => (bool) config('flex.use_element_fields_api', true),
             'element_fields_path_pattern' => config('flex.element_fields_path_pattern'),
             'defaults_from_element_fields_api' => $defaultsFromApi,
@@ -1151,8 +1149,8 @@ class FlexIntegrationService
             $configSummary,
             null,
             $missingBlockers === []
-                ? 'Quote IDs: env/settings override GET element/{definitionId}/fields; see merged_quote_field_ids_for_payload'
-                : 'BLOCKER: sales quote definitionId missing — set FLEX_SALES_QUOTE_DEFINITION_ID or company_integrations.settings',
+                ? 'Quote IDs: env overrides GET element/{definitionId}/fields; see merged_quote_field_ids_for_payload'
+                : 'BLOCKER: sales quote definitionId missing — set FLEX_SALES_QUOTE_DEFINITION_ID in .env',
         );
 
         $referralId = $this->getProSubrentalReferralSourceId();

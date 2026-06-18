@@ -149,9 +149,17 @@ trait HandlesAiProviderHttpErrors
             $type = strtolower((string) data_get($body, 'error.type', ''));
             $status = strtolower((string) data_get($body, 'error.status', ''));
 
+            if (str_contains($code, 'rate_limit') || str_contains($type, 'rate_limit')) {
+                return false;
+            }
+
             if (str_contains($code, 'quota') || str_contains($type, 'quota') || str_contains($status, 'quota')) {
                 return true;
             }
+        }
+
+        if (str_contains($haystack, 'rate limit reached')) {
+            return false;
         }
 
         return str_contains($haystack, 'quota')

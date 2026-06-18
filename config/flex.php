@@ -57,8 +57,7 @@ return [
     |--------------------------------------------------------------------------
     | Sales quote & contact (rental request → Flex quote)
     |--------------------------------------------------------------------------
-    | Optional env defaults; per-company overrides live in
-    | company_integrations.settings (JSON) for integration_type = flex.
+    | Optional env defaults for sales quote sync.
     */
     'contact_search_path' => env('FLEX_CONTACT_SEARCH_PATH', '/f5/api/contact/search'),
     'contact_create_path' => env('FLEX_CONTACT_CREATE_PATH', '/f5/api/contact'),
@@ -75,7 +74,7 @@ return [
     /** Cache TTL (seconds) for element definition fields response */
     'element_fields_cache_ttl' => (int) env('FLEX_ELEMENT_FIELDS_CACHE_TTL', 3600),
 
-    /** When false, only env / company_integrations.settings are used (no fields API). */
+    /** When false, only env values are used (no fields API). */
     'use_element_fields_api' => ($v = env('FLEX_USE_ELEMENT_FIELDS_API')) === null || filter_var($v, FILTER_VALIDATE_BOOLEAN),
     'financial_line_item_path' => env('FLEX_FINANCIAL_LINE_ITEM_PATH', '/f5/api/financial-document-line-item'),
     'referral_source_path' => env('FLEX_REFERRAL_SOURCE_PATH', '/f5/api/referral-source/identity'),

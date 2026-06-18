@@ -32,6 +32,8 @@ class TestAiProvider extends Command
             ['Provider', $provider->providerName()],
             ['Model', $provider->modelName()],
             ['API key configured', AiProviderFactory::isConfigured($providerName) ? 'YES' : 'NO'],
+            ['Requests per minute (pacing)', config('ai.rate_limit.requests_per_minute')],
+            ['Rate limit max retries', config('ai.rate_limit.max_retries')],
         ]);
 
         if (!AiProviderFactory::isConfigured($providerName)) {
