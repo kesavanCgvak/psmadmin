@@ -1,0 +1,333 @@
+{
+  "info": {
+    "name": "PSM Partner Product APIs",
+    "_postman_id": "f0fd0c56-b96f-4d89-ac09-a8f0584544ff",
+    "description": "Provider API key management and partner public product APIs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Provider API Key Management (JWT)",
+      "item": [
+        {
+          "name": "Generate API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{provider_jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Default key\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/provider/api-keys/generate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "provider",
+                "api-keys",
+                "generate"
+              ]
+            },
+            "description": "Generates a new API key for provider user. Full key is returned in response."
+          }
+        },
+        {
+          "name": "Request Open API access (email admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{provider_jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Please enable Open API access for our integration.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/provider/api-keys/request-access",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "provider",
+                "api-keys",
+                "request-access"
+              ]
+            },
+            "description": "Sends an email to admin (MAIL_TO_NOTIFY_NEW_REGISTRATION / mail.to.addresses) with the user's message. Requires JWT; provider company user only."
+          }
+        },
+        {
+          "name": "List API Keys",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{provider_jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/provider/api-keys",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "provider",
+                "api-keys"
+              ]
+            },
+            "description": "Lists provider API keys with metadata."
+          }
+        },
+        {
+          "name": "Reveal API Key",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{provider_jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/provider/api-keys/{{api_key_id}}/reveal",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "provider",
+                "api-keys",
+                "{{api_key_id}}",
+                "reveal"
+              ]
+            },
+            "description": "Reveals the full API key for the selected record."
+          }
+        },
+        {
+          "name": "Revoke API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{provider_jwt_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/provider/api-keys/{{api_key_id}}/revoke",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "provider",
+                "api-keys",
+                "{{api_key_id}}",
+                "revoke"
+              ]
+            },
+            "description": "Revokes selected API key."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Partner Public Product APIs (API Key)",
+      "item": [
+        {
+          "name": "Search Products",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{provider_api_key}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/partner/products/search?q={{search_query}}&page={{page}}&per_page={{per_page}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "partner",
+                "products",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{search_query}}"
+                },
+                {
+                  "key": "page",
+                  "value": "{{page}}"
+                },
+                {
+                  "key": "per_page",
+                  "value": "{{per_page}}"
+                }
+              ]
+            },
+            "description": "Public partner API for product search (requires provider API key)."
+          }
+        },
+        {
+          "name": "Product Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{provider_api_key}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/partner/products/{{product_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "partner",
+                "products",
+                "{{product_id}}"
+              ]
+            },
+            "description": "Public partner API for product details by product id (requires provider API key)."
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://psmadmin.test"
+    },
+    {
+      "key": "provider_jwt_token",
+      "value": ""
+    },
+    {
+      "key": "provider_api_key",
+      "value": ""
+    },
+    {
+      "key": "api_key_id",
+      "value": "1"
+    },
+    {
+      "key": "search_query",
+      "value": "test"
+    },
+    {
+      "key": "page",
+      "value": "1"
+    },
+    {
+      "key": "per_page",
+      "value": "25"
+    },
+    {
+      "key": "product_id",
+      "value": "1"
+    }
+  ]
+}
+

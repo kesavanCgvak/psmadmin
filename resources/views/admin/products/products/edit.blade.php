@@ -329,6 +329,15 @@
             </div>
         </form>
     </div>
+
+    @include('admin.partials.image-gallery-manager', [
+        'title' => 'Master Product Images',
+        'entityType' => 'product',
+        'entity' => $product,
+        'images' => $product->masterImages,
+        'emptyMessage' => 'No master images yet. Upload here or import via Flex/Rentman.',
+        'cardClass' => 'mt-3',
+    ])
 @stop
 
 @section('js')

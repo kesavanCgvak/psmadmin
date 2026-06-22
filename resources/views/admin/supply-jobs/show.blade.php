@@ -29,7 +29,10 @@
                                 'completed' => 'success',
                             ];
                             $statusColor = $statusColors[$supplyJob->status] ?? 'secondary';
-                            $statusDisplay = ucfirst(str_replace('_', ' ', $supplyJob->status ?? 'N/A'));
+                            $isAdminCancelled = $supplyJob->status === 'cancelled' && optional($supplyJob->cancelledByUser)->is_admin;
+                            $statusDisplay = $isAdminCancelled
+                                ? 'Admin Cancelled'
+                                : ucfirst(str_replace('_', ' ', $supplyJob->status ?? 'N/A'));
                         @endphp
                         <span class="badge badge-{{ $statusColor }}">{{ $statusDisplay }}</span>
                     </div>
@@ -191,13 +194,29 @@
                         <dd class="col-sm-9">{{ $supplyJob->updated_at?->format('M d, Y H:i:s') }}</dd>
                     </dl>
                 </div>
-                <div class="card-footer">
+                <div class="card-footer d-flex flex-wrap align-items-center">
+                    @php
+                        $canAdminCancel = !in_array($supplyJob->status, ['completed', 'rated'], true) && !$isAdminCancelled;
+                    @endphp
+                    @if($canAdminCancel)
+                        <button
+                            type="button"
+                            class="btn btn-danger mr-2 mb-2 js-open-admin-cancel-modal"
+                            data-toggle="modal"
+                            data-target="#adminCancelSupplyJobModal"
+                            data-cancel-url="{{ route('admin.supply-jobs.admin-cancel', $supplyJob) }}"
+                            data-job-name="{{ $supplyJob->rentalJob?->name ? 'Job: ' . $supplyJob->rentalJob->name : 'Supply Job #' . $supplyJob->id }}"
+                        >
+                            <i class="fas fa-trash"></i> Delete Supply Job
+                        </button>
+                    @endif
+
                     @if($supplyJob->rentalJob)
-                        <a href="{{ route('admin.rental-jobs.show', $supplyJob->rentalJob) }}" class="btn btn-primary">
+                        <a href="{{ route('admin.rental-jobs.show', $supplyJob->rentalJob) }}" class="btn btn-primary mr-2 mb-2">
                             <i class="fas fa-briefcase"></i> View Rental Job
                         </a>
                     @endif
-                    <a href="{{ route('admin.supply-jobs.index') }}" class="btn btn-default">
+                    <a href="{{ route('admin.supply-jobs.index') }}" class="btn btn-default mb-2">
                         <i class="fas fa-arrow-left"></i> Back to List
                     </a>
                 </div>
@@ -413,6 +432,9 @@
                                 @endif
                             </dd>
 
+                            <dt class="col-sm-3">Shipping Method</dt>
+                            <dd class="col-sm-9">{{ \App\Support\RentalShippingMethods::label($supplyJob->rentalJob->shipping_method) }}</dd>
+
                             <dt class="col-sm-3">Delivery Address</dt>
                             <dd class="col-sm-9">{{ $supplyJob->rentalJob->delivery_address ?? 'N/A' }}</dd>
 
@@ -539,5 +561,57 @@
             </div>
         </div>
     @endif
+
+    <div class="modal fade" id="adminCancelSupplyJobModal" tabindex="-1" role="dialog" aria-labelledby="adminCancelSupplyJobModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <form id="adminCancelSupplyJobForm" method="POST">
+                    @csrf
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="adminCancelSupplyJobModalLabel">Delete Supply Job</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-2" id="adminCancelSupplyJobTarget">This supply job will be marked as Admin Cancelled.</p>
+                        <div class="form-group">
+                            <label for="admin_cancel_reason">Reason (optional)</label>
+                            <textarea id="admin_cancel_reason" name="reason" rows="2" class="form-control" placeholder="Reason for admin deletion/cancellation"></textarea>
+                        </div>
+                        <div class="form-group form-check">
+                            <input type="checkbox" name="send_delete_email" id="admin_cancel_send_delete_email" value="1" class="form-check-input" checked>
+                            <label class="form-check-label" for="admin_cancel_send_delete_email">
+                                Send "job deleted" email to renter and provider
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-trash"></i> Delete Supply Job
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+@stop
+
+@section('js')
+    @include('partials.responsive-js')
+    <script>
+        $(document).ready(function() {
+            $('.js-open-admin-cancel-modal').on('click', function() {
+                const cancelUrl = $(this).data('cancel-url');
+                const jobName = $(this).data('job-name');
+
+                $('#adminCancelSupplyJobForm').attr('action', cancelUrl);
+                $('#adminCancelSupplyJobTarget').text(jobName + ' will be marked as Admin Cancelled.');
+                $('#admin_cancel_reason').val('');
+                $('#admin_cancel_send_delete_email').prop('checked', true);
+            });
+        });
+    </script>
 @stop
 

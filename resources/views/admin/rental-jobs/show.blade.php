@@ -87,6 +87,9 @@
                             @endif
                         </dd>
 
+                        <dt class="col-sm-3">Shipping Method</dt>
+                        <dd class="col-sm-9">{{ \App\Support\RentalShippingMethods::label($rentalJob->shipping_method) }}</dd>
+
                         <dt class="col-sm-3">Delivery Address</dt>
                         <dd class="col-sm-9">{{ $rentalJob->delivery_address ?? 'N/A' }}</dd>
 

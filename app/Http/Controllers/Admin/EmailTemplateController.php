@@ -16,8 +16,17 @@ class EmailTemplateController extends Controller
      */
     public function index()
     {
-        $templates = EmailTemplate::orderBy('name')->get();
-        return view('admin.email-templates.index', compact('templates'));
+        $deprecatedNames = array_keys(config('email_templates.deprecated', []));
+
+        $templates = EmailTemplate::whereNotIn('name', $deprecatedNames)
+            ->orderBy('name')
+            ->get();
+
+        $deprecatedTemplates = EmailTemplate::whereIn('name', $deprecatedNames)
+            ->orderBy('name')
+            ->get();
+
+        return view('admin.email-templates.index', compact('templates', 'deprecatedTemplates'));
     }
 
     /**
@@ -27,6 +36,11 @@ class EmailTemplateController extends Controller
      */
     public function edit(EmailTemplate $emailTemplate)
     {
+        if (isset(config('email_templates.deprecated', [])[$emailTemplate->name])) {
+            return redirect()->route('admin.email-templates.index')
+                ->with('error', 'The template "' . $emailTemplate->name . '" is deprecated and cannot be edited. Use ' . (config('email_templates.deprecated.' . $emailTemplate->name . '.replaced_by') ?? 'the replacement template') . ' instead.');
+        }
+
         $emailService = new EmailTemplateService();
         $bodyForEdit = $emailService->replacePlaceholdersInContent($emailTemplate->body);
         return view('admin.email-templates.edit', compact('emailTemplate', 'bodyForEdit'));
@@ -80,6 +94,13 @@ class EmailTemplateController extends Controller
      */
     public function toggleStatus(EmailTemplate $emailTemplate)
     {
+        $deprecated = config('email_templates.deprecated', []);
+
+        if (isset($deprecated[$emailTemplate->name]) && !$emailTemplate->is_active) {
+            return redirect()->route('admin.email-templates.index')
+                ->with('error', 'This template is deprecated and cannot be reactivated. Use ' . ($deprecated[$emailTemplate->name]['replaced_by'] ?? 'the replacement template') . ' instead.');
+        }
+
         try {
             $emailTemplate->update([
                 'is_active' => !$emailTemplate->is_active,
@@ -121,6 +142,16 @@ class EmailTemplateController extends Controller
                 'capabilities_section',
                 'current_year',
             ]));
+        } elseif ($emailTemplate->name === 'jobOfferNotification') {
+            $variables = array_unique(array_merge($variables, [
+                'sender_company_name',
+                'receiver_contact_name',
+                'version',
+                'total_price',
+                'status',
+                'products_section',
+                'current_year',
+            ]));
         } elseif ($emailTemplate->name === 'jobAutoCancelled') {
             // jobAutoCancelled template expects these, even if DB variables list is older
             $variables = array_unique(array_merge($variables, [
@@ -132,29 +163,11 @@ class EmailTemplateController extends Controller
             ]));
         }
 
-        $sampleData = $this->generateSampleData($variables);
-        
-        // Replace variables in subject and body (same variants as EmailTemplateService)
-        $subject = $emailTemplate->subject;
-        $body = $emailTemplate->body;
-        foreach ($sampleData as $key => $value) {
-            $replacements = [
-                '{{' . $key . '}}' => $value,
-                '{{ $' . $key . ' }}' => $value,
-                '{{$' . $key . '}}' => $value,
-                '{{ $' . $key . '}}' => $value,
-                '{{$' . $key . ' }}' => $value,
-                '{!! $' . $key . ' !!}' => $value,
-                '{!!$' . $key . '!!}' => $value,
-            ];
-            foreach ($replacements as $placeholder => $replacement) {
-                $subject = str_replace($placeholder, $replacement, $subject);
-                $body = str_replace($placeholder, $replacement, $body);
-            }
-        }
+        $sampleData = $this->generateSampleData($variables, $emailTemplate->name);
 
-        // Replace env/config/asset placeholders (e.g. {{ asset('images/logo-white.png') }}) so preview doesn't request them as URLs
         $emailService = new EmailTemplateService();
+        $subject = $emailService->renderTemplateContent($emailTemplate->subject, $sampleData);
+        $body = $emailService->renderTemplateContent($emailTemplate->body, $sampleData);
         $subject = $emailService->replacePlaceholdersInContent($subject);
         $body = $emailService->replacePlaceholdersInContent($body);
 
@@ -168,7 +181,7 @@ class EmailTemplateController extends Controller
     /**
      * Generate sample data for preview based on variable names.
      */
-    private function generateSampleData(array $variables): array
+    private function generateSampleData(array $variables, ?string $templateName = null): array
     {
         $sampleData = [];
         
@@ -176,7 +189,15 @@ class EmailTemplateController extends Controller
             $varName = is_array($variable) ? ($variable['name'] ?? '') : $variable;
             
             // Generate sample data based on variable name patterns
-            if (stripos($varName, 'product_name') !== false) {
+            if ($varName === 'status') {
+                $sampleData[$varName] = 'Pending';
+            } elseif ($varName === 'total_price') {
+                $sampleData[$varName] = '$600.00';
+            } elseif (stripos($varName, 'receiver_contact_name') !== false) {
+                $sampleData[$varName] = 'Matt Damon';
+            } elseif ($varName === 'sender_company_name') {
+                $sampleData[$varName] = '2w AV';
+            } elseif (stripos($varName, 'product_name') !== false) {
                 $sampleData[$varName] = 'Canon EOS R5 Camera';
             } elseif (stripos($varName, 'product_brand') !== false) {
                 $sampleData[$varName] = 'Canon';
@@ -245,6 +266,8 @@ class EmailTemplateController extends Controller
                     . '</tbody></table>';
             } elseif (stripos($varName, 'from_date') !== false || stripos($varName, 'to_date') !== false) {
                 $sampleData[$varName] = date('M d, Y');
+            } elseif (stripos($varName, 'shipping_method') !== false) {
+                $sampleData[$varName] = 'You deliver to me';
             } elseif (stripos($varName, 'delivery_address') !== false) {
                 $sampleData[$varName] = '123 Main St, City, State';
             } elseif (stripos($varName, 'user_company') !== false) {
@@ -274,28 +297,49 @@ class EmailTemplateController extends Controller
             } elseif (stripos($varName, 'similar_request_note') !== false) {
                 $sampleData[$varName] = '<p style="margin-top: 15px; padding: 12px; background-color: #e8f4fd; border-left: 4px solid #1a73e8; font-size: 14px; line-height: 1.5;"><strong>Note:</strong> The requester is also open to similar or equivalent products. Please contact the requester if you can offer suitable alternatives.</p>';
             } elseif (stripos($varName, 'products_section') !== false && stripos($varName, 'products_table') === false) {
-                // Sample for jobNegotiationCancelled / jobPartialFulfilled (Product Details table)
-                // Match the actual runtime structure in JobNegotiationController (Qty / Price / Total)
-                $sampleData[$varName] = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3>'
-                    . '<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">'
-                    . '<thead><tr style="background:#e8f0fe;">'
-                    . '<th style="border-bottom:1px solid #ccc;">PSM Code</th>'
-                    . '<th style="border-bottom:1px solid #ccc;">Model</th>'
-                    . '<th style="border-bottom:1px solid #ccc;">Software Code</th>'
-                    . '<th style="border-bottom:1px solid #ccc;">Qty</th>'
-                    . '<th style="border-bottom:1px solid #ccc;">Price</th>'
-                    . '<th style="border-bottom:1px solid #ccc;">Total</th>'
-                    . '</tr></thead>'
-                    . '<tbody>'
-                    . '<tr>'
-                    . '<td>PSM19563</td>'
-                    . '<td>AMORAN</td>'
-                    . '<td>PSM00022</td>'
-                    . '<td>10</td>'
-                    . '<td>$40.00</td>'
-                    . '<td>$400.00</td>'
-                    . '</tr>'
-                    . '</tbody></table>';
+                if ($templateName === 'jobOfferNotification') {
+                    $sampleData[$varName] = '<h3 style="color: #1a73e8;">Offered Equipment Details</h3>'
+                        . '<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px; font-size: 14px;">'
+                        . '<thead style="background-color: #f0f0f0; border-bottom: 2px solid #ddd;">'
+                        . '<tr>'
+                        . '<th align="left">PSM Code</th>'
+                        . '<th align="left">Model</th>'
+                        . '<th align="left">Software Code</th>'
+                        . '<th align="left">Qty</th>'
+                        . '<th align="left">Price</th>'
+                        . '<th align="left">Total Price</th>'
+                        . '</tr>'
+                        . '</thead>'
+                        . '<tbody>'
+                        . '<tr style="border-bottom: 1px solid #eee;"><td>PSM05425</td><td>VENUE Profile Digital Mixing System</td><td>HT_375</td><td>2</td><td>$250.00</td><td>$500.00</td></tr>'
+                        . '<tr style="border-bottom: 1px solid #eee;"><td>PSM05459</td><td>SD9 Digital Mixing Console</td><td>PSM05459</td><td>1</td><td>$700.00</td><td>$700.00</td></tr>'
+                        . '<tr style="background-color: #f9f9f9; border-top: 2px solid #ddd; font-weight: bold;">'
+                        . '<td colspan="5" align="right">Total Amount:</td><td>$600.00</td>'
+                        . '</tr>'
+                        . '</tbody></table>';
+                } else {
+                    // jobNegotiationCancelled / jobPartialFulfilled (Product Details table)
+                    $sampleData[$varName] = '<h3 style="color:#1a73e8; margin-top: 30px;">Product Details</h3>'
+                        . '<table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">'
+                        . '<thead><tr style="background:#e8f0fe;">'
+                        . '<th style="border-bottom:1px solid #ccc;">PSM Code</th>'
+                        . '<th style="border-bottom:1px solid #ccc;">Model</th>'
+                        . '<th style="border-bottom:1px solid #ccc;">Software Code</th>'
+                        . '<th style="border-bottom:1px solid #ccc;">Qty</th>'
+                        . '<th style="border-bottom:1px solid #ccc;">Price</th>'
+                        . '<th style="border-bottom:1px solid #ccc;">Total</th>'
+                        . '</tr></thead>'
+                        . '<tbody>'
+                        . '<tr>'
+                        . '<td>PSM19563</td>'
+                        . '<td>AMORAN</td>'
+                        . '<td>PSM00022</td>'
+                        . '<td>10</td>'
+                        . '<td>$40.00</td>'
+                        . '<td>$400.00</td>'
+                        . '</tr>'
+                        . '</tbody></table>';
+                }
             } elseif (stripos($varName, 'reason') !== false) {
                 $sampleData[$varName] = 'No longer needed.';
             } elseif (stripos($varName, 'total_price') !== false && stripos($varName, 'product') === false) {

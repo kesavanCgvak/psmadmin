@@ -56,6 +56,28 @@
                             @endif
                         </dd>
 
+                        <dt class="col-sm-3">Dimensions</dt>
+                        <dd class="col-sm-9">
+                            {{ \App\Support\CompanyInventorySpecs::formatDimensions($equipment) ?? 'N/A' }}
+                        </dd>
+
+                        <dt class="col-sm-3">Weight</dt>
+                        <dd class="col-sm-9">
+                            {{ \App\Support\CompanyInventorySpecs::formatWeight($equipment) ?? 'N/A' }}
+                        </dd>
+
+                        <dt class="col-sm-3">Country of origin</dt>
+                        <dd class="col-sm-9">{{ $equipment->country_of_origin ?? 'N/A' }}</dd>
+
+                        <dt class="col-sm-3">HSN code</dt>
+                        <dd class="col-sm-9">
+                            @if($equipment->hsn_code)
+                                <code>{{ $equipment->hsn_code }}</code>
+                            @else
+                                <span class="text-muted">N/A</span>
+                            @endif
+                        </dd>
+
                         <dt class="col-sm-3">Quantity</dt>
                         <dd class="col-sm-9">
                             <span class="badge badge-warning" style="font-size: 1.2em;">{{ $equipment->quantity }}</span>
@@ -97,27 +119,25 @@
         </div>
 
         <div class="col-md-4">
-            <!-- Equipment Images -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Equipment Images</h3>
-                </div>
-                <div class="card-body">
-                    @if($equipment->images->count() > 0)
-                        <div class="row">
-                            @foreach($equipment->images as $image)
-                                <div class="col-md-6 mb-3">
-                                    <img src="{{ asset($image->image_path) }}"
-                                         class="img-fluid img-thumbnail"
-                                         alt="Equipment Image">
-                                </div>
-                            @endforeach
-                        </div>
-                    @else
-                        <p class="text-muted">No images uploaded yet.</p>
-                    @endif
-                </div>
-            </div>
+            @if($equipment->product && $equipment->product->masterImages->count() > 0)
+                @include('admin.partials.image-gallery-manager', [
+                    'title' => 'Catalog (master) images',
+                    'entityType' => 'product',
+                    'entity' => $equipment->product,
+                    'images' => $equipment->product->masterImages,
+                    'readOnly' => true,
+                    'cardClass' => 'card-outline card-info mb-3',
+                    'emptyMessage' => 'No catalog images.',
+                ])
+            @endif
+
+            @include('admin.partials.image-gallery-manager', [
+                'title' => 'Equipment Images',
+                'entityType' => 'equipment',
+                'entity' => $equipment,
+                'images' => $equipment->images,
+                'emptyMessage' => 'No equipment images yet. Upload or sync from catalog.',
+            ])
 
             <!-- Calculation -->
             <div class="card card-success">

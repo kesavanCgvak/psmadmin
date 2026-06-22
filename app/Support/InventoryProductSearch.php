@@ -7,8 +7,11 @@ use Illuminate\Database\Eloquent\Builder;
 /**
  * Multi-keyword AND search across inventory_master fields and related brand/taxonomy.
  *
- * Each whitespace-separated keyword must match at least one of: model, psm_code, brand name,
- * category, subcategory, normalized_full_name, and (for joined queries) concatenated brand+model.
+ * Each whitespace-separated keyword must match at least one of: id substring (numeric), model, psm_code,
+ * brand name, category, subcategory, normalized_full_name, and (for joined queries) concatenated brand+model.
+ *
+ * A purely numeric search term matches only product IDs containing that digit sequence (e.g. "485" matches
+ * 485, 4851, 1485) and results are ordered by id ascending.
  */
 class InventoryProductSearch
 {
@@ -24,6 +27,29 @@ class InventoryProductSearch
         return addcslashes($value, '%_\\');
     }
 
+    public static function isNumericId(string $word): bool
+    {
+        return $word !== '' && ctype_digit($word);
+    }
+
+    public static function isNumericIdSearch(string $searchValue): bool
+    {
+        return self::isNumericId(trim($searchValue));
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder  $query
+     */
+    private static function applyIdSubstringCondition($query, string $word, string $idColumn = 'inventory_master.id'): void
+    {
+        if (!self::isNumericId($word)) {
+            return;
+        }
+
+        $idLike = '%' . self::escapeLike($word) . '%';
+        $query->whereRaw("CAST({$idColumn} AS CHAR) LIKE ?", [$idLike]);
+    }
+
     /**
      * Apply AND-of-keywords search to an Eloquent query on {@see \App\Models\Product} (inventory_master).
      */
@@ -31,6 +57,12 @@ class InventoryProductSearch
     {
         $searchValue = trim($searchValue);
         if ($searchValue === '') {
+            return;
+        }
+
+        if (self::isNumericIdSearch($searchValue)) {
+            self::applyIdSubstringCondition($query, $searchValue);
+
             return;
         }
 
@@ -62,6 +94,11 @@ class InventoryProductSearch
                     $nLike = '%' . self::escapeLike($norm) . '%';
                     $q->orWhere('inventory_master.normalized_full_name', 'like', $nLike);
                 }
+
+                if (self::isNumericId($word)) {
+                    $idLike = '%' . self::escapeLike($word) . '%';
+                    $q->orWhereRaw('CAST(inventory_master.id AS CHAR) LIKE ?', [$idLike]);
+                }
             });
         }
     }
@@ -73,6 +110,12 @@ class InventoryProductSearch
     {
         $searchValue = trim($searchValue);
         if ($searchValue === '') {
+            return;
+        }
+
+        if (self::isNumericIdSearch($searchValue)) {
+            self::applyIdSubstringCondition($query, $searchValue);
+
             return;
         }
 
@@ -100,6 +143,11 @@ class InventoryProductSearch
                     'LOWER(TRIM(CONCAT(COALESCE(brands.name, \'\'), \' \', COALESCE(inventory_master.model, \'\')))) LIKE ?',
                     [strtolower($like)]
                 );
+
+                if (self::isNumericId($word)) {
+                    $idLike = '%' . self::escapeLike($word) . '%';
+                    $q->orWhereRaw('CAST(inventory_master.id AS CHAR) LIKE ?', [$idLike]);
+                }
             });
         }
     }
@@ -111,6 +159,12 @@ class InventoryProductSearch
     {
         $searchValue = trim($searchValue);
         if ($searchValue === '') {
+            return;
+        }
+
+        if (self::isNumericIdSearch($searchValue)) {
+            $query->orderBy('inventory_master.id', 'asc');
+
             return;
         }
 
@@ -128,6 +182,12 @@ class InventoryProductSearch
     {
         $searchValue = trim($searchValue);
         if ($searchValue === '') {
+            return;
+        }
+
+        if (self::isNumericIdSearch($searchValue)) {
+            $query->orderBy('inventory_master.id', 'asc');
+
             return;
         }
 
@@ -150,30 +210,41 @@ class InventoryProductSearch
         $whens = [];
         $bindings = [];
 
-        $whens[] = 'WHEN LOWER(TRIM(inventory_master.model)) = ? THEN 0';
+        if (self::isNumericId($searchValue)) {
+            $whens[] = 'WHEN inventory_master.id = ? THEN -2';
+            $bindings[] = (int) $searchValue;
+
+            $whens[] = 'WHEN CAST(inventory_master.id AS CHAR) LIKE ? THEN -1';
+            $bindings[] = self::escapeLike($searchValue) . '%';
+
+            $whens[] = 'WHEN CAST(inventory_master.id AS CHAR) LIKE ? THEN 0';
+            $bindings[] = '%' . self::escapeLike($searchValue) . '%';
+        }
+
+        $whens[] = 'WHEN LOWER(TRIM(inventory_master.model)) = ? THEN 1';
         $bindings[] = $lower;
 
-        $whens[] = 'WHEN LOWER(TRIM(CONCAT(COALESCE((SELECT name FROM brands WHERE brands.id = inventory_master.brand_id LIMIT 1), \'\'), \' \', COALESCE(inventory_master.model, \'\')))) = ? THEN 1';
+        $whens[] = 'WHEN LOWER(TRIM(CONCAT(COALESCE((SELECT name FROM brands WHERE brands.id = inventory_master.brand_id LIMIT 1), \'\'), \' \', COALESCE(inventory_master.model, \'\')))) = ? THEN 2';
         $bindings[] = $lower;
 
         if ($normalizedPhrase !== null && $normalizedPhrase !== '') {
-            $whens[] = 'WHEN inventory_master.normalized_full_name = ? THEN 2';
+            $whens[] = 'WHEN inventory_master.normalized_full_name = ? THEN 3';
             $bindings[] = $normalizedPhrase;
         }
 
         if ($normalizedCode && ProductNormalizer::isValidNormalizedCode($normalizedCode)) {
-            $whens[] = 'WHEN inventory_master.normalized_model = ? THEN 3';
+            $whens[] = 'WHEN inventory_master.normalized_model = ? THEN 4';
             $bindings[] = $normalizedCode;
         }
 
-        $whens[] = 'WHEN LOWER(TRIM(inventory_master.model)) LIKE ? THEN 4';
+        $whens[] = 'WHEN LOWER(TRIM(inventory_master.model)) LIKE ? THEN 5';
         $bindings[] = $lower . '%';
 
-        $whens[] = 'WHEN inventory_master.psm_code IS NOT NULL AND LOWER(TRIM(inventory_master.psm_code)) = ? THEN 5';
+        $whens[] = 'WHEN inventory_master.psm_code IS NOT NULL AND LOWER(TRIM(inventory_master.psm_code)) = ? THEN 6';
         $bindings[] = $lower;
 
         if ($normalizedPhrase !== null && $normalizedPhrase !== '') {
-            $whens[] = 'WHEN inventory_master.normalized_full_name LIKE ? THEN 6';
+            $whens[] = 'WHEN inventory_master.normalized_full_name LIKE ? THEN 7';
             $bindings[] = '%' . self::escapeLike($normalizedPhrase) . '%';
         }
 
@@ -194,30 +265,41 @@ class InventoryProductSearch
         $whens = [];
         $bindings = [];
 
-        $whens[] = 'WHEN LOWER(TRIM(inventory_master.model)) = ? THEN 0';
+        if (self::isNumericId($searchValue)) {
+            $whens[] = 'WHEN inventory_master.id = ? THEN -2';
+            $bindings[] = (int) $searchValue;
+
+            $whens[] = 'WHEN CAST(inventory_master.id AS CHAR) LIKE ? THEN -1';
+            $bindings[] = self::escapeLike($searchValue) . '%';
+
+            $whens[] = 'WHEN CAST(inventory_master.id AS CHAR) LIKE ? THEN 0';
+            $bindings[] = '%' . self::escapeLike($searchValue) . '%';
+        }
+
+        $whens[] = 'WHEN LOWER(TRIM(inventory_master.model)) = ? THEN 1';
         $bindings[] = $lower;
 
-        $whens[] = 'WHEN LOWER(TRIM(CONCAT(COALESCE(brands.name, \'\'), \' \', COALESCE(inventory_master.model, \'\')))) = ? THEN 1';
+        $whens[] = 'WHEN LOWER(TRIM(CONCAT(COALESCE(brands.name, \'\'), \' \', COALESCE(inventory_master.model, \'\')))) = ? THEN 2';
         $bindings[] = $lower;
 
         if ($normalizedPhrase !== null && $normalizedPhrase !== '') {
-            $whens[] = 'WHEN inventory_master.normalized_full_name = ? THEN 2';
+            $whens[] = 'WHEN inventory_master.normalized_full_name = ? THEN 3';
             $bindings[] = $normalizedPhrase;
         }
 
         if ($normalizedCode && ProductNormalizer::isValidNormalizedCode($normalizedCode)) {
-            $whens[] = 'WHEN inventory_master.normalized_model = ? THEN 3';
+            $whens[] = 'WHEN inventory_master.normalized_model = ? THEN 4';
             $bindings[] = $normalizedCode;
         }
 
-        $whens[] = 'WHEN LOWER(TRIM(inventory_master.model)) LIKE ? THEN 4';
+        $whens[] = 'WHEN LOWER(TRIM(inventory_master.model)) LIKE ? THEN 5';
         $bindings[] = $lower . '%';
 
-        $whens[] = 'WHEN inventory_master.psm_code IS NOT NULL AND LOWER(TRIM(inventory_master.psm_code)) = ? THEN 5';
+        $whens[] = 'WHEN inventory_master.psm_code IS NOT NULL AND LOWER(TRIM(inventory_master.psm_code)) = ? THEN 6';
         $bindings[] = $lower;
 
         if ($normalizedPhrase !== null && $normalizedPhrase !== '') {
-            $whens[] = 'WHEN inventory_master.normalized_full_name LIKE ? THEN 6';
+            $whens[] = 'WHEN inventory_master.normalized_full_name LIKE ? THEN 7';
             $bindings[] = '%' . self::escapeLike($normalizedPhrase) . '%';
         }
 

@@ -71,7 +71,7 @@
                         @if($product->height !== null || $product->width !== null || $product->length !== null)
                             <dt class="col-sm-4">Dimensions</dt>
                             <dd class="col-sm-8">
-                                {{ $product->height ?? '-' }} × {{ $product->width ?? '-' }} × {{ $product->length ?? '-' }}
+                                {{ $product->length ?? '-' }} × {{ $product->width ?? '-' }} × {{ $product->height ?? '-' }}
                                 @if($product->linearUnit)
                                     <span class="badge badge-success">{{ $product->linearUnit->code }}</span>
                                 @endif
@@ -164,7 +164,7 @@
                             <h5>Dimensions & Weight</h5>
                             <p>
                                 @if($product->height !== null || $product->width !== null || $product->length !== null)
-                                    <strong>Dimensions:</strong> {{ $product->height ?? '-' }} × {{ $product->width ?? '-' }} × {{ $product->length ?? '-' }}
+                                    <strong>Dimensions:</strong> {{ $product->length ?? '-' }} × {{ $product->width ?? '-' }} × {{ $product->height ?? '-' }}
                                     @if($product->linearUnit)
                                         {{ $product->linearUnit->code }}
                                     @endif
@@ -193,6 +193,14 @@
                     @endif
                 </div>
             </div>
+
+            @include('admin.partials.image-gallery-manager', [
+                'title' => 'Master Product Images',
+                'entityType' => 'product',
+                'entity' => $product,
+                'images' => $product->masterImages,
+                'emptyMessage' => 'No master images yet. Upload here or import via Flex/Rentman.',
+            ])
 
             @if($product->equipments->count() > 0)
                 <div class="card">

@@ -2,8 +2,20 @@
 
 @section('title', 'Company Details')
 
+@php
+    $fromUsersListing = request()->query('from') === 'users';
+    $backToUsersParams = [];
+    if (request()->filled('page')) {
+        $backToUsersParams['page'] = request()->query('page');
+    }
+    if (request()->filled('search')) {
+        $backToUsersParams['search'] = request()->query('search');
+    }
+    $backToUsersUrl = route('admin.users.index', $backToUsersParams);
+@endphp
+
 @section('content_header')
-    <h1>Company Details</h1>
+    <h1 class="m-0">Company Details</h1>
 @stop
 
 @section('css')
@@ -19,12 +31,54 @@
                     <h3 class="card-title">{{ $company->name }}</h3>
                 </div>
                 <div class="card-body">
+                    <div class="mb-3 d-flex flex-wrap align-items-center">
+                        @php
+                            $companyType = strtolower((string) $company->account_type);
+                        @endphp
+                        @if($companyType === 'provider')
+                            <span class="badge badge-primary mr-2">Provider Company</span>
+                        @elseif($companyType === 'user')
+                            <span class="badge badge-secondary mr-2">User Company</span>
+                        @else
+                            <span class="badge badge-light mr-2">Type Not Set</span>
+                        @endif
+
+                        @if($company->subscription_mode === 'free')
+                            <span class="badge badge-secondary mr-2">Free Subscription</span>
+                        @else
+                            <span class="badge badge-success mr-2">Paid Subscription</span>
+                        @endif
+
+                        @if($companyType === 'provider')
+                            @if((bool) ($company->is_open_api_enabled ?? false))
+                                <span class="badge badge-success mr-2">Open API Enabled</span>
+                            @else
+                                <span class="badge badge-secondary mr-2">Open API Disabled</span>
+                            @endif
+                        @endif
+
+                        @if($company->currency)
+                            <span class="badge badge-success">{{ $company->currency->code }}</span>
+                        @endif
+                    </div>
+
                     <dl class="row">
                         <dt class="col-sm-3">ID</dt>
                         <dd class="col-sm-9">{{ $company->id }}</dd>
 
                         <dt class="col-sm-3">Name</dt>
                         <dd class="col-sm-9"><strong>{{ $company->name }}</strong></dd>
+
+                        <dt class="col-sm-3">Account Type</dt>
+                        <dd class="col-sm-9">
+                            @if($companyType === 'provider')
+                                <span class="badge badge-primary">Provider</span>
+                            @elseif($companyType === 'user')
+                                <span class="badge badge-secondary">User</span>
+                            @else
+                                <span class="text-muted">N/A</span>
+                            @endif
+                        </dd>
 
                         <dt class="col-sm-3">Description</dt>
                         <dd class="col-sm-9">{{ $company->description ?? 'N/A' }}</dd>
@@ -109,6 +163,21 @@
                             @endif
                         </dd>
 
+                        @if($companyType === 'provider')
+                            <dt class="col-sm-3">Open API Access</dt>
+                            <dd class="col-sm-9">
+                                @if((bool) ($company->is_open_api_enabled ?? false))
+                                    <span class="badge badge-success">Enabled</span>
+                                @else
+                                    <span class="badge badge-secondary">Disabled</span>
+                                @endif
+                                <div class="small text-muted mt-1">Partner API keys work only when enabled here and the company type is Provider.</div>
+                            </dd>
+                        @else
+                            <dt class="col-sm-3">Open API Access</dt>
+                            <dd class="col-sm-9"><span class="text-muted">Not applicable (User companies do not use partner Open API).</span></dd>
+                        @endif
+
                         <dt class="col-sm-3">Search Priority</dt>
                         <dd class="col-sm-9">{{ $company->search_priority ?? 'N/A' }}</dd>
 
@@ -151,9 +220,15 @@
                     <a href="{{ route('admin.companies.edit', $company) }}" class="btn btn-warning">
                         <i class="fas fa-edit"></i> Edit
                     </a>
-                    <a href="{{ route('admin.companies.index') }}" class="btn btn-default">
-                        <i class="fas fa-arrow-left"></i> Back to List
-                    </a>
+                    @if($fromUsersListing)
+                        <a href="{{ $backToUsersUrl }}" class="btn btn-primary btn-lg">
+                            <i class="fas fa-arrow-left"></i> Back to Users
+                        </a>
+                    @else
+                        <a href="{{ route('admin.companies.index') }}" class="btn btn-default">
+                            <i class="fas fa-arrow-left"></i> Back to List
+                        </a>
+                    @endif
                 </div>
             </div>
         </div>
@@ -163,7 +238,9 @@
             <div class="card card-widget widget-user">
                 <div class="widget-user-header bg-info">
                     <h3 class="widget-user-username">{{ $company->name }}</h3>
-                    <h5 class="widget-user-desc">Company Statistics</h5>
+                    <h5 class="widget-user-desc">
+                        {{ $companyType === 'provider' ? 'Provider' : ($companyType === 'user' ? 'User' : 'Company') }} Statistics
+                    </h5>
                 </div>
                 <div class="widget-user-image">
                     <img class="img-circle elevation-2" src="{{ $company->logo ? asset($company->logo) : asset('vendor/adminlte/dist/img/AdminLTELogo.png') }}" alt="Company Logo">
@@ -196,7 +273,9 @@
                         <ul class="list-group list-group-flush">
                             @foreach($company->users as $user)
                                 <li class="list-group-item">
-                                    <strong>{{ $user->username }}</strong>
+                                    <a href="{{ route('admin.users.show', $user) }}?{{ http_build_query(['from' => 'company', 'company_id' => $company->id]) }}">
+                                        <strong>{{ $user->username }}</strong>
+                                    </a>
                                     @if($user->is_admin)
                                         <span class="badge badge-success float-right">Admin</span>
                                     @else
@@ -239,6 +318,8 @@
                                 <th>Model</th>
                                 <th>Brand</th>
                                 <th>PSM Code</th>
+                                <th>Dimensions</th>
+                                <th>Weight</th>
                                 <th>Qty</th>
                                 <th>Rental price</th>
                                 <th>Software code</th>
@@ -337,6 +418,8 @@
                         }
                     },
                     { data: 'psm_code', name: 'psm_code' },
+                    { data: 'dimensions', name: 'dimensions', orderable: false, searchable: false },
+                    { data: 'weight', name: 'weight', orderable: false, searchable: false },
                     {
                         data: 'quantity',
                         name: 'quantity',
@@ -419,9 +502,22 @@
                             $item.on('click', function (e) {
                                 e.preventDefault();
                                 $('#selectedProductId').val(p.id);
+                                var summary = 'Selected: ' + p.model + ' (' + p.psm_code + ') — ' + p.brand;
+                                if (p.dimensions_display) {
+                                    summary += ' | Dimensions: ' + p.dimensions_display;
+                                }
+                                if (p.weight_display) {
+                                    summary += ' | Weight: ' + p.weight_display;
+                                }
+                                if (p.country_of_origin) {
+                                    summary += ' | Origin: ' + p.country_of_origin;
+                                }
+                                if (p.hsn_code) {
+                                    summary += ' | HSN: ' + p.hsn_code;
+                                }
                                 $('#selectedProductSummary')
                                     .removeClass('d-none')
-                                    .text('Selected: ' + p.model + ' (' + p.psm_code + ') — ' + p.brand);
+                                    .text(summary);
                                 $('#confirmAddInventoryBtn').prop('disabled', false);
                                 $results.find('.list-group-item').removeClass('active');
                                 $item.addClass('active');

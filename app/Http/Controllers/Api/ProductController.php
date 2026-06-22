@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\CompanyInventorySpecs;
 use App\Support\ProductNormalizer;
 use App\Support\ProductNameNormalizer;
 use App\Traits\NormalizesName;
@@ -161,6 +162,46 @@ class ProductController extends Controller
         return response()->json([
             'success' => true,
             'data' => $products
+        ]);
+    }
+
+    /**
+     * GET /api/products/{product_id}
+     * Catalog (inventory_master) physical and trade details for a product.
+     */
+    public function show(int $productId): JsonResponse
+    {
+        $product = Product::query()
+            ->with(['linearUnit:id,code,name', 'weightUnit:id,code,name'])
+            ->find($productId);
+
+        if (!$product) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Product not found.',
+            ], 404);
+        }
+
+        $specs = CompanyInventorySpecs::productSpecsForJson($product);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Product details fetched successfully.',
+            'data' => [
+                'product_id' => $product->id,
+                'psm_code' => $product->psm_code,
+                'replacement_cost' => $product->replacement_price !== null
+                    ? (float) $product->replacement_price
+                    : null,
+                'height' => $specs['height'],
+                'width' => $specs['width'],
+                'length' => $specs['length'],
+                'weight' => $specs['weight'],
+                'country_of_origin' => $specs['country_of_origin'],
+                'hsn_code' => $specs['hsn_code'],
+                'dimensions_display' => $specs['dimensions_display'],
+                'weight_display' => $specs['weight_display'],
+            ],
         ]);
     }
 

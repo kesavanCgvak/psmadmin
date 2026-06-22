@@ -33,6 +33,7 @@ class Company extends Model
         'longitude',
         'hide_from_gear_finder',
         'subscription_mode',
+        'is_open_api_enabled',
         'blocked_by_admin_at',
         'rating_override',
         'rating_override_set_by',
@@ -42,6 +43,7 @@ class Company extends Model
 
     protected $casts = [
         'blocked_by_admin_at' => 'datetime',
+        'is_open_api_enabled' => 'boolean',
         'rating_override' => 'float',
         'rating_override_set_at' => 'datetime',
     ];

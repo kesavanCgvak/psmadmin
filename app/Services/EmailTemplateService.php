@@ -88,6 +88,14 @@ class EmailTemplateService
     }
 
     /**
+     * Replace variables in template subject/body (for preview or sending).
+     */
+    public function renderTemplateContent(string $content, array $data): string
+    {
+        return $this->replaceVariables($content, $data);
+    }
+
+    /**
      * Replace variables in template content.
      *
      * @param string $content Template content
@@ -116,6 +124,19 @@ class EmailTemplateService
             // Replace {!! $variable !!} format (unescaped HTML - so DB templates can output HTML)
             $content = str_replace('{!! $' . $key . ' !!}', $stringValue, $content);
             $content = str_replace('{!!$' . $key . '!!}', $stringValue, $content);
+
+            // Blade null-coalescing fallbacks stored as plain text in DB templates
+            $escapedKey = preg_quote($key, '/');
+            $content = preg_replace(
+                '/\{\{\s*\$' . $escapedKey . '\s*\?\?\s*(?:\'[^\']*\'|"[^"]*")\s*\}\}/',
+                $stringValue,
+                $content
+            );
+            $content = preg_replace(
+                '/\{\!!\s*\$' . $escapedKey . '\s*\?\?\s*(?:\'[^\']*\'|"[^"]*")\s*!!\}/',
+                $stringValue,
+                $content
+            );
         }
 
         return $content;
@@ -213,10 +234,11 @@ class EmailTemplateService
             'jobCompletionReminder' => 'Reminder: Please complete this job',
             'jobRatingReminder' => 'Reminder: Please rate this job',
             'jobRatingRequest' => 'Rate Your Experience',
-            'rentalJobOffer' => 'New Offer Received from Pro Subrental Marketplace',
+            'jobOfferNotification' => 'New Job Offer Received - Pro Subrental Marketplace',
             'supplyNewOffer' => 'New Supply Offer Received',
             'rentalJobCancelled' => 'Rental Job Cancelled',
             'supplyJobCancelled' => 'Supply Job Cancelled',
+            'supplyJobDeletedByAdmin' => 'Supply Job Deleted by Admin',
             'jobHandshakeAccepted' => 'Job Handshake Accepted',
             'subscriptionCreated' => 'Subscription Created',
             'subscriptionCanceled' => 'Subscription Cancelled',

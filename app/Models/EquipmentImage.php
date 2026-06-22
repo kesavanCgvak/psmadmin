@@ -9,7 +9,17 @@ class EquipmentImage extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['equipment_id', 'image_path'];
+    protected $fillable = [
+        'equipment_id',
+        'image_path',
+        'is_primary',
+        'sort_order',
+    ];
+
+    protected $casts = [
+        'is_primary' => 'boolean',
+        'sort_order' => 'integer',
+    ];
 
     public function equipment()
     {

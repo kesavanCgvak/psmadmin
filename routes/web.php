@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\DateFormatManagementController;
 use App\Http\Controllers\Admin\EmailLogController;
 use App\Http\Controllers\Admin\EmailTemplateController;
 use App\Http\Controllers\Admin\EquipmentManagementController;
+use App\Http\Controllers\Admin\InventoryAiSpecificationController;
 use App\Http\Controllers\Admin\IssueTypeController;
 use App\Http\Controllers\Admin\JobRatingsController;
 use App\Http\Controllers\Admin\LinearUnitController;
@@ -57,7 +58,7 @@ Route::middleware('auth')->group(function () {
 });
 
 // Geography Management Routes
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'verified', 'admin.access'])->group(function () {
     // Regions
     Route::resource('regions', RegionController::class);
     Route::post('/regions/bulk-delete', [RegionController::class, 'bulkDelete'])->name('regions.bulk-delete');
@@ -86,7 +87,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 // Admin Routes (Product Catalog, Company Management, User Management)
-Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(function () {
+Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('admin.')->group(function () {
     // Product Catalog Management
     // Categories
     Route::resource('categories', CategoryController::class);
@@ -112,6 +113,16 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
         ->name('products.search');
     Route::get('/products/{product}/clone', [ProductController::class, 'clone'])
         ->name('products.clone');
+    Route::post('/products/{product}/master-images', [ProductController::class, 'storeMasterImage'])
+        ->name('products.master-images.store');
+    Route::delete('/products/{product}/master-images/{masterImage}', [ProductController::class, 'destroyMasterImage'])
+        ->name('products.master-images.destroy');
+    Route::post('/products/{product}/master-images/{masterImage}/primary', [ProductController::class, 'setPrimaryMasterImage'])
+        ->name('products.master-images.primary');
+    Route::put('/products/{product}/master-images/{masterImage}', [ProductController::class, 'updateMasterImage'])
+        ->name('products.master-images.update');
+    Route::post('/products/{product}/master-images/reorder', [ProductController::class, 'reorderMasterImages'])
+        ->name('products.master-images.reorder');
     Route::resource('products', ProductController::class);
     Route::post('/products/bulk-delete', [ProductController::class, 'bulkDelete'])
         ->name('products.bulk-delete');
@@ -119,6 +130,18 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
         ->name('products.merge');
     Route::post('/products/bulk-verify', [ProductController::class, 'bulkVerify'])
         ->name('products.bulk-verify');
+
+    // AI specification enrichment review
+    Route::prefix('ai-specifications')->name('ai-specifications.')->group(function () {
+        Route::get('/', [InventoryAiSpecificationController::class, 'index'])->name('index');
+        Route::get('/data', [InventoryAiSpecificationController::class, 'data'])->name('data');
+        Route::get('/audit-logs', [InventoryAiSpecificationController::class, 'auditLogs'])->name('audit-logs');
+        Route::get('/audit-logs/data', [InventoryAiSpecificationController::class, 'auditLogsData'])->name('audit-logs.data');
+        Route::get('/{aiSpec}', [InventoryAiSpecificationController::class, 'show'])->name('show');
+        Route::put('/{aiSpec}', [InventoryAiSpecificationController::class, 'update'])->name('update');
+        Route::post('/{aiSpec}/approve', [InventoryAiSpecificationController::class, 'approve'])->name('approve');
+        Route::post('/{aiSpec}/reject', [InventoryAiSpecificationController::class, 'reject'])->name('reject');
+    });
 
     // AJAX endpoint for getting subcategories by category
     Route::get('/ajax/categories/{category}/subcategories', [ProductController::class, 'getSubCategoriesByCategory'])
@@ -171,6 +194,16 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
         ->name('admin.rental-software.bulk-delete');
 
     // Equipment
+    Route::post('/equipment/{equipment}/images', [EquipmentManagementController::class, 'storeImage'])
+        ->name('equipment.images.store');
+    Route::put('/equipment/{equipment}/images/{equipmentImage}', [EquipmentManagementController::class, 'updateImage'])
+        ->name('equipment.images.update');
+    Route::delete('/equipment/{equipment}/images/{equipmentImage}', [EquipmentManagementController::class, 'destroyImage'])
+        ->name('equipment.images.destroy');
+    Route::post('/equipment/{equipment}/images/{equipmentImage}/primary', [EquipmentManagementController::class, 'setPrimaryImage'])
+        ->name('equipment.images.primary');
+    Route::post('/equipment/{equipment}/images/reorder', [EquipmentManagementController::class, 'reorderImages'])
+        ->name('equipment.images.reorder');
     Route::resource('equipment', EquipmentManagementController::class);
     Route::post('/equipment/bulk-delete', [EquipmentManagementController::class, 'bulkDelete'])
         ->name('admin.equipment.bulk-delete');
@@ -187,6 +220,8 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     // Job Management (Read-only)
     Route::resource('rental-jobs', RentalJobController::class)->only(['index', 'show']);
     Route::resource('supply-jobs', SupplyJobController::class)->only(['index', 'show']);
+    Route::post('/supply-jobs/{supplyJob}/admin-cancel', [SupplyJobController::class, 'adminCancel'])
+        ->name('supply-jobs.admin-cancel');
     Route::get('/job-ratings', [JobRatingsController::class, 'index'])->name('job-ratings.index');
     Route::post('/job-ratings/block-company/{company}', [JobRatingsController::class, 'blockCompany'])->name('job-ratings.block-company');
     Route::post('/job-ratings/unblock-company/{company}', [JobRatingsController::class, 'unblockCompany'])->name('job-ratings.unblock-company');
@@ -223,6 +258,8 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     // AJAX endpoints
     Route::get('/ajax/companies/{company}/users', [EquipmentManagementController::class, 'getUsersByCompany'])
         ->name('ajax.users-by-company');
+    Route::get('/ajax/products/{product}/inventory-specs', [EquipmentManagementController::class, 'getProductInventorySpecs'])
+        ->name('ajax.product-inventory-specs');
     Route::get('/ajax/check-username', [UserManagementController::class, 'checkUsername'])
         ->name('ajax.check-username');
     Route::get('/ajax/company/{company}/phone-format', [UserManagementController::class, 'getPhoneFormat'])
@@ -269,41 +306,6 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
     // User login / logout / failed login history (read-only)
     Route::get('/user-auth-events', [UserAuthEventController::class, 'index'])
         ->name('user-auth-events.index');
-});
-
-// Clear application cache
-Route::get('/clear-cache', function () {
-    Artisan::call('cache:clear');
-
-    return 'Application cache has been cleared';
-});
-
-// Clear route cache
-Route::get('/route-cache', function () {
-    Artisan::call('route:cache');
-
-    return 'Routes cache has been cleared';
-});
-
-// Clear config cache
-Route::get('/config-cache', function () {
-    Artisan::call('config:cache');
-
-    return 'Config cache has been cleared';
-});
-
-// Clear view cache
-Route::get('/view-clear', function () {
-    Artisan::call('view:clear');
-
-    return 'View cache has been cleared';
-});
-
-// Optimize application
-Route::get('/optimize-clear', function () {
-    Artisan::call('optimize:clear');
-
-    return 'Optimization has been cleared';
 });
 
 require __DIR__.'/auth.php';

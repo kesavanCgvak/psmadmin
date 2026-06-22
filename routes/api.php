@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\CurrencyController;
 use App\Http\Controllers\Api\DateFormatController;
 use App\Http\Controllers\Api\EquipmentController;
 use App\Http\Controllers\Api\FlexInventoryController;
+use App\Http\Controllers\Api\RentmanEquipmentController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\GeoController;
 use App\Http\Controllers\Api\ImportController;
@@ -22,9 +23,12 @@ use App\Http\Controllers\Api\IssueTypeController;
 use App\Http\Controllers\Api\JobNegotiationController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MailTestController;
+use App\Http\Controllers\Api\MeasurementUnitController;
 use App\Http\Controllers\Api\PaymentStatusController;
+use App\Http\Controllers\Api\PartnerProductController;
 use App\Http\Controllers\Api\PricingSchemeController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\ProviderApiKeyController;
 use App\Http\Controllers\Api\RegistrationCheckController;
 use App\Http\Controllers\Api\RentalJobActionsController;
 use App\Http\Controllers\Api\RentalJobController;
@@ -38,7 +42,6 @@ use App\Http\Controllers\Api\SupplyJobActionsController;
 use App\Http\Controllers\Api\SupplyJobController;
 use App\Http\Controllers\Api\SupportRequestController;
 use App\Http\Controllers\Api\TermsAndConditionsController;
-use App\Http\Controllers\Api\UserOfferController;
 use App\Http\Controllers\Api\UserProfileController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -116,6 +119,8 @@ Route::middleware('jwt.verify')->group(function () {
     Route::get('/rental-softwares', [RentalSoftwareController::class, 'index']);
     Route::get('/currencies', [CurrencyController::class, 'index']);
     Route::get('/date-formats', [DateFormatController::class, 'index']);
+    Route::get('/linear-units', [MeasurementUnitController::class, 'linearUnits']);
+    Route::get('/weight-units', [MeasurementUnitController::class, 'weightUnits']);
     Route::get('/pricing-schemes', [PricingSchemeController::class, 'index']);
 });
 
@@ -169,6 +174,8 @@ Route::middleware('jwt.verify')->group(function () {
 
 });
 
+Route::middleware('jwt.verify')->get('/products/{product_id}', [ProductController::class, 'show'])
+    ->whereNumber('product_id');
 Route::middleware('jwt.verify')->post('/products/create-or-attach', [ProductController::class, 'createOrAttach']);
 Route::middleware('jwt.verify')->post('/products/import', [ProductController::class, 'importProducts']); // Legacy endpoint
 
@@ -189,6 +196,20 @@ Route::middleware('jwt.verify')->prefix('import')->group(function () {
 Route::middleware(['jwt.verify'])->group(function () {
     Route::post('/integrations/store', [IntegrationController::class, 'store']);
     Route::get('/integrations/{integration_type}', [IntegrationController::class, 'show']);
+    Route::post('/integrations/sync-status', [IntegrationController::class, 'syncStatus']);
+});
+
+Route::middleware(['jwt.verify', 'throttle:12,1'])->prefix('provider/api-keys')->group(function () {
+    Route::get('/', [ProviderApiKeyController::class, 'index']);
+    Route::post('/generate', [ProviderApiKeyController::class, 'generate']);
+    Route::post('/request-access', [ProviderApiKeyController::class, 'requestAccess']);
+    Route::get('/{id}/reveal', [ProviderApiKeyController::class, 'reveal'])->whereNumber('id');
+    Route::post('/{id}/revoke', [ProviderApiKeyController::class, 'revoke'])->whereNumber('id');
+});
+
+Route::prefix('v1/partner')->middleware(['provider.api.key', 'throttle:60,1'])->group(function () {
+    Route::get('/products/search', [PartnerProductController::class, 'search']);
+    Route::get('/products/{product_id}', [PartnerProductController::class, 'details'])->whereNumber('product_id');
 });
 
 // Flex Rental Solutions inventory import (company-specific credentials)
@@ -199,10 +220,21 @@ Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
     Route::post('/link-inventory', [FlexInventoryController::class, 'linkInventory']);
 });
 
+// Rentman equipment (local cache + import; search is DB-only)
+Route::middleware(['jwt.verify'])->prefix('rentman/equipment')->group(function () {
+    Route::post('/sync', [RentmanEquipmentController::class, 'sync']);
+    Route::get('/search', [RentmanEquipmentController::class, 'search']);
+    Route::get('/import/check', [RentmanEquipmentController::class, 'checkImport']);
+    Route::post('/import', [RentmanEquipmentController::class, 'import']);
+    Route::post('/link-inventory', [RentmanEquipmentController::class, 'linkInventory']);
+});
+
 Route::middleware(['jwt.verify'])->group(function () {
     // Equipment CRUD
     Route::post('/equipments', [EquipmentController::class, 'store']);
     Route::get('/equipments', [EquipmentController::class, 'getCompanyEquipments']);
+    Route::get('/company-equipments/{id}', [EquipmentController::class, 'showCompanyEquipment'])
+        ->whereNumber('id');
     Route::delete('/equipments/{equipment}', [EquipmentController::class, 'destroy']);
 
     // Updates
@@ -210,11 +242,14 @@ Route::middleware(['jwt.verify'])->group(function () {
     Route::put('/equipments/{equipment}/price', [EquipmentController::class, 'updatePrice']);
     Route::put('/equipments/{equipment}/software-code', [EquipmentController::class, 'updateSoftwareCode']);
     Route::put('/equipments/{equipment}/description', [EquipmentController::class, 'updateDescription']);
+    Route::put('/equipments/{equipment}/marketplace-details', [EquipmentController::class, 'updateMarketplaceDetails']);
 
     // Images
     Route::post('/equipments/{equipment}/images', [EquipmentController::class, 'addImages']);
     Route::delete('/equipments/images/{id}', [EquipmentController::class, 'deleteImage']);
 });
+
+Route::get('/rental-shipping-methods', [RentalRequestController::class, 'shippingMethods']);
 
 Route::middleware(['jwt.verify'])->group(function () {
     Route::post('/rental-requests', [RentalRequestController::class, 'store']);
@@ -323,6 +358,3 @@ Route::middleware('jwt.verify')->group(function () {
 });
 
 // Contact Sales API (public, no authentication required)
-// Route::middleware(['jwt.verify'])->group(function () {
-//     Route::post('/rental-jobs/{jobId}/offers', [UserOfferController::class, 'sendOfferToProvider']);
-// });

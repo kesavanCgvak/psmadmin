@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Equipment;
-use App\Models\EquipmentImage;
+use App\Support\InventoryImageSyncService;
 use App\Models\LinearUnit;
 use App\Models\Product;
 use App\Models\WeightUnit;
@@ -105,6 +105,7 @@ class FlexInventoryController extends Controller
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
                     'flex' => $result['flex'] ?? null,
+                    'psm' => $result['psm'] ?? null,
                 ], 200);
             }
 
@@ -115,6 +116,7 @@ class FlexInventoryController extends Controller
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
                     'flex' => $result['flex'] ?? null,
+                    'psm' => $result['psm'] ?? null,
                 ], 200);
             }
 
@@ -126,6 +128,7 @@ class FlexInventoryController extends Controller
                     'brand_name' => $result['brand_name'] ?? null,
                     'model' => $result['model'] ?? null,
                     'flex' => $result['flex'] ?? null,
+                    'psm' => $result['psm'] ?? null,
                 ], 200);
             }
 
@@ -431,6 +434,7 @@ class FlexInventoryController extends Controller
                 'linear_unit_id' => $linearUnitId,
                 'weight_unit_id' => $weightUnitId,
                 'replacement_price' => $details['replacementCost'] ?? null,
+                'country_of_origin' => $details['manufactureCountry'] ?? null,
                 'source' => 'flex',
             ]);
 
@@ -440,18 +444,30 @@ class FlexInventoryController extends Controller
                 'company_id' => $companyId,
             ]);
 
-            $equipment = Equipment::create([
+            $specAttributes = \App\Support\CompanyInventorySpecs::mergeWithProduct(
+                $product,
+                \App\Support\CompanyInventorySpecs::attributesFromFlexDetails($details, $linearUnitId, $weightUnitId)
+            );
+
+            $equipment = Equipment::create(array_merge([
                 'user_id' => $user->id,
                 'company_id' => $companyId,
                 'product_id' => $product->id,
                 'flex_resource_id' => $flexResourceId,
                 'software_code' => $softwareCode,
+                'country_of_origin' => $details['manufactureCountry'] ?? null,
                 'quantity' => $quantity,
                 'rental_price' => $rentalRate ?? 0,
                 'replacement_price' => $details['replacementCost'] ?? null,
-            ]);
+            ], $specAttributes));
 
-            $this->createEquipmentImages($equipment->id, $details['imageUrls'] ?? []);
+            InventoryImageSyncService::importUrlsToMasterAndEquipment(
+                (int) $product->id,
+                (int) $equipment->id,
+                $details['imageUrls'] ?? [],
+                'flex',
+                (int) $user->id
+            );
 
             DB::commit();
             return response()->json([
@@ -464,23 +480,6 @@ class FlexInventoryController extends Controller
                 return response()->json(['status' => 'already_in_inventory'], 409);
             }
             throw $e;
-        }
-    }
-
-    /**
-     * Create equipment_images records for Flex image URLs.
-     */
-    protected function createEquipmentImages(int $equipmentId, array $imageUrls): void
-    {
-        foreach ($imageUrls as $url) {
-            $url = trim($url);
-            if (empty($url)) {
-                continue;
-            }
-            EquipmentImage::create([
-                'equipment_id' => $equipmentId,
-                'image_path' => $url,
-            ]);
         }
     }
 

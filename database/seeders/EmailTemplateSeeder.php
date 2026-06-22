@@ -57,11 +57,11 @@ class EmailTemplateSeeder extends Seeder
                 'file' => 'jobRatingRequest.blade.php',
             ],
             [
-                'name' => 'rentalJobOffer',
-                'subject' => 'New Offer Received from Pro Subrental Marketplace',
-                'description' => 'Email sent when a new offer is received for a rental job',
-                'variables' => ['user_name', 'job_name', 'amount', 'currency_symbol', 'sent_at', 'current_year'],
-                'file' => 'rentalJobOffer.blade.php',
+                'name' => 'jobOfferNotification',
+                'subject' => 'New Job Offer Received - Pro Subrental Marketplace',
+                'description' => 'Email sent during job negotiation when a new offer is sent between renter and provider',
+                'variables' => ['sender_company_name', 'receiver_contact_name', 'version', 'total_price', 'status', 'products_section', 'current_year'],
+                'file' => 'jobOfferNotification.blade.php',
             ],
             [
                 'name' => 'supplyNewOffer',
@@ -83,6 +83,13 @@ class EmailTemplateSeeder extends Seeder
                 'description' => 'Email sent when a supply job is cancelled',
                 'variables' => ['provider', 'supply_job_name', 'status', 'reason_display', 'date', 'products_section', 'current_year'],
                 'file' => 'supplyJobCancelled.blade.php',
+            ],
+            [
+                'name' => 'supplyJobDeletedByAdmin',
+                'subject' => 'Supply Job Deleted by Admin',
+                'description' => 'Email sent when admin deletes/cancels a supply job',
+                'variables' => ['provider', 'supply_job_name', 'status', 'reason_display', 'date', 'products_section', 'current_year'],
+                'file' => 'supplyJobDeletedByAdmin.blade.php',
             ],
             [
                 'name' => 'jobHandshakeAccepted',
@@ -151,7 +158,7 @@ class EmailTemplateSeeder extends Seeder
                 'name' => 'quoteRequest',
                 'subject' => 'New Quote Request - Pro Subrental Marketplace',
                 'description' => 'Email sent to supplier when a quote/rental request is received',
-                'variables' => ['rental_name', 'from_date', 'to_date', 'delivery_address', 'provider_contact_name', 'user_name', 'user_email', 'user_mobile', 'user_company', 'currency_symbol', 'global_message_section', 'offer_requirements_section', 'private_message_section', 'initial_offer_section', 'products_table_html', 'similar_request_note', 'current_year'],
+                'variables' => ['rental_name', 'from_date', 'to_date', 'shipping_method', 'delivery_address', 'provider_contact_name', 'user_name', 'user_email', 'user_mobile', 'user_company', 'currency_symbol', 'global_message_section', 'offer_requirements_section', 'private_message_section', 'initial_offer_section', 'products_table_html', 'similar_request_note', 'current_year'],
                 'file' => 'quoteRequest.blade.php',
             ],
             [
@@ -205,6 +212,24 @@ class EmailTemplateSeeder extends Seeder
                 $this->command->info("Migrated template: {$templateData['name']}");
             } else {
                 $this->command->warn("Template file not found: {$templateData['file']}");
+            }
+        }
+
+        foreach (config('email_templates.deprecated', []) as $name => $meta) {
+            $template = EmailTemplate::where('name', $name)->first();
+
+            if ($template) {
+                $description = 'DEPRECATED: ' . ($meta['reason'] ?? 'No longer used.');
+                if (!empty($meta['replaced_by'])) {
+                    $description .= ' Use ' . $meta['replaced_by'] . ' instead.';
+                }
+
+                $template->update([
+                    'is_active' => false,
+                    'description' => $description,
+                ]);
+
+                $this->command->warn("Deprecated template deactivated: {$name}");
             }
         }
 

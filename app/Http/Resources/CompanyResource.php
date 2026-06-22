@@ -21,6 +21,8 @@ class CompanyResource extends JsonResource
             'rental_software_id' => $this->rental_software_id,
             'date_format' => $this->date_format,
             'pricing_scheme' => $this->pricing_scheme,
+            'is_open_api_enabled' => strtolower((string) ($this->account_type ?? '')) === 'provider'
+                && (bool) ($this->is_open_api_enabled ?? false),
             'address_line_1' => $this->address_line_1,
             'address_line_2' => $this->address_line_2,
             'postal_code' => $this->postal_code,

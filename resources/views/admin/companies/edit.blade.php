@@ -91,6 +91,36 @@
                     @enderror
                     <small class="form-text text-muted">Current: <strong>{{ ucfirst($company->subscription_mode ?? 'Paid') }}</strong></small>
                 </div>
+
+                <div id="open_api_access_group" class="form-group @if(strtolower((string) old('account_type', $company->account_type ?? '')) !== 'provider') d-none @endif">
+                    <label for="is_open_api_enabled">Open API Access</label>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input @error('is_open_api_enabled') is-invalid @enderror"
+                               type="radio"
+                               name="is_open_api_enabled"
+                               id="is_open_api_enabled_no"
+                               value="0"
+                               {{ (string) old('is_open_api_enabled', (int) ($company->is_open_api_enabled ?? 0)) === '0' ? 'checked' : '' }}>
+                        <label class="form-check-label" for="is_open_api_enabled_no">
+                            <strong>Disabled</strong>
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input @error('is_open_api_enabled') is-invalid @enderror"
+                               type="radio"
+                               name="is_open_api_enabled"
+                               id="is_open_api_enabled_yes"
+                               value="1"
+                               {{ (string) old('is_open_api_enabled', (int) ($company->is_open_api_enabled ?? 0)) === '1' ? 'checked' : '' }}>
+                        <label class="form-check-label" for="is_open_api_enabled_yes">
+                            <strong>Enabled</strong>
+                        </label>
+                    </div>
+                    @error('is_open_api_enabled')
+                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                    @enderror
+                    <small class="form-text text-muted">Only applies to <strong>Provider</strong> companies. Controls partner Open API access (API keys).</small>
+                </div>
             </div>
         </div>
 
@@ -368,6 +398,16 @@
 @section('js')
 <script>
 $(document).ready(function() {
+    function syncOpenApiAccessVisibility() {
+        var isProvider = $('#account_type').val() === 'provider';
+        $('#open_api_access_group').toggleClass('d-none', !isProvider);
+        if (!isProvider) {
+            $('#is_open_api_enabled_no').prop('checked', true);
+        }
+    }
+    $('#account_type').on('change', syncOpenApiAccessVisibility);
+    syncOpenApiAccessVisibility();
+
     // Store initial values from the company being edited
     const initialRegionId = "{{ old('region_id', $company->region_id) }}";
     const initialCountryId = "{{ old('country_id', $company->country_id) }}";

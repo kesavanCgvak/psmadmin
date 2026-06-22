@@ -14,6 +14,7 @@ use App\Models\JobOffer;
 use App\Models\Equipment;
 use App\Jobs\CreateFlexQuoteFromRentalRequestJob;
 use App\Support\FlexIntegrationDebugLog;
+use App\Support\RentalShippingMethods;
 use App\Services\SupplierSmsNotifier;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Http\Request;
@@ -23,6 +24,14 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 
 class RentalRequestController extends Controller
 {
+    public function shippingMethods()
+    {
+        return response()->json([
+            'success' => true,
+            'data' => RentalShippingMethods::optionsForApi(),
+        ]);
+    }
+
     public function store(Request $request)
     {
         //Authenticate the user via JWT
@@ -41,7 +50,8 @@ class RentalRequestController extends Controller
             'name' => 'required|string|max:255',
             'from_date' => 'required|date',
             'to_date' => 'required|date|after:from_date',
-            'delivery_address' => 'required|string|max:255',
+            'shipping_method' => 'nullable|string|' . RentalShippingMethods::validationRule(),
+            'delivery_address' => 'required_without:shipping_method|required_if:shipping_method,deliver_to_me,ship_to_job_site|nullable|string|max:255',
             'offer_requirements' => 'nullable|string',
             'global_message' => 'nullable|string',
             'company_products' => 'required|array|min:1',
@@ -60,13 +70,20 @@ class RentalRequestController extends Controller
         try {
             return DB::transaction(function () use ($validated, $user) {
 
+                $shippingMethod = $validated['shipping_method'] ?? RentalShippingMethods::default();
+                $deliveryAddress = RentalShippingMethods::resolveDeliveryAddress(
+                    $shippingMethod,
+                    $validated['delivery_address'] ?? null
+                );
+
                 // Create rental job
                 $rentalJob = RentalJob::create([
                     'user_id' => $user->id,
                     'name' => $validated['name'],
                     'from_date' => $validated['from_date'],
                     'to_date' => $validated['to_date'],
-                    'delivery_address' => $validated['delivery_address'],
+                    'delivery_address' => $deliveryAddress,
+                    'shipping_method' => $shippingMethod,
                     'offer_requirements' => $validated['offer_requirements'] ?? null,
                     'global_message' => $validated['global_message'] ?? null,
                     'status' => 'open'
@@ -244,7 +261,10 @@ class RentalRequestController extends Controller
                                 'rental_name' => $validated['name'],
                                 'from_date' => $validated['from_date'],
                                 'to_date' => $validated['to_date'],
-                                'delivery_address' => $validated['delivery_address'] ?? '',
+                                'delivery_address' => $deliveryAddress !== null && $deliveryAddress !== ''
+                                    ? $deliveryAddress
+                                    : 'N/A',
+                                'shipping_method' => RentalShippingMethods::label($shippingMethod),
                                 'provider_contact_name' => $providerContactName,
                                 'user_name' => $user->profile->full_name ?? $user->name ?? 'Unknown User',
                                 'user_email' => $user->profile->email ?? '',

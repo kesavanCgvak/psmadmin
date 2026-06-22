@@ -21,6 +21,7 @@ class RentalJob extends Model
         'from_date',
         'to_date',
         'delivery_address',
+        'shipping_method',
         'offer_requirements',
         'global_message',
         'status',
