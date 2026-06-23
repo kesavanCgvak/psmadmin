@@ -40,17 +40,24 @@ class EnrichInventorySpecificationJob implements ShouldQueue
     /** Default ensures queued jobs serialized before this property existed still run. */
     public bool $retryIncomplete = false;
 
-    public function __construct(int $inventoryMasterId, bool $retryIncomplete = false)
+    public ?string $batchRunId = null;
+
+    public function __construct(int $inventoryMasterId, bool $retryIncomplete = false, ?string $batchRunId = null)
     {
         $this->inventoryMasterId = $inventoryMasterId;
         $this->retryIncomplete = $retryIncomplete;
+        $this->batchRunId = $batchRunId;
         $this->onQueue((string) config('inventory_ai.queue', 'default'));
     }
 
     public function handle(InventorySpecificationEnrichmentService $service): void
     {
         try {
-            $result = $service->enrichProduct($this->inventoryMasterId, $this->retryIncomplete);
+            $result = $service->enrichProduct(
+                $this->inventoryMasterId,
+                $this->retryIncomplete,
+                batchRunId: $this->batchRunId,
+            );
 
             Log::info('Inventory specification enrichment job completed.', [
                 'inventory_master_id' => $this->inventoryMasterId,
@@ -58,7 +65,7 @@ class EnrichInventorySpecificationJob implements ShouldQueue
             ]);
         } catch (Throwable $e) {
             if ($this->shouldFailWithoutRetry($e)) {
-                $service->recordProviderFailure($this->inventoryMasterId, $e);
+                $service->recordProviderFailure($this->inventoryMasterId, $e, $this->batchRunId);
 
                 Log::error('Inventory specification enrichment job failed (non-retryable).', [
                     'inventory_master_id' => $this->inventoryMasterId,

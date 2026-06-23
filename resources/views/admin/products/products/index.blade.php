@@ -28,6 +28,9 @@
                 <button type="button" id="bulkVerifyBtn" class="btn btn-success btn-sm" style="display: none; margin-right: 5px;">
                     <i class="fas fa-check-circle"></i> <span class="d-none d-lg-inline">Verify Selected</span><span class="d-lg-none">Verify</span>
                 </button>
+                <button type="button" id="bulkEnrichBtn" class="btn btn-info btn-sm" style="display: none; margin-right: 5px;">
+                    <i class="fas fa-robot"></i> <span class="d-none d-lg-inline">AI Enrich Selected</span><span class="d-lg-none">AI Enrich</span>
+                </button>
                 <button type="button" id="bulkDeleteBtn" class="btn btn-danger btn-sm" style="display: none; margin-right: 5px;">
                     <i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>
                 </button>
@@ -71,6 +74,40 @@
         </div>
     </div>
 
+    <!-- AI Enrichment Results Modal -->
+    <div class="modal fade" id="enrichResultsModal" tabindex="-1" role="dialog" aria-labelledby="enrichResultsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="enrichResultsModalLabel">AI Enrichment Results</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div id="enrichResultsSummary" class="alert alert-info"></div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Product ID</th>
+                                    <th>Product Name</th>
+                                    <th>Outcome</th>
+                                    <th>Status</th>
+                                    <th>Message</th>
+                                </tr>
+                            </thead>
+                            <tbody id="enrichResultsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Merge Product Modal -->
     <div class="modal fade" id="mergeProductModal" tabindex="-1" role="dialog" aria-labelledby="mergeProductModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg" role="document">
@@ -102,16 +139,105 @@
             </div>
         </div>
     </div>
+
+    <div id="productsPageLoader" aria-live="polite" aria-busy="true">
+        <div class="products-loader-card">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="sr-only">Loading...</span>
+            </div>
+            <h5 class="mb-2" id="productsLoaderTitle">Processing</h5>
+            <p class="text-muted mb-0" id="productsLoaderMessage">Please wait...</p>
+        </div>
+    </div>
 @stop
 
 @section('css')
     @include('partials.responsive-css')
+    <style>
+        #productsTable th.product-select-cell,
+        #productsTable td.product-select-cell {
+            width: 42px;
+            min-width: 42px;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        #productsTable td.product-select-cell {
+            cursor: default;
+        }
+
+        #productsTable td.product-select-cell .row-checkbox,
+        #productsTable th .row-checkbox,
+        #selectAll {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            position: relative;
+            z-index: 2;
+            vertical-align: middle;
+        }
+
+        #productsTable td.product-select-cell:before,
+        #productsTable td.product-select-cell:after {
+            display: none !important;
+        }
+
+        #productsPageLoader {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 10050;
+            background: rgba(0, 0, 0, 0.45);
+            align-items: center;
+            justify-content: center;
+        }
+
+        #productsPageLoader.is-active {
+            display: flex;
+        }
+
+        #productsPageLoader .products-loader-card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 2rem 2.5rem;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            max-width: 440px;
+            width: 90%;
+        }
+
+        #productsPageLoader .products-loader-card .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+    </style>
 @stop
 
 @section('js')
     @include('partials.responsive-js')
     <script>
         $(document).ready(function() {
+            var maxSyncEnrich = {{ (int) config('inventory_ai.max_sync_product_enrich', 100) }};
+            var pageLoaderActive = false;
+
+            function showProductsLoader(title, message) {
+                pageLoaderActive = true;
+                $('#productsLoaderTitle').text(title);
+                $('#productsLoaderMessage').text(message);
+                $('#productsPageLoader').addClass('is-active');
+                $('#bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified').prop('disabled', true);
+                $('#productsTable .row-checkbox').prop('disabled', true);
+                $('a[href="{{ route('admin.products.create') }}"]').addClass('disabled').attr('aria-disabled', 'true');
+            }
+
+            function hideProductsLoader() {
+                pageLoaderActive = false;
+                $('#productsPageLoader').removeClass('is-active');
+                $('#bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified').prop('disabled', false);
+                $('#productsTable .row-checkbox').prop('disabled', false);
+                $('a[href="{{ route('admin.products.create') }}"]').removeClass('disabled').removeAttr('aria-disabled');
+            }
+
             // Restore filter states from localStorage BEFORE initializing DataTables
             var savedUnverified = localStorage.getItem('products_filter_unverified');
             if (savedUnverified === '1') {
@@ -123,6 +249,12 @@
                 "serverSide": true,
                 "stateSave": false, // Disable state saving to show all records by default
                 "stateDuration": -1, // Don't save state
+                "responsive": {
+                    "details": {
+                        "type": "column",
+                        "target": 1
+                    }
+                },
                 "ajax": {
                     "url": "{{ route('admin.products.data') }}",
                     "type": "GET",
@@ -141,7 +273,8 @@
                         "orderable": false,
                         "searchable": false,
                         "render": function(data, type, row) {
-                            return '<input type="checkbox" class="row-checkbox" name="product_ids[]" value="' + row.id + '" data-name="' + row.model + '" data-verified="' + (row.is_verified == 1 ? '1' : '0') + '">';
+                            var model = $('<div/>').text(row.model || '').html();
+                            return '<input type="checkbox" class="row-checkbox" name="product_ids[]" value="' + row.id + '" data-name="' + model + '" data-verified="' + (row.is_verified == 1 ? '1' : '0') + '">';
                         }
                     },
                     { "data": "id", "name": "id" },
@@ -212,11 +345,13 @@
                     }
                 ],
                 "columnDefs": [
-                    { "orderable": false, "targets": [0, 8, 11] }, // Checkbox, Dimensions & Weight, Actions
-                    { "searchable": false, "targets": [0, 8, 11] }, // Checkbox, Dimensions & Weight, Actions
-                    { "responsivePriority": 1, "targets": 3 }, // Model
-                    { "responsivePriority": 2, "targets": 11 }, // Actions
-                    { "responsivePriority": 3, "targets": [3, 4] } // Model and Category
+                    { "className": "product-select-cell text-center", "targets": 0 },
+                    { "orderable": false, "targets": [0, 8, 11] },
+                    { "searchable": false, "targets": [0, 8, 11] },
+                    { "responsivePriority": 1, "targets": 0 },
+                    { "responsivePriority": 2, "targets": 3 },
+                    { "responsivePriority": 3, "targets": 11 },
+                    { "responsivePriority": 4, "targets": [3, 4] }
                 ],
                 "order": [[1, "desc"]], // Sort by ID descending by default
                 "pageLength": 25,
@@ -224,12 +359,10 @@
                 "stateSave": false, // Disable state saving to prevent search filter persistence
                 "stateDuration": -1, // Don't save state
                 "drawCallback": function(settings) {
-                    // Update bulk buttons after table redraw
                     updateBulkButtons();
-                    // Reset select all checkbox
-                    var totalCheckboxes = $('.row-checkbox').length;
-                    var checkedCheckboxes = $('.row-checkbox:checked').length;
-                    $('#selectAll').prop('checked', totalCheckboxes === checkedCheckboxes && totalCheckboxes > 0);
+                    var totalCheckboxes = $('#productsTable .row-checkbox').length;
+                    var checkedCheckboxes = $('#productsTable .row-checkbox:checked').length;
+                    $('#selectAll').prop('checked', totalCheckboxes > 0 && totalCheckboxes === checkedCheckboxes);
                 }
             });
 
@@ -319,28 +452,55 @@
                 localStorage.setItem('products_filter_order', JSON.stringify(order));
             });
 
-            // Bulk delete functionality for server-side DataTable
+            // Bulk actions for server-side DataTable
             $('#selectAll').on('change', function() {
-                $('.row-checkbox').prop('checked', $(this).prop('checked'));
+                var shouldCheck = $(this).is(':checked');
+                var selected = 0;
+                $('#productsTable .row-checkbox').each(function() {
+                    if (shouldCheck && selected >= maxSyncEnrich) {
+                        $(this).prop('checked', false);
+                        return;
+                    }
+                    $(this).prop('checked', shouldCheck);
+                    if (shouldCheck) {
+                        selected++;
+                    }
+                });
+                if (shouldCheck && $('#productsTable .row-checkbox').length > maxSyncEnrich) {
+                    alert('Only the first ' + maxSyncEnrich + ' products on this page were selected.');
+                }
                 updateBulkButtons();
             });
 
-            $(document).on('change', '.row-checkbox', function() {
+            $(document).on('change', '.row-checkbox', function(e) {
+                e.stopPropagation();
+                if ($(this).is(':checked') && $('#productsTable .row-checkbox:checked').length > maxSyncEnrich) {
+                    $(this).prop('checked', false);
+                    alert('You can select at most ' + maxSyncEnrich + ' products for AI enrichment.');
+                    return;
+                }
                 updateBulkButtons();
-                var totalCheckboxes = $('.row-checkbox').length;
-                var checkedCheckboxes = $('.row-checkbox:checked').length;
-                $('#selectAll').prop('checked', totalCheckboxes === checkedCheckboxes && totalCheckboxes > 0);
+                var totalCheckboxes = $('#productsTable .row-checkbox').length;
+                var checkedCheckboxes = $('#productsTable .row-checkbox:checked').length;
+                $('#selectAll').prop('checked', totalCheckboxes > 0 && totalCheckboxes === checkedCheckboxes);
+            });
+
+            $(document).on('click', '.row-checkbox', function(e) {
+                e.stopPropagation();
             });
 
             function updateBulkButtons() {
-                var checked = $('.row-checkbox:checked');
+                if (pageLoaderActive) {
+                    return;
+                }
+
+                var checked = $('#productsTable .row-checkbox:checked');
                 var checkedCount = checked.length;
 
                 if (checkedCount > 0) {
-                    // Show delete button with count
                     $('#bulkDeleteBtn').show().html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected (' + checkedCount + ')</span><span class="d-lg-none">Delete</span>');
+                    $('#bulkEnrichBtn').show().html('<i class="fas fa-robot"></i> <span class="d-none d-lg-inline">AI Enrich Selected (' + checkedCount + ')</span><span class="d-lg-none">AI Enrich</span>');
 
-                    // Check if any selected products are unverified
                     var hasUnverified = false;
                     checked.each(function() {
                         if ($(this).data('verified') == '0') {
@@ -356,16 +516,101 @@
                         $('#bulkVerifyBtn').hide();
                     }
                 } else {
-                    // Hide both buttons when nothing is selected
                     $('#bulkDeleteBtn').hide();
                     $('#bulkVerifyBtn').hide();
+                    $('#bulkEnrichBtn').hide();
                 }
             }
+
+            $('#bulkEnrichBtn').on('click', function() {
+                var selectedIds = [];
+                $('#productsTable .row-checkbox:checked').each(function() {
+                    selectedIds.push($(this).val());
+                });
+
+                if (selectedIds.length === 0) {
+                    alert('Please select at least one product to enrich.');
+                    return;
+                }
+
+                if (selectedIds.length > maxSyncEnrich) {
+                    alert('You can enrich at most ' + maxSyncEnrich + ' products at once.');
+                    return;
+                }
+
+                var message = 'Run synchronous AI specification enrichment for ' + selectedIds.length + ' selected product(s)?\n\n'
+                    + 'This runs immediately in your browser session (not queued) and may take several minutes depending on API rate limits.\n\n'
+                    + 'Do not close this page until processing completes.';
+
+                if (!confirm(message)) {
+                    return;
+                }
+
+                var $btn = $(this);
+                showProductsLoader(
+                    'Running AI Enrichment',
+                    'Processing ' + selectedIds.length + ' product(s) synchronously. Please do not close this page.'
+                );
+                $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Enriching...');
+
+                $.ajax({
+                    url: '{{ route("admin.products.bulk-enrich-specifications") }}',
+                    method: 'POST',
+                    timeout: 0,
+                    data: {
+                        _token: '{{ csrf_token() }}',
+                        confirm_enrich: 1,
+                        product_ids: selectedIds
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            $('#enrichResultsSummary').text(response.message);
+                            var rowsHtml = '';
+                            (response.results || []).forEach(function(row) {
+                                var badgeClass = 'secondary';
+                                if (row.outcome === 'Success') badgeClass = 'success';
+                                else if (row.outcome === 'Skipped') badgeClass = 'secondary';
+                                else if (row.outcome === 'Still Rejected' || row.outcome === 'Failed') badgeClass = 'warning';
+                                else badgeClass = 'danger';
+
+                                rowsHtml += '<tr>';
+                                rowsHtml += '<td>' + row.product_id + '</td>';
+                                rowsHtml += '<td>' + $('<div/>').text(row.product_name).html() + '</td>';
+                                rowsHtml += '<td><span class="badge badge-' + badgeClass + '">' + row.outcome + '</span></td>';
+                                rowsHtml += '<td>' + $('<div/>').text(row.status).html() + '</td>';
+                                rowsHtml += '<td>' + $('<div/>').text(row.message).html() + '</td>';
+                                rowsHtml += '</tr>';
+                            });
+                            $('#enrichResultsBody').html(rowsHtml);
+                            $('#enrichResultsModal').modal('show');
+
+                            productsTable.ajax.reload(function() {
+                                $('#selectAll').prop('checked', false);
+                                updateBulkButtons();
+                            });
+                        } else {
+                            alert('Error: ' + (response.message || 'Failed to enrich products.'));
+                        }
+                    },
+                    error: function(xhr) {
+                        var message = 'An error occurred while running AI enrichment.';
+                        if (xhr.responseJSON && xhr.responseJSON.message) {
+                            message = xhr.responseJSON.message;
+                        }
+                        alert(message);
+                    },
+                    complete: function() {
+                        hideProductsLoader();
+                        $btn.prop('disabled', false);
+                        updateBulkButtons();
+                    }
+                });
+            });
 
             $('#bulkDeleteBtn').on('click', function() {
                 var selectedIds = [];
                 var selectedNames = [];
-                $('.row-checkbox:checked').each(function() {
+                $('#productsTable .row-checkbox:checked').each(function() {
                     selectedIds.push($(this).val());
                     selectedNames.push($(this).data('name'));
                 });
@@ -383,7 +628,12 @@
                 message += '\nThis action cannot be undone!';
 
                 if (confirm(message)) {
-                    $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Deleting...');
+                    var $btn = $(this);
+                    showProductsLoader(
+                        'Deleting Products',
+                        'Deleting ' + selectedIds.length + ' selected product(s). Please wait...'
+                    );
+                    $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Deleting...');
 
                     $.ajax({
                         url: '{{ route("admin.products.bulk-delete") }}',
@@ -413,8 +663,9 @@
                             alert(message);
                         },
                         complete: function() {
-                            $('#bulkDeleteBtn').prop('disabled', false);
-                            updateBulkButtons(); // Update button text with current count
+                            hideProductsLoader();
+                            $btn.prop('disabled', false);
+                            updateBulkButtons();
                         }
                     });
                 }
@@ -424,7 +675,7 @@
             $('#bulkVerifyBtn').on('click', function() {
                 var selectedIds = [];
                 var selectedNames = [];
-                $('.row-checkbox:checked').each(function() {
+                $('#productsTable .row-checkbox:checked').each(function() {
                     selectedIds.push($(this).val());
                     selectedNames.push($(this).data('name'));
                 });
@@ -437,7 +688,12 @@
                 var message = 'Are you sure you want to verify ' + selectedIds.length + ' product/products?';
 
                 if (confirm(message)) {
-                    $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Verifying...');
+                    var $btn = $(this);
+                    showProductsLoader(
+                        'Verifying Products',
+                        'Verifying ' + selectedIds.length + ' selected product(s). Please wait...'
+                    );
+                    $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Verifying...');
 
                     $.ajax({
                         url: '{{ route("admin.products.bulk-verify") }}',
@@ -467,8 +723,9 @@
                             alert(message);
                         },
                         complete: function() {
-                            $('#bulkVerifyBtn').prop('disabled', false);
-                            updateBulkButtons(); // Update button text with current count
+                            hideProductsLoader();
+                            $btn.prop('disabled', false);
+                            updateBulkButtons();
                         }
                     });
                 }
@@ -568,7 +825,12 @@
                     return;
                 }
 
-                $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Merging...');
+                var $btn = $(this);
+                showProductsLoader(
+                    'Merging Products',
+                    'Merging "' + productName + '" into the selected product. Please wait...'
+                );
+                $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Merging...');
 
                 var mergeUrl = '{{ url("admin/products") }}/' + wrongProductId + '/merge';
                 $.ajax({
@@ -582,11 +844,10 @@
                         if (response.success) {
                             alert('Product merged successfully!');
                             $('#mergeProductModal').modal('hide');
-                            // Refresh DataTable
                             productsTable.ajax.reload();
                         } else {
                             alert('Error: ' + (response.message || 'Failed to merge products.'));
-                            $('#confirmMergeBtn').prop('disabled', false).html('Confirm Merge');
+                            $btn.prop('disabled', false).html('Confirm Merge');
                         }
                     },
                     error: function(xhr) {
@@ -595,7 +856,10 @@
                             message = xhr.responseJSON.message;
                         }
                         alert(message);
-                        $('#confirmMergeBtn').prop('disabled', false).html('Confirm Merge');
+                        $btn.prop('disabled', false).html('Confirm Merge');
+                    },
+                    complete: function() {
+                        hideProductsLoader();
                     }
                 });
             });

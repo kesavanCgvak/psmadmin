@@ -14,14 +14,14 @@ use Illuminate\Support\Facades\DB;
 class EnrichInventorySpecifications extends Command
 {
     protected $signature = 'inventory:enrich-specifications
-                            {--batch= : Number of products per queued batch job}
-                            {--limit= : Maximum number of products to queue}
+                            {--batch= : Number of products per batch (queued jobs or sync chunk size)}
+                            {--limit= : Maximum number of products to process (sync max: see INVENTORY_AI_MAX_SYNC_CLI_LIMIT)}
                             {--sync : Process synchronously in this process instead of queueing}
                             {--retry-incomplete : Re-queue products that already have an approved AI spec}
                             {--requests-per-minute= : Override AI_REQUESTS_PER_MINUTE pacing for this run}
                             {--dry-run : Show counts without dispatching jobs}';
 
-    protected $description = 'Queue AI enrichment for inventory_master products missing physical specifications';
+    protected $description = 'Queue or synchronously run AI enrichment for inventory_master products missing physical specifications';
 
     public function handle(): int
     {
@@ -42,6 +42,19 @@ class EnrichInventorySpecifications extends Command
             $this->error('Batch size must be at least 1.');
 
             return Command::FAILURE;
+        }
+
+        $maxSyncCliLimit = (int) config('inventory_ai.max_sync_cli_limit', 1000);
+
+        if ($sync && $limit !== null && $limit > $maxSyncCliLimit) {
+            $this->error("Sync limit cannot exceed {$maxSyncCliLimit}. Set INVENTORY_AI_MAX_SYNC_CLI_LIMIT or use a lower --limit.");
+
+            return Command::FAILURE;
+        }
+
+        if ($sync && $limit === null) {
+            $limit = $maxSyncCliLimit;
+            $this->comment("No --limit provided for sync mode; defaulting to {$maxSyncCliLimit} products.");
         }
 
         if (!AiProviderFactory::isConfigured() && !$dryRun) {
@@ -95,6 +108,14 @@ class EnrichInventorySpecifications extends Command
             })
             ->count();
 
+        $rejectedBlocked = (clone $incompleteQuery)
+            ->whereExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('inventory_master_ai_rejections')
+                    ->whereColumn('inventory_master_ai_rejections.inventory_master_id', 'inventory_master.id');
+            })
+            ->count();
+
         if ($limit !== null && $limit > 0) {
             $query->limit($limit);
         }
@@ -109,6 +130,7 @@ class EnrichInventorySpecifications extends Command
                 ['Queueable for this run', $totalEligible],
                 ['Blocked by pending AI review', $pendingBlocked],
                 ['Blocked by prior approved AI spec', $approvedBlocked],
+                ['Blocked by prior AI rejection', $rejectedBlocked],
                 ['Selected for this run', $toProcess],
                 ['Batch size', $batchSize],
                 ['AI requests per minute (pacing)', config('ai.rate_limit.requests_per_minute')],
@@ -128,11 +150,23 @@ class EnrichInventorySpecifications extends Command
             return Command::SUCCESS;
         }
 
+        $batchRunId = (string) str()->uuid();
+
         if ($sync) {
+            @set_time_limit(0);
+
+            $secondsPerProduct = (int) ceil(AiRequestPacer::secondsBetweenRequests());
+            $estimatedMinutes = (int) ceil(($toProcess * $secondsPerProduct) / 60);
+            $chunkCount = (int) ceil($toProcess / $batchSize);
+
             $this->comment(sprintf(
-                'Sync mode paces requests at %d RPM (~%ds between calls).',
+                'Sync mode: %d product(s) in %d batch(es) of up to %d, paced at %d RPM (~%ds/call, ~%d min estimated).',
+                $toProcess,
+                $chunkCount,
+                $batchSize,
                 config('ai.rate_limit.requests_per_minute'),
-                (int) ceil(AiRequestPacer::secondsBetweenRequests()),
+                $secondsPerProduct,
+                max(1, $estimatedMinutes),
             ));
 
             $service = app(\App\Services\InventoryAi\InventorySpecificationEnrichmentService::class);
@@ -145,28 +179,42 @@ class EnrichInventorySpecifications extends Command
                 'errors' => 0,
             ];
 
-            $syncBar = $this->output->createProgressBar($toProcess);
-            $syncBar->start();
+            $chunks = array_chunk($productIds, $batchSize);
+            $processed = 0;
 
-            foreach ($productIds as $productId) {
-                try {
-                    $result = $service->enrichProduct($productId, $retryIncomplete);
-                    $status = $result['status'];
-                    if (isset($stats[$status])) {
-                        $stats[$status]++;
-                    } else {
-                        $stats['skipped']++;
+            foreach ($chunks as $chunkIndex => $chunk) {
+                $batchNumber = $chunkIndex + 1;
+                $this->newLine();
+                $this->info("Batch {$batchNumber}/{$chunkCount} — processing " . count($chunk) . ' product(s)...');
+
+                $syncBar = $this->output->createProgressBar(count($chunk));
+                $syncBar->start();
+
+                foreach ($chunk as $productId) {
+                    try {
+                        $result = $service->enrichProduct($productId, $retryIncomplete, batchRunId: $batchRunId);
+                        $status = $result['status'];
+                        if (isset($stats[$status])) {
+                            $stats[$status]++;
+                        } else {
+                            $stats['skipped']++;
+                        }
+                    } catch (\Throwable $e) {
+                        $stats['errors']++;
+                        $service->recordProviderFailure($productId, $e, $batchRunId);
+                        $this->newLine();
+                        $this->warn("Product {$productId} failed: {$e->getMessage()}");
                     }
-                } catch (\Throwable $e) {
-                    $stats['errors']++;
-                    $this->newLine();
-                    $this->warn("Product {$productId} failed: {$e->getMessage()}");
+                    $syncBar->advance();
+                    $processed++;
                 }
-                $syncBar->advance();
+
+                $syncBar->finish();
+                $this->newLine();
+                $this->line("Batch {$batchNumber} complete. Progress: {$processed}/{$toProcess} products.");
             }
 
-            $syncBar->finish();
-            $this->newLine(2);
+            $this->newLine();
             $this->table(['Result', 'Count'], collect($stats)->map(fn ($count, $key) => [$key, $count])->values()->all());
 
             return Command::SUCCESS;
@@ -177,7 +225,7 @@ class EnrichInventorySpecifications extends Command
         $bar->start();
 
         foreach ($chunks as $chunk) {
-            EnrichInventorySpecificationsBatchJob::dispatch($chunk, $retryIncomplete);
+            EnrichInventorySpecificationsBatchJob::dispatch($chunk, $retryIncomplete, $batchRunId);
             $bar->advance();
         }
 
