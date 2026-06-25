@@ -1,0 +1,428 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "PSM Partner Open API",
+        "description": "Partner APIs for provider companies to search and retrieve product inventory via API key authentication.\n\n**Getting started**\n1. Log in to the provider dashboard and generate an API key (`psm_pk_...`).\n2. Ensure your company has **Open API Access** enabled by an administrator.\n3. Send the API key on each request using `Authorization: Bearer {api_key}` (preferred) or `X-API-KEY: {api_key}`.\n\nResults are scoped to the provider company linked to the API key.",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "http://psmadmin.test",
+            "description": "API server"
+        }
+    ],
+    "paths": {
+        "/api/v1/partner/products/search": {
+            "get": {
+                "tags": [
+                    "Partner Products"
+                ],
+                "summary": "Search provider products",
+                "description": "Search products in the authenticated provider company inventory.",
+                "operationId": "partnerProductsSearch",
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "description": "Search keyword (minimum 2 characters). Matches model, brand, category, and sub-category.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "example": "sony",
+                            "minLength": 2
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "Page number for pagination.",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "example": 1,
+                            "default": 1,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "description": "Number of items per page (max 100).",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "example": 25,
+                            "default": 25,
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Products fetched successfully.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Products fetched successfully."
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/PartnerProductSummary"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/PaginationMeta"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API key.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Open API access disabled, expired key, or invalid provider context.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error (e.g. missing or short search query).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (rate limit: 60 requests per minute).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "partnerApiKey": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/partner/products/{product_id}": {
+            "get": {
+                "tags": [
+                    "Partner Products"
+                ],
+                "summary": "Get product details",
+                "description": "Get full details for a single product in the provider company inventory.",
+                "operationId": "partnerProductDetails",
+                "parameters": [
+                    {
+                        "name": "product_id",
+                        "in": "path",
+                        "description": "Product ID from search results.",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "example": 101
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Product details fetched successfully.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Product details fetched successfully."
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/PartnerProductDetail"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API key.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Open API access disabled, expired key, or invalid provider context.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Product not found in provider inventory.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (rate limit: 60 requests per minute).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "partnerApiKey": []
+                    }
+                ]
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "ApiError": {
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "message": {
+                        "type": "string",
+                        "example": "Invalid API key."
+                    }
+                },
+                "type": "object"
+            },
+            "PartnerProductSummary": {
+                "properties": {
+                    "product_id": {
+                        "type": "integer",
+                        "example": 101
+                    },
+                    "product_name": {
+                        "type": "string",
+                        "example": "Sony FX6"
+                    },
+                    "model_name": {
+                        "type": "string",
+                        "example": "FX6"
+                    },
+                    "psm_code": {
+                        "type": "string",
+                        "example": "PSM-001"
+                    },
+                    "brand_id": {
+                        "type": "integer",
+                        "example": 12,
+                        "nullable": true
+                    },
+                    "brand_name": {
+                        "type": "string",
+                        "example": "Sony",
+                        "nullable": true
+                    },
+                    "category_id": {
+                        "type": "integer",
+                        "example": 3,
+                        "nullable": true
+                    },
+                    "category_name": {
+                        "type": "string",
+                        "example": "Cameras",
+                        "nullable": true
+                    },
+                    "sub_category_id": {
+                        "type": "integer",
+                        "example": 8,
+                        "nullable": true
+                    },
+                    "sub_category_name": {
+                        "type": "string",
+                        "example": "Cinema",
+                        "nullable": true
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "example": 4
+                    },
+                    "rental_price": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 250,
+                        "nullable": true
+                    },
+                    "software_code": {
+                        "type": "string",
+                        "example": "FX6-01",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "PartnerProductDetail": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/PartnerProductSummary"
+                    },
+                    {
+                        "properties": {
+                            "webpage_url": {
+                                "type": "string",
+                                "nullable": true
+                            },
+                            "is_verified": {
+                                "type": "boolean",
+                                "example": true
+                            },
+                            "height": {
+                                "type": "number",
+                                "format": "float",
+                                "nullable": true
+                            },
+                            "width": {
+                                "type": "number",
+                                "format": "float",
+                                "nullable": true
+                            },
+                            "length": {
+                                "type": "number",
+                                "format": "float",
+                                "nullable": true
+                            },
+                            "weight": {
+                                "type": "number",
+                                "format": "float",
+                                "nullable": true
+                            },
+                            "linear_unit_id": {
+                                "type": "integer",
+                                "nullable": true
+                            },
+                            "weight_unit_id": {
+                                "type": "integer",
+                                "nullable": true
+                            },
+                            "replacement_price": {
+                                "type": "number",
+                                "format": "float",
+                                "nullable": true
+                            },
+                            "source": {
+                                "type": "string",
+                                "nullable": true
+                            },
+                            "country_of_origin": {
+                                "type": "string",
+                                "nullable": true
+                            },
+                            "iso_code_2": {
+                                "type": "string",
+                                "nullable": true
+                            },
+                            "iso_code_3": {
+                                "type": "string",
+                                "nullable": true
+                            },
+                            "hsn_code": {
+                                "type": "string",
+                                "nullable": true
+                            }
+                        },
+                        "type": "object"
+                    }
+                ]
+            },
+            "PaginationMeta": {
+                "properties": {
+                    "page": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "example": 25
+                    },
+                    "total": {
+                        "type": "integer",
+                        "example": 120
+                    },
+                    "total_pages": {
+                        "type": "integer",
+                        "example": 5
+                    }
+                },
+                "type": "object"
+            }
+        },
+        "securitySchemes": {
+            "partnerApiKey": {
+                "type": "http",
+                "description": "Provider API key from the dashboard. Format: `psm_pk_...`. Alternative header: `X-API-KEY`.",
+                "bearerFormat": "API Key",
+                "scheme": "bearer"
+            }
+        }
+    },
+    "security": [
+        {
+            "partnerApiKey": []
+        }
+    ],
+    "tags": [
+        {
+            "name": "Partner Products",
+            "description": "Search and retrieve provider-scoped product inventory."
+        }
+    ]
+}
