@@ -22,6 +22,7 @@ use App\Http\Controllers\Admin\PricingSchemeManagementController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RegionController;
 use App\Http\Controllers\Admin\RentalJobController;
+use App\Http\Controllers\Admin\RentalSoftwareCompanyLogoController;
 use App\Http\Controllers\Admin\RentalSoftwareManagementController;
 use App\Http\Controllers\Admin\StateProvinceController;
 use App\Http\Controllers\Admin\SubCategoryController;
@@ -192,6 +193,10 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
     Route::resource('rental-software', RentalSoftwareManagementController::class);
     Route::post('/rental-software/bulk-delete', [RentalSoftwareManagementController::class, 'bulkDelete'])
         ->name('admin.rental-software.bulk-delete');
+
+    // Rental Software Company Logos
+    Route::resource('rental-software-company-logos', RentalSoftwareCompanyLogoController::class)
+    ->except(['show']);
 
     // Equipment
     Route::post('/equipment/{equipment}/images', [EquipmentManagementController::class, 'storeImage'])

@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\RentalJobActionsController;
 use App\Http\Controllers\Api\RentalJobController;
 use App\Http\Controllers\Api\RentalRequestController;
 use App\Http\Controllers\Api\RentalSoftwareController;
+use App\Http\Controllers\Api\RentalSoftwareCompanyLogoController;
 use App\Http\Controllers\Api\StateController;
 use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\SubCategoryController;
@@ -69,6 +70,10 @@ Route::get('/company-user-limit', [CompanyUserLimitController::class, 'getLimit'
 
 // Terms and Conditions (public endpoint)
 Route::get('/terms-and-conditions', [TermsAndConditionsController::class, 'index']);
+
+// Rental software company logos (public endpoint)
+Route::get('/rental-software-company-logos', [RentalSoftwareCompanyLogoController::class, 'index']);
+
 
 // CMS pages (public; HTML already sanitized when saved in admin)
 Route::get('/cms-pages', [ApiCmsPageController::class, 'index']);
