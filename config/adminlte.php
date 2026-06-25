@@ -430,6 +430,12 @@ return [
             'icon_color' => 'info',
         ],
         [
+            'text' => 'Rental Software Company Logos',
+            'route' => 'admin.rental-software-company-logos.index',
+            'icon' => 'fas fa-fw fa-images',
+            'icon_color' => 'primary',
+        ],
+        [
             'text' => 'All Equipment',
             'route' => 'admin.equipment.index',
             'icon' => 'fas fa-fw fa-boxes',
