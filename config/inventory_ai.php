@@ -22,6 +22,9 @@ return [
     */
     'batch_size' => (int) env('INVENTORY_AI_BATCH_SIZE', 100),
     'queue' => env('INVENTORY_AI_QUEUE', 'default'),
+    'max_sync_rerun' => (int) env('INVENTORY_AI_MAX_SYNC_RERUN', 25),
+    'max_sync_product_enrich' => (int) env('INVENTORY_AI_MAX_SYNC_PRODUCT_ENRICH', 100),
+    'max_sync_cli_limit' => (int) env('INVENTORY_AI_MAX_SYNC_CLI_LIMIT', 1000),
 
     /*
     |--------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 namespace App\Services\InventoryAi;
 
 use App\Models\InventoryMasterAiLog;
+use App\Models\InventoryMasterAiRejection;
 use App\Models\InventoryMasterAiSpec;
 use App\Models\Product;
 use App\Support\InventoryMasterSpecEnrichment;
@@ -17,14 +18,19 @@ class InventorySpecificationEnrichmentService
     public function __construct(
         private readonly ProductSpecificationAiClient $aiClient,
         private readonly InventoryAiSpecValidator $validator,
+        private readonly InventoryAiRejectionService $rejectionService,
     ) {
     }
 
     /**
      * @return array{status: string, spec_id: int|null, message: string}
      */
-    public function enrichProduct(int $inventoryMasterId, bool $retryIncomplete = false): array
-    {
+    public function enrichProduct(
+        int $inventoryMasterId,
+        bool $retryIncomplete = false,
+        bool $bypassRejectionCheck = false,
+        ?string $batchRunId = null,
+    ): array {
         $product = Product::query()
             ->with(['brand:id,name', 'category:id,name', 'subCategory:id,name'])
             ->find($inventoryMasterId);
@@ -34,6 +40,19 @@ class InventorySpecificationEnrichmentService
                 'status' => 'skipped',
                 'spec_id' => null,
                 'message' => 'Product not found.',
+            ];
+        }
+
+        if (!$bypassRejectionCheck && $this->rejectionService->isRejected($inventoryMasterId)) {
+            Log::info('Inventory AI enrichment skipped: previously rejected product.', [
+                'inventory_master_id' => $inventoryMasterId,
+                'batch_run_id' => $batchRunId,
+            ]);
+
+            return [
+                'status' => 'skipped',
+                'spec_id' => null,
+                'message' => 'Skipped because this product was previously rejected.',
             ];
         }
 
@@ -103,6 +122,14 @@ class InventorySpecificationEnrichmentService
                 'spec_id' => $spec->id,
             ]);
 
+            $this->rejectionService->recordForProduct(
+                $product,
+                'Product name (model) is required for AI lookup.',
+                InventoryMasterAiRejection::CATEGORY_INSUFFICIENT,
+                $batchRunId,
+                $spec->id,
+            );
+
             return [
                 'status' => InventoryMasterAiSpec::STATUS_INSUFFICIENT_INFORMATION,
                 'spec_id' => $spec->id,
@@ -158,6 +185,16 @@ class InventorySpecificationEnrichmentService
                 'errors' => $validation['errors'],
             ]);
 
+            $this->rejectionService->recordForProduct(
+                $product,
+                $validation['errors'] !== []
+                    ? 'Invalid dimensions or units: ' . implode(' ', $validation['errors'])
+                    : 'AI returned insufficient data for the missing specification fields.',
+                InventoryMasterAiRejection::CATEGORY_VALIDATION,
+                $batchRunId,
+                $spec->id,
+            );
+
             return [
                 'status' => InventoryMasterAiSpec::STATUS_REJECTED,
                 'spec_id' => $spec->id,
@@ -185,6 +222,7 @@ class InventorySpecificationEnrichmentService
 
         if ($finalStatus === InventoryMasterAiSpec::STATUS_APPROVED) {
             $this->approveAndApply($spec, $product, InventoryMasterAiLog::UPDATED_BY_AI);
+            $this->rejectionService->clear($inventoryMasterId);
 
             return [
                 'status' => InventoryMasterAiSpec::STATUS_APPROVED,
@@ -194,6 +232,10 @@ class InventorySpecificationEnrichmentService
         }
 
         $spec->update(['status' => $finalStatus]);
+
+        if ($finalStatus === InventoryMasterAiSpec::STATUS_PENDING) {
+            $this->rejectionService->clear($inventoryMasterId);
+        }
 
         Log::info('Inventory AI enrichment staged for manual review.', [
             'inventory_master_id' => $inventoryMasterId,
@@ -212,11 +254,82 @@ class InventorySpecificationEnrichmentService
     }
 
     /**
+     * Synchronously enrich a list of products (admin bulk actions).
+     *
+     * @param  list<int>  $inventoryMasterIds
+     * @return list<array{product_id: int, product_name: string, outcome: string, status: string, message: string}>
+     */
+    public function enrichProductsSynchronously(
+        array $inventoryMasterIds,
+        bool $bypassRejectionCheck = true,
+        bool $retryIncomplete = true,
+    ): array {
+        $results = [];
+        $batchRunId = (string) str()->uuid();
+
+        foreach ($inventoryMasterIds as $inventoryMasterId) {
+            $productName = $this->rejectionService->resolveProductName($inventoryMasterId);
+
+            try {
+                $result = $this->enrichProduct(
+                    $inventoryMasterId,
+                    retryIncomplete: $retryIncomplete,
+                    bypassRejectionCheck: $bypassRejectionCheck,
+                    batchRunId: $batchRunId,
+                );
+
+                $results[] = [
+                    'product_id' => $inventoryMasterId,
+                    'product_name' => $productName,
+                    'outcome' => $this->mapEnrichmentOutcome($result['status']),
+                    'status' => $result['status'],
+                    'message' => $result['message'],
+                ];
+            } catch (Throwable $e) {
+                $failure = $this->recordProviderFailure($inventoryMasterId, $e, $batchRunId);
+
+                $results[] = [
+                    'product_id' => $inventoryMasterId,
+                    'product_name' => $productName,
+                    'outcome' => 'Error',
+                    'status' => $failure['status'],
+                    'message' => $failure['message'],
+                ];
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Synchronously re-run enrichment for previously rejected products (admin action).
+     *
+     * @param  list<int>  $inventoryMasterIds
+     * @return list<array{product_id: int, product_name: string, outcome: string, status: string, message: string}>
+     */
+    public function rerunRejectedProducts(array $inventoryMasterIds): array
+    {
+        return $this->enrichProductsSynchronously($inventoryMasterIds, true, true);
+    }
+
+    private function mapEnrichmentOutcome(string $status): string
+    {
+        return match ($status) {
+            InventoryMasterAiSpec::STATUS_APPROVED => 'Success',
+            InventoryMasterAiSpec::STATUS_PENDING => 'Success',
+            InventoryMasterAiSpec::STATUS_REJECTED => 'Still Rejected',
+            InventoryMasterAiSpec::STATUS_INSUFFICIENT_INFORMATION => 'Still Rejected',
+            'skipped' => 'Skipped',
+            default => 'Failed',
+        };
+    }
+
+    /**
      * Record a non-retryable provider failure without updating inventory_master.
      *
      * @return array{status: string, spec_id: int|null, message: string}
      */
-    public function recordProviderFailure(int $inventoryMasterId, Throwable $e): array
+    public function recordProviderFailure(int $inventoryMasterId, Throwable $e, ?string $batchRunId = null): array
     {
         $product = Product::query()->find($inventoryMasterId);
 
@@ -257,6 +370,14 @@ class InventorySpecificationEnrichmentService
             'error_category' => $category,
             'error' => $e->getMessage(),
         ]);
+
+        $this->rejectionService->recordForProduct(
+            $product,
+            'API failure: ' . $e->getMessage(),
+            InventoryMasterAiRejection::CATEGORY_PROVIDER,
+            $batchRunId,
+            $spec->id,
+        );
 
         return [
             'status' => InventoryMasterAiSpec::STATUS_REJECTED,
@@ -334,6 +455,17 @@ class InventorySpecificationEnrichmentService
                 'reviewed_by' => $reviewerUserId,
                 'created_at' => now(),
             ]);
+
+            $product = Product::query()->find($spec->inventory_master_id);
+            if ($product) {
+                $this->rejectionService->recordForProduct(
+                    $product,
+                    $reviewNotes ?: 'Rejected during manual AI specification review.',
+                    InventoryMasterAiRejection::CATEGORY_MANUAL,
+                    null,
+                    $spec->id,
+                );
+            }
         });
     }
 
@@ -419,6 +551,8 @@ class InventorySpecificationEnrichmentService
             if ($updates !== []) {
                 $product->update($updates);
             }
+
+            $this->rejectionService->clear($product->id);
 
             $specUpdate = ['status' => InventoryMasterAiSpec::STATUS_APPROVED];
             if ($reviewerUserId !== null) {

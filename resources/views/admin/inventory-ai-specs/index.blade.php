@@ -34,6 +34,9 @@
                 @endif
             </h3>
             <div class="card-tools">
+                <a href="{{ route('admin.ai-rejections.index') }}" class="btn btn-danger btn-sm">
+                    <i class="fas fa-ban"></i> Rejected Products
+                </a>
                 <a href="{{ route('admin.ai-specifications.audit-logs') }}" class="btn btn-secondary btn-sm">
                     <i class="fas fa-history"></i> Audit History
                 </a>

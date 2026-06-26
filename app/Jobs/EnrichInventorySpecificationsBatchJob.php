@@ -26,13 +26,16 @@ class EnrichInventorySpecificationsBatchJob implements ShouldQueue
     /** Default ensures queued jobs serialized before this property existed still run. */
     public bool $retryIncomplete = false;
 
+    public ?string $batchRunId = null;
+
     /**
      * @param  list<int>  $inventoryMasterIds
      */
-    public function __construct(array $inventoryMasterIds, bool $retryIncomplete = false)
+    public function __construct(array $inventoryMasterIds, bool $retryIncomplete = false, ?string $batchRunId = null)
     {
         $this->inventoryMasterIds = $inventoryMasterIds;
         $this->retryIncomplete = $retryIncomplete;
+        $this->batchRunId = $batchRunId;
         $this->onQueue((string) config('inventory_ai.queue', 'default'));
     }
 
@@ -41,13 +44,14 @@ class EnrichInventorySpecificationsBatchJob implements ShouldQueue
         Log::info('Inventory specification enrichment batch started.', [
             'count' => count($this->inventoryMasterIds),
             'retry_incomplete' => $this->retryIncomplete,
+            'batch_run_id' => $this->batchRunId,
         ]);
 
         foreach ($this->inventoryMasterIds as $index => $inventoryMasterId) {
             try {
                 $delaySeconds = (int) round($index * AiRequestPacer::secondsBetweenRequests());
 
-                EnrichInventorySpecificationJob::dispatch($inventoryMasterId, $this->retryIncomplete)
+                EnrichInventorySpecificationJob::dispatch($inventoryMasterId, $this->retryIncomplete, $this->batchRunId)
                     ->delay(now()->addSeconds($delaySeconds));
             } catch (Throwable $e) {
                 Log::error('Failed to dispatch inventory enrichment job.', [

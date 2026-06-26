@@ -393,6 +393,12 @@ return [
             'icon_color' => 'info',
         ],
         [
+            'text' => 'Rejected AI Products',
+            'route' => 'admin.ai-rejections.index',
+            'icon' => 'fas fa-fw fa-ban',
+            'icon_color' => 'danger',
+        ],
+        [
             'text' => 'AI Specification Audit Logs',
             'route' => 'admin.ai-specifications.audit-logs',
             'icon' => 'fas fa-fw fa-history',
