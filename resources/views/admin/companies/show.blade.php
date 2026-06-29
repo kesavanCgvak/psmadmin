@@ -20,6 +20,7 @@
 
 @section('css')
     @include('partials.responsive-css')
+    <link rel="stylesheet" href="{{ asset('common/css/logo-management.css') }}">
 @stop
 
 @section('content')
@@ -178,6 +179,23 @@
                             <dd class="col-sm-9"><span class="text-muted">Not applicable (User companies do not use partner Open API).</span></dd>
                         @endif
 
+                        <dt class="col-sm-3">Promotional Logo</dt>
+                        <dd class="col-sm-9">
+                            @if((bool) $company->logo_available_for_promotion)
+                                <span class="badge badge-success">Allowed for promotional use</span>
+                            @else
+                                <span class="badge badge-secondary">Not allowed</span>
+                            @endif
+                            @if($company->logo_promotion_consent_at)
+                                <div class="small text-muted mt-1">
+                                    Consent given: {{ $company->logo_promotion_consent_at->format('M d, Y H:i') }}
+                                </div>
+                            @endif
+                            @if(!$company->logo)
+                                <div class="small text-muted mt-1">No company logo uploaded.</div>
+                            @endif
+                        </dd>
+
                         <dt class="col-sm-3">Search Priority</dt>
                         <dd class="col-sm-9">{{ $company->search_priority ?? 'N/A' }}</dd>
 
@@ -260,6 +278,44 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="card logo-promotion-consent-card">
+                <div class="card-header">
+                    <h3 class="card-title">Promotional Logo Consent</h3>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        Admin override for whether this company's logo may be used in promotional materials.
+                    </p>
+                    <form action="{{ route('admin.logo-management.update-consent', $company) }}" method="POST">
+                        @csrf
+                        @method('PATCH')
+                        <input type="hidden" name="redirect_to" value="company">
+                        <div class="form-group mb-2">
+                            <label for="logoPromotionConsentSelect" class="small font-weight-bold">Consent status</label>
+                            <select name="logo_available_for_promotion"
+                                    id="logoPromotionConsentSelect"
+                                    class="form-control form-control-sm"
+                                    {{ $company->logo ? '' : 'disabled' }}>
+                                <option value="0" {{ !(bool) $company->logo_available_for_promotion ? 'selected' : '' }}>
+                                    Not allowed for promotional use
+                                </option>
+                                <option value="1" {{ (bool) $company->logo_available_for_promotion ? 'selected' : '' }}>
+                                    Allowed for promotional use
+                                </option>
+                            </select>
+                        </div>
+                        @if(!$company->logo)
+                            <p class="small text-warning mb-0">
+                                Upload a company logo before enabling promotional use.
+                            </p>
+                        @endif
+                        <button type="submit" class="btn btn-primary btn-sm mt-3" {{ $company->logo ? '' : 'disabled' }}>
+                            Save Consent Setting
+                        </button>
+                    </form>
                 </div>
             </div>
 

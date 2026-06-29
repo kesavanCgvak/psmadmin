@@ -11,6 +11,8 @@ class Company extends Model
         'account_type',
         'description',
         'logo',
+        'logo_available_for_promotion',
+        'logo_promotion_consent_at',
         'image1',
         'image2',
         'image3',
@@ -43,6 +45,8 @@ class Company extends Model
 
     protected $casts = [
         'blocked_by_admin_at' => 'datetime',
+        'logo_available_for_promotion' => 'boolean',
+        'logo_promotion_consent_at' => 'datetime',
         'is_open_api_enabled' => 'boolean',
         'rating_override' => 'float',
         'rating_override_set_at' => 'datetime',
@@ -275,6 +279,36 @@ class Company extends Model
     public function integrations()
     {
         return $this->hasMany(CompanyIntegration::class);
+    }
+
+    /**
+     * Apply promotional logo consent. Returns false when enabling without an uploaded logo.
+     */
+    public function applyLogoPromotionConsent(bool $enabled): bool
+    {
+        if ($enabled && empty($this->logo)) {
+            return false;
+        }
+
+        $this->logo_available_for_promotion = $enabled;
+        $this->logo_promotion_consent_at = $enabled ? now() : null;
+        $this->save();
+
+        return true;
+    }
+
+    /**
+     * Revoke promotional logo consent (e.g. when the logo is deleted).
+     */
+    public function revokeLogoPromotionConsent(): void
+    {
+        if (!$this->logo_available_for_promotion && $this->logo_promotion_consent_at === null) {
+            return;
+        }
+
+        $this->logo_available_for_promotion = false;
+        $this->logo_promotion_consent_at = null;
+        $this->save();
     }
 
 }

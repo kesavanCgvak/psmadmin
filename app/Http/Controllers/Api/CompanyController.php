@@ -42,6 +42,8 @@ class CompanyController extends Controller
                 'name' => $company->name,
                 'description' => $company->description,
                 'logo' => $company->logo,
+                'logo_available_for_promotion' => (bool) $company->logo_available_for_promotion,
+                'logo_promotion_consent_at' => $company->logo_promotion_consent_at?->toIso8601String(),
                 'image1' => $company->image1,
                 'image2' => $company->image2,
                 'image3' => $company->image3,
@@ -326,6 +328,63 @@ class CompanyController extends Controller
     }
 
     /**
+     * Update promotional logo consent (company agrees to logo use in marketing materials).
+     */
+    public function updateLogoPromotionConsent(Request $request)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+            $company = $user->company;
+
+            if (!$company) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Company not found',
+                ], 404);
+            }
+
+            $validated = $request->validate([
+                'logo_available_for_promotion' => 'required|boolean',
+            ]);
+
+            $enabled = (bool) $validated['logo_available_for_promotion'];
+
+            if ($enabled && empty($company->logo)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Upload a company logo before allowing promotional use.',
+                ], 422);
+            }
+
+            $company->applyLogoPromotionConsent($enabled);
+
+            $message = $enabled
+                ? 'Your company logo is now available for promotional materials.'
+                : 'Your company logo is no longer available for promotional materials.';
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'logo_available_for_promotion' => (bool) $company->logo_available_for_promotion,
+                'logo_promotion_consent_at' => $company->logo_promotion_consent_at?->toIso8601String(),
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error updating logo promotion consent', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to update logo promotion consent',
+            ], 500);
+        }
+    }
+
+    /**
      * Get default contact
      */
     public function getDefaultContact()
@@ -458,6 +517,8 @@ class CompanyController extends Controller
                     'path' => $company->logo,
                     'url' => url($company->logo)
                 ] : null,
+                'logo_available_for_promotion' => (bool) $company->logo_available_for_promotion,
+                'logo_promotion_consent_at' => $company->logo_promotion_consent_at?->toIso8601String(),
                 'image1' => $company->image1 ? [
                     'path' => $company->image1,
                     'url' => url($company->image1)
@@ -512,6 +573,10 @@ class CompanyController extends Controller
 
                 // Remove reference from DB
                 $company->update([$type => null]);
+
+                if ($type === 'logo') {
+                    $company->revokeLogoPromotionConsent();
+                }
             }
 
             return response()->json([

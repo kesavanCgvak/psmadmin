@@ -143,6 +143,7 @@ Route::middleware('jwt.verify')->group(function () {
     Route::get('/company/preferences', [CompanyController::class, 'getPreferences']);
     Route::put('/company/preferences', [CompanyController::class, 'updatePreferences']);
     Route::put('/companies/{id}/gear-finder-visibility', [CompanyController::class, 'updateGearFinderVisibility']);
+    Route::put('/company/logo-promotion-consent', [CompanyController::class, 'updateLogoPromotionConsent']);
 
     Route::get('/company/images', [CompanyController::class, 'getImages']);
     Route::post('/company/images', [CompanyController::class, 'uploadImage']);

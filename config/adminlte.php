@@ -406,6 +406,12 @@ return [
             'icon_color' => 'primary',
         ],
         [
+            'text' => 'Logo Management',
+            'route' => 'admin.logo-management.index',
+            'icon' => 'fas fa-fw fa-image',
+            'icon_color' => 'info',
+        ],
+        [
             'text' => 'Currencies',
             'route' => 'admin.currencies.index',
             'icon' => 'fas fa-fw fa-dollar-sign',

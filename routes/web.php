@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\InventoryAiSpecificationController;
 use App\Http\Controllers\Admin\IssueTypeController;
 use App\Http\Controllers\Admin\JobRatingsController;
 use App\Http\Controllers\Admin\LinearUnitController;
+use App\Http\Controllers\Admin\LogoManagementController;
 use App\Http\Controllers\Admin\PaymentSettingsController;
 use App\Http\Controllers\Admin\PricingSchemeManagementController;
 use App\Http\Controllers\Admin\ProductController;
@@ -162,6 +163,12 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('companies.bulk-delete');
     Route::post('/companies/{company}/rating-override', [CompanyManagementController::class, 'updateRatingOverride'])
         ->name('companies.rating-override');
+
+    // Logo management (promotional logo consent)
+    Route::get('/logo-management', [LogoManagementController::class, 'index'])
+        ->name('logo-management.index');
+    Route::patch('/logo-management/{company}', [LogoManagementController::class, 'updateConsent'])
+        ->name('logo-management.update-consent');
 
     // Company AJAX endpoints
     Route::get('/ajax/regions/{region}/countries', [CompanyManagementController::class, 'getCountriesByRegion'])

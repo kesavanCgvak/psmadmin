@@ -1,0 +1,67 @@
+.logo-management-thumb {
+    max-width: 80px;
+    max-height: 50px;
+    object-fit: contain;
+}
+
+.logo-promotion-consent-card .custom-switch {
+    padding-left: 2.25rem;
+}
+
+.logo-management-actions-cell {
+    width: 110px;
+    min-width: 110px;
+    max-width: 110px;
+    text-align: left;
+    vertical-align: middle !important;
+    white-space: nowrap;
+}
+
+.logo-management-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+}
+
+.logo-management-actions .btn,
+.logo-management-actions form,
+.logo-management-actions form button {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.logo-management-actions form {
+    display: inline-flex;
+}
+
+.logo-management-actions .btn.btn-sm {
+    min-width: 36px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.logo-management-actions .btn.btn-sm i {
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1;
+}
+
+@media (max-width: 576px) {
+    .logo-management-actions-cell {
+        width: 88px;
+        min-width: 88px;
+        max-width: 88px;
+    }
+
+    .logo-management-actions .btn.btn-sm {
+        min-width: 32px;
+        width: 32px;
+        height: 32px;
+    }
+}
