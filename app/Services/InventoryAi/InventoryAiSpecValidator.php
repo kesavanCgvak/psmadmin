@@ -17,7 +17,8 @@ final class InventoryAiSpecValidator
      *     valid: bool,
      *     errors: list<string>,
      *     mapped: array<string, mixed>,
-     *     fills_missing: list<string>
+     *     fills_missing: list<string>,
+     *     no_values_determined: bool
      * }
      */
     public function validate(array $aiParsed, array $missingProductFields): array
@@ -126,12 +127,46 @@ final class InventoryAiSpecValidator
             $errors[] = 'weight_unit is required when weight is provided.';
         }
 
+        $noValuesDetermined = $fillsMissing === [] && self::aiProvidedNoSpecValues($aiParsed);
+
+        if ($fillsMissing === []) {
+            $errors[] = 'No specification values could be determined from the AI response.';
+        }
+
         return [
             'valid' => $errors === [] && $fillsMissing !== [],
             'errors' => $errors,
             'mapped' => $mapped,
             'fills_missing' => $fillsMissing,
+            'no_values_determined' => $noValuesDetermined,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $aiParsed
+     */
+    private static function aiProvidedNoSpecValues(array $aiParsed): bool
+    {
+        foreach ([
+            'height',
+            'width',
+            'length',
+            'weight',
+            'linear_unit',
+            'linear_unit_code',
+            'linear_unit_name',
+            'weight_unit',
+            'weight_unit_code',
+            'weight_unit_name',
+        ] as $key) {
+            $value = $aiParsed[$key] ?? null;
+
+            if ($value !== null && $value !== '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

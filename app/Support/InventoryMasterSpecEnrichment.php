@@ -169,6 +169,11 @@ final class InventoryMasterSpecEnrichment
                     ->from('inventory_master_ai_specs')
                     ->whereColumn('inventory_master_ai_specs.inventory_master_id', 'inventory_master.id')
                     ->where('inventory_master_ai_specs.status', InventoryMasterAiSpec::STATUS_APPROVED);
+            })->whereNotExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('inventory_master_ai_specs')
+                    ->whereColumn('inventory_master_ai_specs.inventory_master_id', 'inventory_master.id')
+                    ->where('inventory_master_ai_specs.status', InventoryMasterAiSpec::STATUS_INSUFFICIENT_INFORMATION);
             });
         }
 

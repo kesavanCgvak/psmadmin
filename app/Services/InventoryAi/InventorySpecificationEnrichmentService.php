@@ -140,6 +140,21 @@ class InventorySpecificationEnrichmentService
         $missingFields = InventoryMasterSpecEnrichment::missingSpecFields($product);
         $lookupContext = InventoryMasterSpecEnrichment::buildLookupContext($product);
 
+        if (!$retryIncomplete) {
+            $alreadyInsufficient = InventoryMasterAiSpec::query()
+                ->where('inventory_master_id', $inventoryMasterId)
+                ->where('status', InventoryMasterAiSpec::STATUS_INSUFFICIENT_INFORMATION)
+                ->exists();
+
+            if ($alreadyInsufficient) {
+                return [
+                    'status' => 'skipped',
+                    'spec_id' => null,
+                    'message' => 'Product already marked as insufficient information.',
+                ];
+            }
+        }
+
         try {
             $aiResult = $this->aiClient->enrich($lookupContext);
         } catch (Throwable $e) {
@@ -177,13 +192,27 @@ class InventorySpecificationEnrichmentService
         ]);
 
         if (!$validation['valid']) {
-            $spec->update(['status' => InventoryMasterAiSpec::STATUS_REJECTED]);
+            $failureStatus = !empty($validation['no_values_determined'])
+                ? InventoryMasterAiSpec::STATUS_INSUFFICIENT_INFORMATION
+                : InventoryMasterAiSpec::STATUS_REJECTED;
 
-            Log::info('Inventory AI enrichment rejected due to validation failure.', [
-                'inventory_master_id' => $inventoryMasterId,
-                'spec_id' => $spec->id,
-                'errors' => $validation['errors'],
-            ]);
+            $spec->update(['status' => $failureStatus]);
+
+            if ($failureStatus === InventoryMasterAiSpec::STATUS_INSUFFICIENT_INFORMATION) {
+                Log::info('Inventory AI enrichment marked insufficient information (no spec values determined).', [
+                    'inventory_master_id' => $inventoryMasterId,
+                    'spec_id' => $spec->id,
+                    'errors' => $validation['errors'],
+                    'confidence_score' => $mapped['confidence_score'],
+                    'reasoning' => $parsed['reasoning'] ?? null,
+                ]);
+            } else {
+                Log::info('Inventory AI enrichment rejected due to validation failure.', [
+                    'inventory_master_id' => $inventoryMasterId,
+                    'spec_id' => $spec->id,
+                    'errors' => $validation['errors'],
+                ]);
+            }
 
             $this->rejectionService->recordForProduct(
                 $product,
@@ -196,9 +225,11 @@ class InventorySpecificationEnrichmentService
             );
 
             return [
-                'status' => InventoryMasterAiSpec::STATUS_REJECTED,
+                'status' => $failureStatus,
                 'spec_id' => $spec->id,
-                'message' => 'Validation failed: ' . implode(' ', $validation['errors']),
+                'message' => $failureStatus === InventoryMasterAiSpec::STATUS_INSUFFICIENT_INFORMATION
+                    ? 'AI could not determine specification values for this product.'
+                    : 'Validation failed: ' . implode(' ', $validation['errors']),
             ];
         }
 
