@@ -50,6 +50,11 @@
                     <small class="form-text text-muted">Allowed formats: JPEG, PNG, JPG, GIF, WEBP. Max size: 2 MB.</small>
                 </div>
 
+                @include('admin.companies.rental-software-logos.partials.sort-order-field', [
+                    'sortOrderValue' => old('sort_order', $defaultSortOrder),
+                    'usedSortOrders' => $usedSortOrders,
+                ])
+
                 <div class="form-group">
                     <label for="is_active">Active Status</label>
                     <div class="custom-control custom-switch mt-2">
