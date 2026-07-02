@@ -2,8 +2,8 @@
 
 namespace App\Jobs;
 
+use App\Contracts\SmsProvider;
 use App\Services\SupplierSmsNotifier;
-use App\Services\TextMagicService;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -31,12 +31,22 @@ class SendSupplierSmsJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(TextMagicService $textMagicService): void
+    public function handle(SmsProvider $smsProvider): void
     {
+        $driver = config('services.sms.driver');
+
+        Log::info('SendSupplierSmsJob: starting.', [
+            'supply_job_id' => $this->supplyJobId,
+            'supplier_company_id' => $this->supplierCompanyId,
+            'driver' => $driver,
+            'provider' => class_basename($smsProvider),
+            'attempt' => $this->attempts(),
+        ]);
+
         $cacheKey = "supplier_sms_sent:{$this->supplyJobId}";
 
         if (Cache::has($cacheKey)) {
-            Log::info('SendSupplierSmsJob: SMS already sent for this supply job, skipping.', [
+            Log::info('SendSupplierSmsJob: SMS already sent for this supply job, skipping (dedup).', [
                 'supply_job_id' => $this->supplyJobId,
             ]);
             return;
@@ -54,24 +64,48 @@ class SendSupplierSmsJob implements ShouldQueue
         $company = \App\Models\Company::with('defaultContactProfile')->find($this->supplierCompanyId);
         $mobile = $company ? SupplierSmsNotifier::getSupplierMobile($company) : null;
 
-        if (empty($mobile) || !$textMagicService->isValidMobile($mobile)) {
+        if (empty($mobile) || !$smsProvider->isValidMobile($mobile)) {
             Log::warning('SendSupplierSmsJob: no valid mobile for supplier, skipping.', [
                 'supply_job_id' => $this->supplyJobId,
+                'supplier_company_id' => $this->supplierCompanyId,
+                'mobile_preview' => SupplierSmsNotifier::maskMobile($mobile),
+                'company_found' => (bool) $company,
             ]);
             return;
         }
 
-        $result = $textMagicService->sendSms($mobile, $message);
+        Log::debug('SendSupplierSmsJob: sending SMS via provider.', [
+            'supply_job_id' => $this->supplyJobId,
+            'driver' => $driver,
+            'mobile_preview' => SupplierSmsNotifier::maskMobile($mobile),
+            'message' => $message,
+            'message_length' => strlen($message),
+        ]);
+
+        $result = $smsProvider->sendSms($mobile, $message);
 
         if ($result['success']) {
             Cache::put($cacheKey, true, self::DEDUP_TTL_SECONDS);
-        } else {
-            Log::error('SendSupplierSmsJob: TextMagic send failed.', [
+
+            Log::info('SendSupplierSmsJob: SMS sent successfully.', [
                 'supply_job_id' => $this->supplyJobId,
+                'driver' => $driver,
+                'message_id' => $result['message_id'] ?? null,
+                'mobile_preview' => SupplierSmsNotifier::maskMobile($mobile),
+            ]);
+        } else {
+            $willRetry = $this->attempts() < $this->tries();
+
+            Log::error('SendSupplierSmsJob: SMS send failed.', [
+                'supply_job_id' => $this->supplyJobId,
+                'driver' => $driver,
                 'error' => $result['error'] ?? 'Unknown',
+                'attempt' => $this->attempts(),
+                'max_tries' => $this->tries(),
+                'will_retry' => $willRetry,
             ]);
 
-            if ($this->attempts() < $this->tries()) {
+            if ($willRetry) {
                 $this->release(60);
             }
         }

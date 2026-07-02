@@ -514,6 +514,15 @@
 
 @section('js')
 <script>
+// Safety net: if the browser restores this page from its back/forward cache
+// (e.g. when returning after creating a company), the dropdown may be stale.
+// Force a fresh reload so the newly created company is fetched and pre-selected.
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+        window.location.reload();
+    }
+});
+
 $(document).ready(function() {
     let usernameCheckTimeout;
     let formData = {};

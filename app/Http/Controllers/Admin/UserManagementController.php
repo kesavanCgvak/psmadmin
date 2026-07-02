@@ -33,10 +33,21 @@ class UserManagementController extends Controller
      */
     public function create(Request $request)
     {
-        $companies = Company::whereIn('account_type', ['provider', 'Provider'])->orderBy('name')->get();
+        // Load all companies (both Provider and User types), consistent with the
+        // edit screen and the user store validation which accepts either type.
+        // Restricting to providers here hid newly created "User" companies returned
+        // from the "Add New Company" flow, so they could not be selected.
+        $companies = Company::orderBy('name')->get();
         $selectedCompanyId = $request->query('company_id');
 
-        return view('admin.users.create', compact('companies', 'selectedCompanyId'));
+        // Prevent this form from being served from the browser back/forward cache.
+        // Otherwise, returning here after creating a company (e.g. via "Add New Company")
+        // could show a stale snapshot whose dropdown is missing the just-created company,
+        // forcing a manual refresh.
+        return response()
+            ->view('admin.users.create', compact('companies', 'selectedCompanyId'))
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache');
     }
 
     /**

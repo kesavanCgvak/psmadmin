@@ -2,10 +2,11 @@
 
 namespace App\Services;
 
+use App\Contracts\SmsProvider;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class TextMagicService
+class TextMagicService implements SmsProvider
 {
     protected string $baseUrl = 'https://rest.textmagic.com/api/v2';
 
