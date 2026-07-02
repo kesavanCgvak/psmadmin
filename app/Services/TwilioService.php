@@ -114,7 +114,7 @@ class TwilioService implements SmsProvider
                     'phones_preview' => substr($phone, 0, 4) . '***',
                 ]);
 
-                return ['success' => true, 'message_id' => $messageId];
+                return ['success' => true, 'message_id' => $messageId, 'response' => $data];
             }
 
             Log::error('Twilio SMS API failed.', [
@@ -126,6 +126,7 @@ class TwilioService implements SmsProvider
             return [
                 'success' => false,
                 'error' => $response->body() ?: 'Unknown API error',
+                'response' => ['status' => $response->status(), 'body' => $response->json() ?? $response->body()],
             ];
         } catch (\Throwable $e) {
             Log::error('Twilio SMS exception.', [
@@ -136,6 +137,7 @@ class TwilioService implements SmsProvider
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
+                'response' => null,
             ];
         }
     }

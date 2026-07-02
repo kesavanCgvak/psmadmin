@@ -141,7 +141,8 @@ class SupplierSmsNotifier
                 $rentalJob->name,
                 $rentalJob->from_date?->format('Y-m-d') ?? (string) $rentalJob->from_date,
                 $supplyJob->provider_id,
-                $dateFormatId
+                $dateFormatId,
+                $rentalJob->id
             );
         } catch (\Throwable $e) {
             Log::error('SupplierSmsNotifier: failed to dispatch SMS job.', [
