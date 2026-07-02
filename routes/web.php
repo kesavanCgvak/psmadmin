@@ -167,8 +167,8 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
     // Logo management (promotional logo consent)
     Route::get('/logo-management', [LogoManagementController::class, 'index'])
         ->name('logo-management.index');
-    Route::patch('/logo-management/{company}', [LogoManagementController::class, 'updateConsent'])
-        ->name('logo-management.update-consent');
+    Route::patch('/logo-management/{company}', [LogoManagementController::class, 'updateAdminStatus'])
+        ->name('logo-management.update-admin-status');
 
     // Company AJAX endpoints
     Route::get('/ajax/regions/{region}/countries', [CompanyManagementController::class, 'getCountriesByRegion'])

@@ -10,13 +10,14 @@ use Illuminate\Support\Facades\Validator;
 class LogoManagementController extends Controller
 {
     /**
-     * Display companies that allow their logo for promotional materials.
+     * Display companies where the user has allowed promotional logo use.
      */
     public function index()
     {
         $companies = Company::query()
             ->where('logo_available_for_promotion', true)
             ->whereNotNull('logo')
+            ->where('logo', '!=', '')
             ->orderByDesc('logo_promotion_consent_at')
             ->paginate(config('app.admin_list_per_page'));
 
@@ -24,12 +25,12 @@ class LogoManagementController extends Controller
     }
 
     /**
-     * Admin override for promotional logo consent.
+     * Admin toggle for promotional logo approval (does not change user consent).
      */
-    public function updateConsent(Request $request, Company $company)
+    public function updateAdminStatus(Request $request, Company $company)
     {
         $validator = Validator::make($request->all(), [
-            'logo_available_for_promotion' => 'required|in:0,1,true,false',
+            'logo_promotion_admin_enabled' => 'required|in:0,1,true,false',
         ]);
 
         if ($validator->fails()) {
@@ -38,14 +39,14 @@ class LogoManagementController extends Controller
                 ->withInput();
         }
 
-        $enabled = (bool) $request->boolean('logo_available_for_promotion');
+        $enabled = (bool) $request->boolean('logo_promotion_admin_enabled');
 
         if ($enabled && empty($company->logo)) {
             return redirect()->back()
-                ->with('error', 'Cannot enable promotional logo use without an uploaded company logo.');
+                ->with('error', 'Cannot enable admin promotional approval without an uploaded company logo.');
         }
 
-        $company->applyLogoPromotionConsent($enabled);
+        $company->applyLogoPromotionAdminStatus($enabled);
 
         $status = $enabled ? 'enabled' : 'disabled';
 
@@ -54,6 +55,6 @@ class LogoManagementController extends Controller
             : route('admin.logo-management.index');
 
         return redirect($redirectRoute)
-            ->with('success', "Promotional logo consent {$status} for {$company->name}.");
+            ->with('success', "Admin promotional logo approval {$status} for {$company->name}.");
     }
 }

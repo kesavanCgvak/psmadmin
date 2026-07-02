@@ -13,6 +13,7 @@ class Company extends Model
         'logo',
         'logo_available_for_promotion',
         'logo_promotion_consent_at',
+        'logo_promotion_admin_enabled',
         'image1',
         'image2',
         'image3',
@@ -47,6 +48,7 @@ class Company extends Model
         'blocked_by_admin_at' => 'datetime',
         'logo_available_for_promotion' => 'boolean',
         'logo_promotion_consent_at' => 'datetime',
+        'logo_promotion_admin_enabled' => 'boolean',
         'is_open_api_enabled' => 'boolean',
         'rating_override' => 'float',
         'rating_override_set_at' => 'datetime',
@@ -309,6 +311,43 @@ class Company extends Model
         $this->logo_available_for_promotion = false;
         $this->logo_promotion_consent_at = null;
         $this->save();
+    }
+
+    /**
+     * Admin-only toggle for promotional logo use (does not change user consent).
+     */
+    public function applyLogoPromotionAdminStatus(bool $enabled): bool
+    {
+        if ($enabled && empty($this->logo)) {
+            return false;
+        }
+
+        $this->logo_promotion_admin_enabled = $enabled;
+        $this->save();
+
+        return true;
+    }
+
+    /**
+     * Whether the logo is available for promotional use (user consent + admin approval + logo exists).
+     */
+    public function isLogoPromotionActive(): bool
+    {
+        return !empty($this->logo)
+            && (bool) $this->logo_available_for_promotion
+            && (bool) $this->logo_promotion_admin_enabled;
+    }
+
+    /**
+     * Scope for logos approved by both the company and admin.
+     */
+    public function scopePromotionalLogosActive($query)
+    {
+        return $query
+            ->whereNotNull('logo')
+            ->where('logo', '!=', '')
+            ->where('logo_available_for_promotion', true)
+            ->where('logo_promotion_admin_enabled', true);
     }
 
 }

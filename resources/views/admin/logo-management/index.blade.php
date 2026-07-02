@@ -35,7 +35,7 @@
         </div>
         <div class="card-body">
             <p class="text-muted mb-3">
-                Companies listed below have agreed to allow their logo to be used in Pro Subrental Marketplace promotional materials.
+                Companies listed below have allowed their logo for promotional use. Admin approval controls whether the logo is published; user consent is managed by the company.
             </p>
 
             @if($companies->isEmpty())
@@ -50,6 +50,8 @@
                                 <th>Logo</th>
                                 <th>Company</th>
                                 <th>Account Type</th>
+                                <th>User Consent</th>
+                                <th>Admin Status</th>
                                 <th>Consent Date</th>
                                 <th class="logo-management-actions-cell">Actions</th>
                             </tr>
@@ -68,6 +70,9 @@
                                     <td>
                                         <strong>{{ $company->name }}</strong>
                                         <div class="small text-muted">ID: {{ $company->id }}</div>
+                                        @if($company->isLogoPromotionActive())
+                                            <span class="badge badge-success mt-1">Live for promotion</span>
+                                        @endif
                                     </td>
                                     <td>
                                         @if($companyType === 'provider')
@@ -76,6 +81,20 @@
                                             <span class="badge badge-secondary">User</span>
                                         @else
                                             <span class="badge badge-light">N/A</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if((bool) $company->logo_available_for_promotion)
+                                            <span class="badge badge-success">Enabled</span>
+                                        @else
+                                            <span class="badge badge-secondary">Disabled</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if((bool) $company->logo_promotion_admin_enabled)
+                                            <span class="badge badge-success">Enabled</span>
+                                        @else
+                                            <span class="badge badge-warning">Disabled</span>
                                         @endif
                                     </td>
                                     <td>
@@ -88,17 +107,18 @@
                                                title="View Company">
                                                 <i class="fas fa-eye"></i>
                                             </a>
-                                            <form action="{{ route('admin.logo-management.update-consent', $company) }}"
+                                            <form action="{{ route('admin.logo-management.update-admin-status', $company) }}"
                                                   method="POST"
-                                                  class="logo-consent-form"
-                                                  data-company-name="{{ $company->name }}">
+                                                  class="logo-admin-status-form"
+                                                  data-company-name="{{ $company->name }}"
+                                                  data-enabling="{{ (bool) $company->logo_promotion_admin_enabled ? '0' : '1' }}">
                                                 @csrf
                                                 @method('PATCH')
-                                                <input type="hidden" name="logo_available_for_promotion" value="0">
+                                                <input type="hidden" name="logo_promotion_admin_enabled" value="{{ (bool) $company->logo_promotion_admin_enabled ? '0' : '1' }}">
                                                 <button type="submit"
-                                                        class="btn btn-warning btn-sm"
-                                                        title="Revoke promotional consent">
-                                                    <i class="fas fa-toggle-off"></i>
+                                                        class="btn btn-sm {{ (bool) $company->logo_promotion_admin_enabled ? 'btn-warning' : 'btn-success' }}"
+                                                        title="{{ (bool) $company->logo_promotion_admin_enabled ? 'Disable admin approval' : 'Enable admin approval' }}">
+                                                    <i class="fas fa-{{ (bool) $company->logo_promotion_admin_enabled ? 'toggle-off' : 'toggle-on' }}"></i>
                                                 </button>
                                             </form>
                                         </div>
@@ -131,16 +151,17 @@
                         { "responsivePriority": 1, "targets": 1 },
                         { "responsivePriority": 2, "targets": -1 }
                     ],
-                    "order": [[3, "desc"]]
+                    "order": [[5, "desc"]]
                 });
             }
 
-            $(document).on('submit', '.logo-consent-form', function(e) {
+            $(document).on('submit', '.logo-admin-status-form', function(e) {
                 if (!$(this).data('confirmed')) {
                     e.preventDefault();
                     var companyName = $(this).data('company-name');
-                    var message = 'Revoke promotional logo consent for <strong>' + companyName + '</strong>?';
-                    if (confirm(message.replace(/<[^>]*>/g, ''))) {
+                    var enabling = $(this).data('enabling') === 1 || $(this).data('enabling') === '1';
+                    var action = enabling ? 'enable admin approval for' : 'disable admin approval for';
+                    if (confirm('Are you sure you want to ' + action + ' ' + companyName + '?')) {
                         $(this).data('confirmed', true);
                         $(this).trigger('submit');
                     }

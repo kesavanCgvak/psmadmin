@@ -179,20 +179,34 @@
                             <dd class="col-sm-9"><span class="text-muted">Not applicable (User companies do not use partner Open API).</span></dd>
                         @endif
 
-                        <dt class="col-sm-3">Promotional Logo</dt>
+                        <dt class="col-sm-3">User Promotional Logo</dt>
                         <dd class="col-sm-9">
                             @if((bool) $company->logo_available_for_promotion)
-                                <span class="badge badge-success">Allowed for promotional use</span>
+                                <span class="badge badge-success">User enabled</span>
                             @else
-                                <span class="badge badge-secondary">Not allowed</span>
+                                <span class="badge badge-secondary">User disabled</span>
                             @endif
                             @if($company->logo_promotion_consent_at)
                                 <div class="small text-muted mt-1">
-                                    Consent given: {{ $company->logo_promotion_consent_at->format('M d, Y H:i') }}
+                                    User consent updated: {{ $company->logo_promotion_consent_at->format('M d, Y H:i') }}
                                 </div>
                             @endif
                             @if(!$company->logo)
                                 <div class="small text-muted mt-1">No company logo uploaded.</div>
+                            @endif
+                        </dd>
+
+                        <dt class="col-sm-3">Admin Promotional Logo</dt>
+                        <dd class="col-sm-9">
+                            @if((bool) $company->logo_promotion_admin_enabled)
+                                <span class="badge badge-success">Admin enabled</span>
+                            @else
+                                <span class="badge badge-warning">Admin disabled</span>
+                            @endif
+                            @if($company->isLogoPromotionActive())
+                                <div class="small text-success mt-1">Logo is live for promotional materials.</div>
+                            @else
+                                <div class="small text-muted mt-1">Logo is not live for promotional materials.</div>
                             @endif
                         </dd>
 
@@ -283,37 +297,37 @@
 
             <div class="card logo-promotion-consent-card">
                 <div class="card-header">
-                    <h3 class="card-title">Promotional Logo Consent</h3>
+                    <h3 class="card-title">Admin Promotional Logo</h3>
                 </div>
                 <div class="card-body">
                     <p class="text-muted small">
-                        Admin override for whether this company's logo may be used in promotional materials.
+                        Control admin approval for promotional logo use. This does not change the company's own consent setting.
                     </p>
-                    <form action="{{ route('admin.logo-management.update-consent', $company) }}" method="POST">
+                    <form action="{{ route('admin.logo-management.update-admin-status', $company) }}" method="POST">
                         @csrf
                         @method('PATCH')
                         <input type="hidden" name="redirect_to" value="company">
                         <div class="form-group mb-2">
-                            <label for="logoPromotionConsentSelect" class="small font-weight-bold">Consent status</label>
-                            <select name="logo_available_for_promotion"
-                                    id="logoPromotionConsentSelect"
+                            <label for="logoPromotionAdminSelect" class="small font-weight-bold">Admin approval</label>
+                            <select name="logo_promotion_admin_enabled"
+                                    id="logoPromotionAdminSelect"
                                     class="form-control form-control-sm"
                                     {{ $company->logo ? '' : 'disabled' }}>
-                                <option value="0" {{ !(bool) $company->logo_available_for_promotion ? 'selected' : '' }}>
-                                    Not allowed for promotional use
+                                <option value="0" {{ !(bool) $company->logo_promotion_admin_enabled ? 'selected' : '' }}>
+                                    Disabled by admin
                                 </option>
-                                <option value="1" {{ (bool) $company->logo_available_for_promotion ? 'selected' : '' }}>
-                                    Allowed for promotional use
+                                <option value="1" {{ (bool) $company->logo_promotion_admin_enabled ? 'selected' : '' }}>
+                                    Enabled by admin
                                 </option>
                             </select>
                         </div>
                         @if(!$company->logo)
                             <p class="small text-warning mb-0">
-                                Upload a company logo before enabling promotional use.
+                                Upload a company logo before enabling admin approval.
                             </p>
                         @endif
                         <button type="submit" class="btn btn-primary btn-sm mt-3" {{ $company->logo ? '' : 'disabled' }}>
-                            Save Consent Setting
+                            Save Admin Setting
                         </button>
                     </form>
                 </div>

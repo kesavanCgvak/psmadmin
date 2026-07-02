@@ -44,6 +44,8 @@ class CompanyController extends Controller
                 'logo' => $company->logo,
                 'logo_available_for_promotion' => (bool) $company->logo_available_for_promotion,
                 'logo_promotion_consent_at' => $company->logo_promotion_consent_at?->toIso8601String(),
+                'logo_promotion_admin_enabled' => (bool) $company->logo_promotion_admin_enabled,
+                'logo_promotion_active' => $company->isLogoPromotionActive(),
                 'image1' => $company->image1,
                 'image2' => $company->image2,
                 'image3' => $company->image3,
@@ -367,6 +369,8 @@ class CompanyController extends Controller
                 'message' => $message,
                 'logo_available_for_promotion' => (bool) $company->logo_available_for_promotion,
                 'logo_promotion_consent_at' => $company->logo_promotion_consent_at?->toIso8601String(),
+                'logo_promotion_admin_enabled' => (bool) $company->logo_promotion_admin_enabled,
+                'logo_promotion_active' => $company->isLogoPromotionActive(),
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -487,11 +491,19 @@ class CompanyController extends Controller
                 $request->type => $relativePath
             ]);
 
+            if ($request->type === 'logo') {
+                $company->applyLogoPromotionConsent(true);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => ucfirst($request->type) . ' uploaded successfully',
                 'path' => $relativePath,
-                'url' => url($relativePath)
+                'url' => url($relativePath),
+                'logo_available_for_promotion' => (bool) $company->logo_available_for_promotion,
+                'logo_promotion_consent_at' => $company->logo_promotion_consent_at?->toIso8601String(),
+                'logo_promotion_admin_enabled' => (bool) $company->logo_promotion_admin_enabled,
+                'logo_promotion_active' => $company->isLogoPromotionActive(),
             ], 201);
 
         } catch (\Exception $e) {
@@ -519,6 +531,8 @@ class CompanyController extends Controller
                 ] : null,
                 'logo_available_for_promotion' => (bool) $company->logo_available_for_promotion,
                 'logo_promotion_consent_at' => $company->logo_promotion_consent_at?->toIso8601String(),
+                'logo_promotion_admin_enabled' => (bool) $company->logo_promotion_admin_enabled,
+                'logo_promotion_active' => $company->isLogoPromotionActive(),
                 'image1' => $company->image1 ? [
                     'path' => $company->image1,
                     'url' => url($company->image1)
