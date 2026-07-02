@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\GeoController;
 use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\IntegrationController;
+use App\Http\Controllers\Api\InventoryMasterDataController;
 use App\Http\Controllers\Api\IssueTypeController;
 use App\Http\Controllers\Api\JobNegotiationController;
 use App\Http\Controllers\Api\LocationController;
@@ -34,6 +35,7 @@ use App\Http\Controllers\Api\RentalJobActionsController;
 use App\Http\Controllers\Api\RentalJobController;
 use App\Http\Controllers\Api\RentalRequestController;
 use App\Http\Controllers\Api\RentalSoftwareController;
+use App\Http\Controllers\Api\RentalSoftwareCompanyLogoController;
 use App\Http\Controllers\Api\StateController;
 use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\SubCategoryController;
@@ -69,6 +71,10 @@ Route::get('/company-user-limit', [CompanyUserLimitController::class, 'getLimit'
 
 // Terms and Conditions (public endpoint)
 Route::get('/terms-and-conditions', [TermsAndConditionsController::class, 'index']);
+
+// Rental software company logos (public endpoint)
+Route::get('/rental-software-company-logos', [RentalSoftwareCompanyLogoController::class, 'index']);
+
 
 // CMS pages (public; HTML already sanitized when saved in admin)
 Route::get('/cms-pages', [ApiCmsPageController::class, 'index']);
@@ -177,6 +183,7 @@ Route::middleware('jwt.verify')->group(function () {
 
 Route::middleware('jwt.verify')->get('/products/{product_id}', [ProductController::class, 'show'])
     ->whereNumber('product_id');
+Route::middleware('jwt.verify')->get('/inventory-master/physical-details', [InventoryMasterDataController::class, 'show']);
 Route::middleware('jwt.verify')->post('/products/create-or-attach', [ProductController::class, 'createOrAttach']);
 Route::middleware('jwt.verify')->post('/products/import', [ProductController::class, 'importProducts']); // Legacy endpoint
 

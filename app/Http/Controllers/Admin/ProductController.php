@@ -11,6 +11,8 @@ use App\Models\Brand;
 use App\Models\LinearUnit;
 use App\Models\WeightUnit;
 use App\Services\BulkDeletionService;
+use App\Services\InventoryAi\AiProviderFactory;
+use App\Services\InventoryAi\InventorySpecificationEnrichmentService;
 use App\Support\InventoryImageManagementService;
 use App\Support\InventoryImageSyncService;
 use App\Support\InventoryProductSearch;
@@ -958,6 +960,83 @@ class ProductController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error verifying products: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Synchronously run AI specification enrichment for selected products.
+     */
+    public function bulkEnrichSpecifications(Request $request, InventorySpecificationEnrichmentService $enrichmentService)
+    {
+        $maxProducts = (int) config('inventory_ai.max_sync_product_enrich', 100);
+
+        $validator = Validator::make($request->all(), [
+            'product_ids' => 'required|array|min:1|max:' . $maxProducts,
+            'product_ids.*' => 'integer|exists:inventory_master,id',
+            'confirm_enrich' => 'accepted',
+        ], [
+            'confirm_enrich.accepted' => 'Please confirm you want to run synchronous AI enrichment.',
+            'product_ids.max' => "You can enrich at most {$maxProducts} products at once.",
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        if (!AiProviderFactory::isConfigured()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'AI provider is not configured. Set OPENAI_API_KEY or GEMINI_API_KEY in .env.',
+            ], 422);
+        }
+
+        @set_time_limit(0);
+
+        $productIds = array_values(array_unique(array_map('intval', $request->input('product_ids', []))));
+
+        try {
+            $results = $enrichmentService->enrichProductsSynchronously($productIds);
+
+            $summary = [
+                'total' => count($results),
+                'success' => 0,
+                'skipped' => 0,
+                'rejected' => 0,
+                'errors' => 0,
+            ];
+
+            foreach ($results as $row) {
+                match ($row['outcome']) {
+                    'Success' => $summary['success']++,
+                    'Skipped' => $summary['skipped']++,
+                    'Still Rejected', 'Failed' => $summary['rejected']++,
+                    default => $summary['errors']++,
+                };
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => sprintf(
+                    'Enrichment complete: %d succeeded, %d skipped, %d rejected, %d errors.',
+                    $summary['success'],
+                    $summary['skipped'],
+                    $summary['rejected'],
+                    $summary['errors'],
+                ),
+                'summary' => $summary,
+                'results' => $results,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('Bulk AI enrichment error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error running AI enrichment: ' . $e->getMessage(),
             ], 500);
         }
     }

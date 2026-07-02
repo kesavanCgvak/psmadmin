@@ -393,6 +393,12 @@ return [
             'icon_color' => 'info',
         ],
         [
+            'text' => 'Rejected AI Products',
+            'route' => 'admin.ai-rejections.index',
+            'icon' => 'fas fa-fw fa-ban',
+            'icon_color' => 'danger',
+        ],
+        [
             'text' => 'AI Specification Audit Logs',
             'route' => 'admin.ai-specifications.audit-logs',
             'icon' => 'fas fa-fw fa-history',
@@ -434,6 +440,12 @@ return [
             'route' => 'admin.rental-software.index',
             'icon' => 'fas fa-fw fa-laptop-code',
             'icon_color' => 'info',
+        ],
+        [
+            'text' => 'Rental Software Company Logos',
+            'route' => 'admin.rental-software-company-logos.index',
+            'icon' => 'fas fa-fw fa-images',
+            'icon_color' => 'primary',
         ],
         [
             'text' => 'All Equipment',
