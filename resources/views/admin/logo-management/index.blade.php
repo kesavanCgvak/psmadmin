@@ -52,6 +52,7 @@
                                 <th>Account Type</th>
                                 <th>User Consent</th>
                                 <th>Admin Status</th>
+                                <th class="logo-management-sort-cell">Sort Order</th>
                                 <th>Consent Date</th>
                                 <th class="logo-management-actions-cell">Actions</th>
                             </tr>
@@ -96,6 +97,30 @@
                                         @else
                                             <span class="badge badge-warning">Disabled</span>
                                         @endif
+                                    </td>
+                                    <td class="logo-management-sort-cell">
+                                        <form action="{{ route('admin.logo-management.update-sort-order', $company) }}"
+                                              method="POST"
+                                              class="logo-sort-order-form">
+                                            @csrf
+                                            @method('PATCH')
+                                            <div class="input-group input-group-sm logo-sort-order-group">
+                                                <input type="number"
+                                                       name="logo_promotion_sort_order"
+                                                       class="form-control logo-sort-order-input"
+                                                       min="0"
+                                                       max="9999"
+                                                       value="{{ (int) $company->logo_promotion_sort_order }}"
+                                                       title="Display sort order (lower numbers appear first)">
+                                                <div class="input-group-append">
+                                                    <button type="submit"
+                                                            class="btn btn-secondary"
+                                                            title="Save sort order">
+                                                        <i class="fas fa-save"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </form>
                                     </td>
                                     <td>
                                         {{ $company->logo_promotion_consent_at?->format('M d, Y H:i') ?? 'N/A' }}
@@ -146,12 +171,12 @@
                     "paging": false,
                     "info": false,
                     "columnDefs": [
-                        { "orderable": false, "targets": [0, -1] },
+                        { "orderable": false, "targets": [0, 5, -1] },
                         { "width": "110px", "targets": -1 },
                         { "responsivePriority": 1, "targets": 1 },
                         { "responsivePriority": 2, "targets": -1 }
                     ],
-                    "order": [[5, "desc"]]
+                    "order": [[5, "asc"]]
                 });
             }
 

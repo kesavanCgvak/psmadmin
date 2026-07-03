@@ -179,6 +179,8 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('logo-management.index');
     Route::patch('/logo-management/{company}', [LogoManagementController::class, 'updateAdminStatus'])
         ->name('logo-management.update-admin-status');
+    Route::patch('/logo-management/{company}/sort-order', [LogoManagementController::class, 'updateSortOrder'])
+        ->name('logo-management.update-sort-order');
 
     // Company AJAX endpoints
     Route::get('/ajax/regions/{region}/countries', [CompanyManagementController::class, 'getCountriesByRegion'])

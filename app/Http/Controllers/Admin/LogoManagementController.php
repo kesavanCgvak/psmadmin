@@ -18,6 +18,7 @@ class LogoManagementController extends Controller
             ->where('logo_available_for_promotion', true)
             ->whereNotNull('logo')
             ->where('logo', '!=', '')
+            ->orderBy('logo_promotion_sort_order')
             ->orderByDesc('logo_promotion_consent_at')
             ->paginate(config('app.admin_list_per_page'));
 
@@ -56,5 +57,32 @@ class LogoManagementController extends Controller
 
         return redirect($redirectRoute)
             ->with('success', "Admin promotional logo approval {$status} for {$company->name}.");
+    }
+
+    /**
+     * Update display sort order for promotional logos.
+     */
+    public function updateSortOrder(Request $request, Company $company)
+    {
+        $validator = Validator::make($request->all(), [
+            'logo_promotion_sort_order' => 'required|integer|min:0|max:9999',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->withInput();
+        }
+
+        $company->update([
+            'logo_promotion_sort_order' => (int) $request->input('logo_promotion_sort_order'),
+        ]);
+
+        $redirectRoute = $request->input('redirect_to') === 'company'
+            ? route('admin.companies.show', $company)
+            : route('admin.logo-management.index');
+
+        return redirect($redirectRoute)
+            ->with('success', "Sort order updated for {$company->name}.");
     }
 }

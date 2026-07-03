@@ -210,6 +210,31 @@
                             @endif
                         </dd>
 
+                        <dt class="col-sm-3">Promotional Sort Order</dt>
+                        <dd class="col-sm-9">
+                            @if($company->logo)
+                                <form action="{{ route('admin.logo-management.update-sort-order', $company) }}" method="POST" class="logo-sort-order-form-company">
+                                    @csrf
+                                    @method('PATCH')
+                                    <input type="hidden" name="redirect_to" value="company">
+                                    <div class="input-group input-group-sm logo-sort-order-group">
+                                        <input type="number"
+                                               name="logo_promotion_sort_order"
+                                               class="form-control logo-sort-order-input"
+                                               min="0"
+                                               max="9999"
+                                               value="{{ (int) $company->logo_promotion_sort_order }}">
+                                        <div class="input-group-append">
+                                            <button type="submit" class="btn btn-primary">Save Order</button>
+                                        </div>
+                                    </div>
+                                    <div class="small text-muted mt-1">Lower numbers appear first in promotional logo listings.</div>
+                                </form>
+                            @else
+                                <span class="text-muted">N/A</span>
+                            @endif
+                        </dd>
+
                         <dt class="col-sm-3">Search Priority</dt>
                         <dd class="col-sm-9">{{ $company->search_priority ?? 'N/A' }}</dd>
 
