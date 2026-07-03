@@ -26,3 +26,4 @@ Thumbs.db
 /public/images/profile_pictures
 /public/images/equipment_image
 *.lock
+/public/images/rental_software_logos

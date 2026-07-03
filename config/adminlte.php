@@ -524,6 +524,18 @@ return [
             'icon_color' => 'info',
         ],
         [
+            'text' => 'Communication',
+            'icon' => 'fas fa-fw fa-comments',
+            'icon_color' => 'info',
+            'submenu' => [
+                [
+                    'text' => 'SMS Logs',
+                    'route' => 'admin.sms-logs.index',
+                    'icon' => 'fas fa-fw fa-sms',
+                ],
+            ],
+        ],
+        [
             'text' => 'User Login Activity',
             'route' => 'admin.user-auth-events.index',
             'icon' => 'fas fa-fw fa-user-clock',
