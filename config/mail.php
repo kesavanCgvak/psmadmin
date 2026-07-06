@@ -137,6 +137,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Open API / Provider API key access request (POST .../request-access)
+    |--------------------------------------------------------------------------
+    | Comma-separated admin inbox(es) for provider Open API access requests.
+    | Falls back to mail.to.addresses, then mail.admin.address, then from address.
+    */
+    'open_api_access_request' => [
+        'addresses' => array_values(array_filter(array_map(
+            static fn (string $email): string => trim($email),
+            explode(',', (string) env('MAIL_TO_OPEN_API_ACCESS_REQUEST', ''))
+        ))),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Support Inbox Email
     |--------------------------------------------------------------------------
     |

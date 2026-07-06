@@ -92,7 +92,7 @@
                 "request-access"
               ]
             },
-            "description": "Sends an email to admin (MAIL_TO_NOTIFY_NEW_REGISTRATION / mail.to.addresses) with the user's message. Requires JWT; provider company user only."
+            "description": "Sends an email to admin (MAIL_TO_OPEN_API_ACCESS_REQUEST, else MAIL_TO_NOTIFY_NEW_REGISTRATION, else MAIL_TO_ADMIN). Requires JWT; provider company user only."
           }
         },
         {
