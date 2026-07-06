@@ -87,15 +87,29 @@ class SupplierSmsNotifier
     {
         try {
             $jobBeginCarbon = Carbon::parse($rentalJob->from_date);
+            $daysUntilJob = Carbon::today()->diffInDays($jobBeginCarbon, false);
+
+            Log::debug('SupplierSmsNotifier: evaluating SMS notification.', [
+                'supply_job_id' => $supplyJob->id,
+                'rental_job_id' => $rentalJob->id,
+                'supplier_company_id' => $supplyJob->provider_id,
+                'job_begin_date' => $jobBeginCarbon->toDateString(),
+                'days_until_job' => $daysUntilJob,
+            ]);
 
             if (!self::shouldSendSms($jobBeginCarbon)) {
+                Log::debug('SupplierSmsNotifier: skipping SMS (job begin date outside 0-7 day window).', [
+                    'supply_job_id' => $supplyJob->id,
+                    'days_until_job' => $daysUntilJob,
+                ]);
                 return;
             }
 
             $company = Company::with('defaultContactProfile')->find($supplyJob->provider_id);
 
             if (!$company) {
-                Log::warning('SupplierSmsNotifier: supplier company not found.', [
+                Log::warning('SupplierSmsNotifier: supplier company not found, skipping SMS.', [
+                    'supply_job_id' => $supplyJob->id,
                     'company_id' => $supplyJob->provider_id,
                 ]);
                 return;
@@ -103,21 +117,32 @@ class SupplierSmsNotifier
 
             $mobile = self::getSupplierMobile($company);
 
-            if (empty($mobile) || !(new TextMagicService)->isValidMobile($mobile)) {
+            if (empty($mobile) || !app(\App\Contracts\SmsProvider::class)->isValidMobile($mobile)) {
                 Log::info('SupplierSmsNotifier: no valid mobile for supplier, skipping SMS.', [
+                    'supply_job_id' => $supplyJob->id,
                     'company_id' => $supplyJob->provider_id,
+                    'mobile_preview' => self::maskMobile($mobile),
                 ]);
                 return;
             }
 
             $dateFormatId = $user->company?->date_format_id ?? $company->date_format_id;
 
+            Log::info('SupplierSmsNotifier: dispatching supplier SMS job.', [
+                'supply_job_id' => $supplyJob->id,
+                'rental_job_id' => $rentalJob->id,
+                'company_id' => $supplyJob->provider_id,
+                'mobile_preview' => self::maskMobile($mobile),
+                'days_until_job' => $daysUntilJob,
+            ]);
+
             SendSupplierSmsJob::dispatch(
                 $supplyJob->id,
                 $rentalJob->name,
                 $rentalJob->from_date?->format('Y-m-d') ?? (string) $rentalJob->from_date,
                 $supplyJob->provider_id,
-                $dateFormatId
+                $dateFormatId,
+                $rentalJob->id
             );
         } catch (\Throwable $e) {
             Log::error('SupplierSmsNotifier: failed to dispatch SMS job.', [
@@ -126,5 +151,23 @@ class SupplierSmsNotifier
                 'trace' => $e->getTraceAsString(),
             ]);
         }
+    }
+
+    /**
+     * Mask a mobile number for safe logging, keeping only the last 3 digits.
+     */
+    public static function maskMobile(?string $mobile): string
+    {
+        if (empty($mobile)) {
+            return 'none';
+        }
+
+        $digits = preg_replace('/\D/', '', $mobile);
+
+        if (strlen($digits) <= 3) {
+            return '***';
+        }
+
+        return '***' . substr($digits, -3);
     }
 }

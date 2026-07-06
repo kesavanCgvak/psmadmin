@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\RentalSoftwareCompanyLogo;
 use App\Support\InventoryImageManagementService;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class RentalSoftwareCompanyLogoController extends Controller
@@ -24,7 +23,8 @@ class RentalSoftwareCompanyLogoController extends Controller
 
             $query = RentalSoftwareCompanyLogo::query()
                 ->where('is_active', true)
-                ->orderBy('company_name')
+                ->orderBy('sort_order', 'asc')
+                ->orderBy('id', 'asc')
                 ->select(['id', 'company_name', 'logo_path', 'is_active']);
 
             Log::info('RentalSoftwareCompanyLogo API: SQL query', [
@@ -55,7 +55,7 @@ class RentalSoftwareCompanyLogoController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $data,
+                'data' => $data->values(),
             ], 200);
         } catch (\Throwable $e) {
             Log::error('Error fetching rental software company logos: ' . $e->getMessage(), [

@@ -41,6 +41,17 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    // Active SMS provider used for supplier notifications: 'twilio' or 'textmagic'.
+    'sms' => [
+        'driver' => env('SMS_DRIVER', 'twilio'),
+    ],
+
+    'twilio' => [
+        'sid' => env('TWILIO_SID'),
+        'token' => env('TWILIO_AUTH_TOKEN'),
+        'from' => env('TWILIO_FROM'),
+    ],
+
     'textmagic' => [
         'username' => env('TEXTMAGIC_USERNAME'),
         'key' => env('TEXTMAGIC_API_KEY'),

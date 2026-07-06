@@ -26,6 +26,7 @@ use App\Http\Controllers\Admin\RegionController;
 use App\Http\Controllers\Admin\RentalJobController;
 use App\Http\Controllers\Admin\RentalSoftwareCompanyLogoController;
 use App\Http\Controllers\Admin\RentalSoftwareManagementController;
+use App\Http\Controllers\Admin\SmsLogController;
 use App\Http\Controllers\Admin\StateProvinceController;
 use App\Http\Controllers\Admin\SubCategoryController;
 use App\Http\Controllers\Admin\SubscriptionManagementController;
@@ -325,6 +326,12 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('email-logs.index');
     Route::get('/email-logs/{emailLog}', [EmailLogController::class, 'show'])
         ->name('email-logs.show');
+
+    // SMS Logs (read-only)
+    Route::get('/sms-logs', [SmsLogController::class, 'index'])
+        ->name('sms-logs.index');
+    Route::get('/sms-logs/{smsLog}', [SmsLogController::class, 'show'])
+        ->name('sms-logs.show');
 
     // User login / logout / failed login history (read-only)
     Route::get('/user-auth-events', [UserAuthEventController::class, 'index'])
