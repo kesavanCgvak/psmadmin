@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\PaymentStatusController;
 use App\Http\Controllers\Api\PartnerProductController;
 use App\Http\Controllers\Api\PricingSchemeController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\PromotionalLogoController;
 use App\Http\Controllers\Api\ProviderApiKeyController;
 use App\Http\Controllers\Api\RegistrationCheckController;
 use App\Http\Controllers\Api\RentalJobActionsController;
@@ -74,6 +75,9 @@ Route::get('/terms-and-conditions', [TermsAndConditionsController::class, 'index
 
 // Rental software company logos (public endpoint)
 Route::get('/rental-software-company-logos', [RentalSoftwareCompanyLogoController::class, 'index']);
+
+// Promotional company logos (public endpoint; user consent + admin approval)
+Route::get('/promotional-logos', [PromotionalLogoController::class, 'index']);
 
 
 // CMS pages (public; HTML already sanitized when saved in admin)
