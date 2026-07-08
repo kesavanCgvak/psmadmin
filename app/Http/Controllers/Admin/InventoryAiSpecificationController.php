@@ -42,18 +42,18 @@ class InventoryAiSpecificationController extends Controller
             $searchValue = trim((string) data_get($request->get('search'), 'value', ''));
             $statusFilter = $request->get('status_filter', InventoryMasterAiSpec::STATUS_PENDING);
             $order = $request->get('order', []);
-            $orderColumn = (int) data_get($order, '0.column', 7);
+            $orderColumn = (int) data_get($order, '0.column', 10);
             $orderDir = data_get($order, '0.dir', 'desc') === 'asc' ? 'asc' : 'desc';
 
             $columnMap = [
-                0 => 'inventory_master_ai_specs.id',
-                1 => 'inventory_master.id',
-                2 => 'inventory_master.model',
-                3 => 'brands.name',
-                4 => 'categories.name',
-                9 => 'inventory_master_ai_specs.confidence_score',
-                11 => 'inventory_master_ai_specs.created_at',
-                12 => 'inventory_master_ai_specs.status',
+                1 => 'inventory_master_ai_specs.id',
+                2 => 'inventory_master.id',
+                3 => 'inventory_master.model',
+                4 => 'brands.name',
+                5 => 'categories.name',
+                10 => 'inventory_master_ai_specs.confidence_score',
+                12 => 'inventory_master_ai_specs.created_at',
+                13 => 'inventory_master_ai_specs.status',
             ];
             $orderBy = $columnMap[$orderColumn] ?? 'inventory_master_ai_specs.confidence_score';
 
@@ -252,6 +252,16 @@ class InventoryAiSpecificationController extends Controller
         }
     }
 
+    public function bulkApprove(Request $request): JsonResponse
+    {
+        return $this->processBulkReview($request, 'approve');
+    }
+
+    public function bulkReject(Request $request): JsonResponse
+    {
+        return $this->processBulkReview($request, 'reject');
+    }
+
     public function auditLogs(): View
     {
         return view('admin.inventory-ai-specs.audit-logs');
@@ -360,5 +370,69 @@ class InventoryAiSpecificationController extends Controller
         }
 
         return '<div class="btn-group">' . $buttons . '</div>';
+    }
+
+    private function processBulkReview(Request $request, string $action): JsonResponse
+    {
+        $validated = $request->validate([
+            'spec_ids' => 'required|array|min:1',
+            'spec_ids.*' => 'integer|exists:inventory_master_ai_specs,id',
+        ]);
+
+        $reviewerId = (int) $request->user()->id;
+        $processed = 0;
+        $failed = [];
+
+        $specs = InventoryMasterAiSpec::query()
+            ->whereIn('id', $validated['spec_ids'])
+            ->get()
+            ->keyBy('id');
+
+        foreach ($validated['spec_ids'] as $specId) {
+            $spec = $specs->get($specId);
+            if (!$spec) {
+                $failed[] = ['id' => $specId, 'message' => 'Record not found.'];
+                continue;
+            }
+
+            try {
+                if ($action === 'approve') {
+                    $this->enrichmentService->approvePendingSpec($spec, $reviewerId, [], null);
+                } else {
+                    $this->enrichmentService->rejectPendingSpec($spec, $reviewerId, null);
+                }
+                $processed++;
+            } catch (InvalidArgumentException $e) {
+                $failed[] = ['id' => $specId, 'message' => $e->getMessage()];
+            } catch (\Throwable $e) {
+                Log::error('AI specification bulk ' . $action . ' failed.', [
+                    'spec_id' => $specId,
+                    'error' => $e->getMessage(),
+                ]);
+                $failed[] = ['id' => $specId, 'message' => $e->getMessage()];
+            }
+        }
+
+        if ($processed === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No specifications were processed.',
+                'processed_count' => 0,
+                'failed' => $failed,
+            ], 422);
+        }
+
+        $verb = $action === 'approve' ? 'approved' : 'rejected';
+        $message = 'Successfully ' . $verb . ' ' . $processed . ' AI specification(s).';
+        if ($failed !== []) {
+            $message .= ' ' . count($failed) . ' could not be processed.';
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $message,
+            'processed_count' => $processed,
+            'failed' => $failed,
+        ]);
     }
 }

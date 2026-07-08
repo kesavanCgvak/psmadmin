@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\EmailTemplateController;
 use App\Http\Controllers\Admin\EquipmentManagementController;
 use App\Http\Controllers\Admin\InventoryAiRejectedProductController;
 use App\Http\Controllers\Admin\InventoryAiSpecificationController;
+use App\Http\Controllers\Admin\ProductsMissingSpecificationsController;
 use App\Http\Controllers\Admin\IssueTypeController;
 use App\Http\Controllers\Admin\JobRatingsController;
 use App\Http\Controllers\Admin\LinearUnitController;
@@ -143,6 +144,8 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         Route::get('/data', [InventoryAiSpecificationController::class, 'data'])->name('data');
         Route::get('/audit-logs', [InventoryAiSpecificationController::class, 'auditLogs'])->name('audit-logs');
         Route::get('/audit-logs/data', [InventoryAiSpecificationController::class, 'auditLogsData'])->name('audit-logs.data');
+        Route::post('/bulk-approve', [InventoryAiSpecificationController::class, 'bulkApprove'])->name('bulk-approve');
+        Route::post('/bulk-reject', [InventoryAiSpecificationController::class, 'bulkReject'])->name('bulk-reject');
         Route::get('/{aiSpec}', [InventoryAiSpecificationController::class, 'show'])->name('show');
         Route::put('/{aiSpec}', [InventoryAiSpecificationController::class, 'update'])->name('update');
         Route::post('/{aiSpec}/approve', [InventoryAiSpecificationController::class, 'approve'])->name('approve');
@@ -153,6 +156,12 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         Route::get('/', [InventoryAiRejectedProductController::class, 'index'])->name('index');
         Route::get('/data', [InventoryAiRejectedProductController::class, 'data'])->name('data');
         Route::post('/rerun', [InventoryAiRejectedProductController::class, 'rerun'])->name('rerun');
+    });
+
+    Route::prefix('products-missing-specifications')->name('products-missing-specifications.')->group(function () {
+        Route::get('/', [ProductsMissingSpecificationsController::class, 'index'])->name('index');
+        Route::get('/data', [ProductsMissingSpecificationsController::class, 'data'])->name('data');
+        Route::post('/enrich', [ProductsMissingSpecificationsController::class, 'enrich'])->name('enrich');
     });
 
     // AJAX endpoint for getting subcategories by category
