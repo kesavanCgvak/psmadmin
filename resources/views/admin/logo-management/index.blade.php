@@ -35,19 +35,19 @@
         </div>
         <div class="card-body">
             <p class="text-muted mb-3">
-                Companies listed below have allowed their logo for promotional use. Admin approval controls whether the logo is published; user consent is managed by the company.
+                Provider companies listed below have allowed their logo for promotional use. Admin approval controls whether the logo is published; provider consent is managed by the company.
             </p>
 
             @if($companies->isEmpty())
                 <div class="alert alert-info mb-0">
-                    <i class="fas fa-info-circle"></i> No companies have opted in to promotional logo use yet.
+                    <i class="fas fa-info-circle"></i> No provider companies have opted in to promotional logo use yet.
                 </div>
             @else
                 <div class="table-responsive">
                     <table id="logoManagementTable" class="table table-bordered table-striped">
                         <thead>
                             <tr>
-                                <th>Logo</th>
+                                <th class="logo-management-logo-cell">Logo</th>
                                 <th>Company</th>
                                 <th>Account Type</th>
                                 <th>User Consent</th>
@@ -63,10 +63,12 @@
                                     $companyType = strtolower((string) $company->account_type);
                                 @endphp
                                 <tr>
-                                    <td>
-                                        <img src="{{ asset($company->logo) }}"
-                                             alt="{{ $company->name }} logo"
-                                             class="img-thumbnail logo-management-thumb">
+                                    <td class="logo-management-logo-cell">
+                                        <div class="logo-management-thumb-wrap">
+                                            <img src="{{ asset($company->logo) }}"
+                                                 alt="{{ $company->name }} logo"
+                                                 class="logo-management-thumb">
+                                        </div>
                                     </td>
                                     <td>
                                         <strong>{{ $company->name }}</strong>

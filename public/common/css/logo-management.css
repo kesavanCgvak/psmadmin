@@ -1,7 +1,32 @@
+.logo-management-logo-cell {
+    width: 96px;
+    min-width: 96px;
+    max-width: 96px;
+    vertical-align: middle !important;
+    text-align: center;
+}
+
+.logo-management-thumb-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 80px;
+    height: 56px;
+    margin: 0 auto;
+    padding: 4px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    background-color: #fff;
+}
+
 .logo-management-thumb {
-    max-width: 80px;
-    max-height: 50px;
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-width: 72px;
+    max-height: 48px;
     object-fit: contain;
+    object-position: center;
 }
 
 .logo-promotion-consent-card .custom-switch {
@@ -126,6 +151,22 @@
 }
 
 @media (max-width: 576px) {
+    .logo-management-logo-cell {
+        width: 84px;
+        min-width: 84px;
+        max-width: 84px;
+    }
+
+    .logo-management-thumb-wrap {
+        width: 68px;
+        height: 48px;
+    }
+
+    .logo-management-thumb {
+        max-width: 60px;
+        max-height: 40px;
+    }
+
     .logo-management-actions-cell {
         width: 88px;
         min-width: 88px;

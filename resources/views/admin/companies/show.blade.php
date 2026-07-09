@@ -179,16 +179,17 @@
                             <dd class="col-sm-9"><span class="text-muted">Not applicable (User companies do not use partner Open API).</span></dd>
                         @endif
 
-                        <dt class="col-sm-3">User Promotional Logo</dt>
+                        @if($companyType === 'provider')
+                        <dt class="col-sm-3">Provider Promotional Logo</dt>
                         <dd class="col-sm-9">
                             @if((bool) $company->logo_available_for_promotion)
-                                <span class="badge badge-success">User enabled</span>
+                                <span class="badge badge-success">Provider enabled</span>
                             @else
-                                <span class="badge badge-secondary">User disabled</span>
+                                <span class="badge badge-secondary">Provider disabled</span>
                             @endif
                             @if($company->logo_promotion_consent_at)
                                 <div class="small text-muted mt-1">
-                                    User consent updated: {{ $company->logo_promotion_consent_at->format('M d, Y H:i') }}
+                                    Provider consent updated: {{ $company->logo_promotion_consent_at->format('M d, Y H:i') }}
                                 </div>
                             @endif
                             @if(!$company->logo)
@@ -234,6 +235,7 @@
                                 <span class="text-muted">N/A</span>
                             @endif
                         </dd>
+                        @endif
 
                         <dt class="col-sm-3">Search Priority</dt>
                         <dd class="col-sm-9">{{ $company->search_priority ?? 'N/A' }}</dd>
@@ -320,6 +322,7 @@
                 </div>
             </div>
 
+            @if($companyType === 'provider')
             <div class="card logo-promotion-consent-card">
                 <div class="card-header">
                     <h3 class="card-title">Admin Promotional Logo</h3>
@@ -357,6 +360,7 @@
                     </form>
                 </div>
             </div>
+            @endif
 
             <!-- Users List -->
             <div class="card">
