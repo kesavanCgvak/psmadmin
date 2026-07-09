@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\GeoController;
 use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\IntegrationController;
 use App\Http\Controllers\Api\InventoryMasterDataController;
+use App\Http\Controllers\Api\InventoryMasterSpecExportController;
 use App\Http\Controllers\Api\IssueTypeController;
 use App\Http\Controllers\Api\JobNegotiationController;
 use App\Http\Controllers\Api\LocationController;
@@ -188,6 +189,10 @@ Route::middleware('jwt.verify')->group(function () {
 Route::middleware('jwt.verify')->get('/products/{product_id}', [ProductController::class, 'show'])
     ->whereNumber('product_id');
 Route::middleware('jwt.verify')->get('/inventory-master/physical-details', [InventoryMasterDataController::class, 'show']);
+Route::middleware(['jwt.verify', 'throttle:5,1'])->post(
+    '/inventory-master/specifications/export-sql',
+    [InventoryMasterSpecExportController::class, 'export']
+);
 Route::middleware('jwt.verify')->post('/products/create-or-attach', [ProductController::class, 'createOrAttach']);
 Route::middleware('jwt.verify')->post('/products/import', [ProductController::class, 'importProducts']); // Legacy endpoint
 
