@@ -2,10 +2,11 @@
 
 namespace App\Services;
 
+use App\Contracts\SmsProvider;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class TextMagicService
+class TextMagicService implements SmsProvider
 {
     protected string $baseUrl = 'https://rest.textmagic.com/api/v2';
 
@@ -102,7 +103,7 @@ class TextMagicService
                     'phones_preview' => substr($phones, 0, 4) . '***',
                 ]);
 
-                return ['success' => true, 'message_id' => $messageId];
+                return ['success' => true, 'message_id' => $messageId, 'response' => $data];
             }
 
             Log::error('TextMagic SMS API failed.', [
@@ -114,6 +115,7 @@ class TextMagicService
             return [
                 'success' => false,
                 'error' => $response->body() ?: 'Unknown API error',
+                'response' => ['status' => $response->status(), 'body' => $response->json() ?? $response->body()],
             ];
         } catch (\Throwable $e) {
             Log::error('TextMagic SMS exception.', [
@@ -124,6 +126,7 @@ class TextMagicService
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
+                'response' => null,
             ];
         }
     }

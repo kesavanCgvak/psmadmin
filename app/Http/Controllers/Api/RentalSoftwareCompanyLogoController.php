@@ -15,10 +15,29 @@ class RentalSoftwareCompanyLogoController extends Controller
     public function index()
     {
         try {
-            $logos = RentalSoftwareCompanyLogo::query()
+            Log::info('RentalSoftwareCompanyLogo API: request started', [
+                'db_connection' => config('database.default'),
+                'db_database' => config('database.connections.' . config('database.default') . '.database'),
+                'env_db_database' => env('DB_DATABASE'),
+            ]);
+
+            $query = RentalSoftwareCompanyLogo::query()
                 ->where('is_active', true)
-                ->orderBy('company_name')
-                ->get(['id', 'company_name', 'logo_path', 'is_active']);
+                ->orderBy('sort_order', 'asc')
+                ->orderBy('id', 'asc')
+                ->select(['id', 'company_name', 'logo_path', 'is_active']);
+
+            Log::info('RentalSoftwareCompanyLogo API: SQL query', [
+                'sql' => $query->toSql(),
+                'bindings' => $query->getBindings(),
+            ]);
+
+            $logos = $query->get();
+
+            Log::info('RentalSoftwareCompanyLogo API: query results', [
+                'count' => $logos->count(),
+                'results' => $logos->toArray(),
+            ]);
 
             $data = $logos->map(function (RentalSoftwareCompanyLogo $logo) {
                 return [
@@ -29,9 +48,14 @@ class RentalSoftwareCompanyLogoController extends Controller
                 ];
             });
 
+            Log::info('RentalSoftwareCompanyLogo API: response data', [
+                'count' => $data->count(),
+                'data' => $data->values()->all(),
+            ]);
+
             return response()->json([
                 'success' => true,
-                'data' => $data,
+                'data' => $data->values(),
             ], 200);
         } catch (\Throwable $e) {
             Log::error('Error fetching rental software company logos: ' . $e->getMessage(), [

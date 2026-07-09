@@ -39,6 +39,7 @@
                 <thead>
                     <tr>
                         <th>ID</th>
+                        <th>Sort Order</th>
                         <th>Logo</th>
                         <th>Company Name</th>
                         <th>Status</th>
@@ -50,6 +51,7 @@
                     @forelse($logos as $logo)
                         <tr>
                             <td>{{ $logo->id }}</td>
+                            <td>{{ $logo->sort_order }}</td>
                             <td>
                                 <img src="{{ $logo->logo_url }}"
                                      alt="{{ $logo->company_name }}"
@@ -82,7 +84,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="text-center text-muted">No rental software company logos found.</td>
+                            <td colspan="7" class="text-center text-muted">No rental software company logos found.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -96,10 +98,11 @@
     <script>
         $(document).ready(function() {
             initResponsiveDataTable('rentalSoftwareCompanyLogosTable', {
+                "order": [[1, "asc"]],
                 "columnDefs": [
-                    { "orderable": false, "targets": [1, -1] },
-                    { "searchable": false, "targets": [1, -1] },
-                    { "responsivePriority": 1, "targets": 2 },
+                    { "orderable": false, "targets": [2, -1] },
+                    { "searchable": false, "targets": [2, -1] },
+                    { "responsivePriority": 1, "targets": 3 },
                     { "responsivePriority": 2, "targets": -1 }
                 ]
             });

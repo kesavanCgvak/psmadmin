@@ -11,6 +11,10 @@ class Company extends Model
         'account_type',
         'description',
         'logo',
+        'logo_available_for_promotion',
+        'logo_promotion_consent_at',
+        'logo_promotion_admin_enabled',
+        'logo_promotion_sort_order',
         'image1',
         'image2',
         'image3',
@@ -43,6 +47,10 @@ class Company extends Model
 
     protected $casts = [
         'blocked_by_admin_at' => 'datetime',
+        'logo_available_for_promotion' => 'boolean',
+        'logo_promotion_consent_at' => 'datetime',
+        'logo_promotion_admin_enabled' => 'boolean',
+        'logo_promotion_sort_order' => 'integer',
         'is_open_api_enabled' => 'boolean',
         'rating_override' => 'float',
         'rating_override_set_at' => 'datetime',
@@ -275,6 +283,81 @@ class Company extends Model
     public function integrations()
     {
         return $this->hasMany(CompanyIntegration::class);
+    }
+
+    /**
+     * Apply promotional logo consent. Returns false when enabling without an uploaded logo.
+     */
+    public function applyLogoPromotionConsent(bool $enabled): bool
+    {
+        if ($enabled && empty($this->logo)) {
+            return false;
+        }
+
+        $this->logo_available_for_promotion = $enabled;
+        $this->logo_promotion_consent_at = $enabled ? now() : null;
+
+        if ($enabled && (int) $this->logo_promotion_sort_order <= 0) {
+            $maxSortOrder = (int) static::query()->max('logo_promotion_sort_order');
+            $this->logo_promotion_sort_order = $maxSortOrder + 1;
+        }
+
+        $this->save();
+
+        return true;
+    }
+
+    /**
+     * Revoke promotional logo consent (e.g. when the logo is deleted).
+     */
+    public function revokeLogoPromotionConsent(): void
+    {
+        if (!$this->logo_available_for_promotion && $this->logo_promotion_consent_at === null) {
+            return;
+        }
+
+        $this->logo_available_for_promotion = false;
+        $this->logo_promotion_consent_at = null;
+        $this->save();
+    }
+
+    /**
+     * Admin-only toggle for promotional logo use (does not change user consent).
+     */
+    public function applyLogoPromotionAdminStatus(bool $enabled): bool
+    {
+        if ($enabled && empty($this->logo)) {
+            return false;
+        }
+
+        $this->logo_promotion_admin_enabled = $enabled;
+        $this->save();
+
+        return true;
+    }
+
+    /**
+     * Whether the logo is available for promotional use (user consent + admin approval + logo exists).
+     */
+    public function isLogoPromotionActive(): bool
+    {
+        return !empty($this->logo)
+            && (bool) $this->logo_available_for_promotion
+            && (bool) $this->logo_promotion_admin_enabled;
+    }
+
+    /**
+     * Scope for logos approved by both the company and admin.
+     */
+    public function scopePromotionalLogosActive($query)
+    {
+        return $query
+            ->whereNotNull('logo')
+            ->where('logo', '!=', '')
+            ->where('logo_available_for_promotion', true)
+            ->where('logo_promotion_admin_enabled', true)
+            ->orderBy('logo_promotion_sort_order')
+            ->orderBy('name');
     }
 
 }

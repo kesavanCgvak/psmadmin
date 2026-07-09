@@ -393,6 +393,18 @@ return [
             'icon_color' => 'info',
         ],
         [
+            'text' => 'Products Missing Specifications',
+            'route' => 'admin.products-missing-specifications.index',
+            'icon' => 'fas fa-fw fa-ruler-combined',
+            'icon_color' => 'warning',
+        ],
+        [
+            'text' => 'Rejected AI Products',
+            'route' => 'admin.ai-rejections.index',
+            'icon' => 'fas fa-fw fa-ban',
+            'icon_color' => 'danger',
+        ],
+        [
             'text' => 'AI Specification Audit Logs',
             'route' => 'admin.ai-specifications.audit-logs',
             'icon' => 'fas fa-fw fa-history',
@@ -404,6 +416,12 @@ return [
             'route' => 'admin.companies.index',
             'icon' => 'fas fa-fw fa-building',
             'icon_color' => 'primary',
+        ],
+        [
+            'text' => 'Logo Management',
+            'route' => 'admin.logo-management.index',
+            'icon' => 'fas fa-fw fa-image',
+            'icon_color' => 'info',
         ],
         [
             'text' => 'Currencies',
@@ -516,6 +534,18 @@ return [
             'route' => 'admin.email-logs.index',
             'icon' => 'fas fa-fw fa-inbox',
             'icon_color' => 'info',
+        ],
+        [
+            'text' => 'Communication',
+            'icon' => 'fas fa-fw fa-comments',
+            'icon_color' => 'info',
+            'submenu' => [
+                [
+                    'text' => 'SMS Logs',
+                    'route' => 'admin.sms-logs.index',
+                    'icon' => 'fas fa-fw fa-sms',
+                ],
+            ],
         ],
         [
             'text' => 'User Login Activity',

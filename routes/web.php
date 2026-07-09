@@ -13,10 +13,13 @@ use App\Http\Controllers\Admin\DateFormatManagementController;
 use App\Http\Controllers\Admin\EmailLogController;
 use App\Http\Controllers\Admin\EmailTemplateController;
 use App\Http\Controllers\Admin\EquipmentManagementController;
+use App\Http\Controllers\Admin\InventoryAiRejectedProductController;
 use App\Http\Controllers\Admin\InventoryAiSpecificationController;
+use App\Http\Controllers\Admin\ProductsMissingSpecificationsController;
 use App\Http\Controllers\Admin\IssueTypeController;
 use App\Http\Controllers\Admin\JobRatingsController;
 use App\Http\Controllers\Admin\LinearUnitController;
+use App\Http\Controllers\Admin\LogoManagementController;
 use App\Http\Controllers\Admin\PaymentSettingsController;
 use App\Http\Controllers\Admin\PricingSchemeManagementController;
 use App\Http\Controllers\Admin\ProductController;
@@ -24,6 +27,7 @@ use App\Http\Controllers\Admin\RegionController;
 use App\Http\Controllers\Admin\RentalJobController;
 use App\Http\Controllers\Admin\RentalSoftwareCompanyLogoController;
 use App\Http\Controllers\Admin\RentalSoftwareManagementController;
+use App\Http\Controllers\Admin\SmsLogController;
 use App\Http\Controllers\Admin\StateProvinceController;
 use App\Http\Controllers\Admin\SubCategoryController;
 use App\Http\Controllers\Admin\SubscriptionManagementController;
@@ -131,6 +135,8 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('products.merge');
     Route::post('/products/bulk-verify', [ProductController::class, 'bulkVerify'])
         ->name('products.bulk-verify');
+    Route::post('/products/bulk-enrich-specifications', [ProductController::class, 'bulkEnrichSpecifications'])
+        ->name('products.bulk-enrich-specifications');
 
     // AI specification enrichment review
     Route::prefix('ai-specifications')->name('ai-specifications.')->group(function () {
@@ -138,10 +144,24 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         Route::get('/data', [InventoryAiSpecificationController::class, 'data'])->name('data');
         Route::get('/audit-logs', [InventoryAiSpecificationController::class, 'auditLogs'])->name('audit-logs');
         Route::get('/audit-logs/data', [InventoryAiSpecificationController::class, 'auditLogsData'])->name('audit-logs.data');
+        Route::post('/bulk-approve', [InventoryAiSpecificationController::class, 'bulkApprove'])->name('bulk-approve');
+        Route::post('/bulk-reject', [InventoryAiSpecificationController::class, 'bulkReject'])->name('bulk-reject');
         Route::get('/{aiSpec}', [InventoryAiSpecificationController::class, 'show'])->name('show');
         Route::put('/{aiSpec}', [InventoryAiSpecificationController::class, 'update'])->name('update');
         Route::post('/{aiSpec}/approve', [InventoryAiSpecificationController::class, 'approve'])->name('approve');
         Route::post('/{aiSpec}/reject', [InventoryAiSpecificationController::class, 'reject'])->name('reject');
+    });
+
+    Route::prefix('ai-rejections')->name('ai-rejections.')->group(function () {
+        Route::get('/', [InventoryAiRejectedProductController::class, 'index'])->name('index');
+        Route::get('/data', [InventoryAiRejectedProductController::class, 'data'])->name('data');
+        Route::post('/rerun', [InventoryAiRejectedProductController::class, 'rerun'])->name('rerun');
+    });
+
+    Route::prefix('products-missing-specifications')->name('products-missing-specifications.')->group(function () {
+        Route::get('/', [ProductsMissingSpecificationsController::class, 'index'])->name('index');
+        Route::get('/data', [ProductsMissingSpecificationsController::class, 'data'])->name('data');
+        Route::post('/enrich', [ProductsMissingSpecificationsController::class, 'enrich'])->name('enrich');
     });
 
     // AJAX endpoint for getting subcategories by category
@@ -163,6 +183,14 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('companies.bulk-delete');
     Route::post('/companies/{company}/rating-override', [CompanyManagementController::class, 'updateRatingOverride'])
         ->name('companies.rating-override');
+
+    // Logo management (promotional logo consent)
+    Route::get('/logo-management', [LogoManagementController::class, 'index'])
+        ->name('logo-management.index');
+    Route::patch('/logo-management/{company}', [LogoManagementController::class, 'updateAdminStatus'])
+        ->name('logo-management.update-admin-status');
+    Route::patch('/logo-management/{company}/sort-order', [LogoManagementController::class, 'updateSortOrder'])
+        ->name('logo-management.update-sort-order');
 
     // Company AJAX endpoints
     Route::get('/ajax/regions/{region}/countries', [CompanyManagementController::class, 'getCountriesByRegion'])
@@ -307,6 +335,12 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('email-logs.index');
     Route::get('/email-logs/{emailLog}', [EmailLogController::class, 'show'])
         ->name('email-logs.show');
+
+    // SMS Logs (read-only)
+    Route::get('/sms-logs', [SmsLogController::class, 'index'])
+        ->name('sms-logs.index');
+    Route::get('/sms-logs/{smsLog}', [SmsLogController::class, 'show'])
+        ->name('sms-logs.show');
 
     // User login / logout / failed login history (read-only)
     Route::get('/user-auth-events', [UserAuthEventController::class, 'index'])

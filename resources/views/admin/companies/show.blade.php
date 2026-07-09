@@ -20,6 +20,7 @@
 
 @section('css')
     @include('partials.responsive-css')
+    <link rel="stylesheet" href="{{ asset('common/css/logo-management.css') }}">
 @stop
 
 @section('content')
@@ -178,6 +179,62 @@
                             <dd class="col-sm-9"><span class="text-muted">Not applicable (User companies do not use partner Open API).</span></dd>
                         @endif
 
+                        <dt class="col-sm-3">User Promotional Logo</dt>
+                        <dd class="col-sm-9">
+                            @if((bool) $company->logo_available_for_promotion)
+                                <span class="badge badge-success">User enabled</span>
+                            @else
+                                <span class="badge badge-secondary">User disabled</span>
+                            @endif
+                            @if($company->logo_promotion_consent_at)
+                                <div class="small text-muted mt-1">
+                                    User consent updated: {{ $company->logo_promotion_consent_at->format('M d, Y H:i') }}
+                                </div>
+                            @endif
+                            @if(!$company->logo)
+                                <div class="small text-muted mt-1">No company logo uploaded.</div>
+                            @endif
+                        </dd>
+
+                        <dt class="col-sm-3">Admin Promotional Logo</dt>
+                        <dd class="col-sm-9">
+                            @if((bool) $company->logo_promotion_admin_enabled)
+                                <span class="badge badge-success">Admin enabled</span>
+                            @else
+                                <span class="badge badge-warning">Admin disabled</span>
+                            @endif
+                            @if($company->isLogoPromotionActive())
+                                <div class="small text-success mt-1">Logo is live for promotional materials.</div>
+                            @else
+                                <div class="small text-muted mt-1">Logo is not live for promotional materials.</div>
+                            @endif
+                        </dd>
+
+                        <dt class="col-sm-3">Promotional Sort Order</dt>
+                        <dd class="col-sm-9">
+                            @if($company->logo)
+                                <form action="{{ route('admin.logo-management.update-sort-order', $company) }}" method="POST" class="logo-sort-order-form-company">
+                                    @csrf
+                                    @method('PATCH')
+                                    <input type="hidden" name="redirect_to" value="company">
+                                    <div class="input-group input-group-sm logo-sort-order-group">
+                                        <input type="number"
+                                               name="logo_promotion_sort_order"
+                                               class="form-control logo-sort-order-input"
+                                               min="0"
+                                               max="9999"
+                                               value="{{ (int) $company->logo_promotion_sort_order }}">
+                                        <div class="input-group-append">
+                                            <button type="submit" class="btn btn-primary">Save Order</button>
+                                        </div>
+                                    </div>
+                                    <div class="small text-muted mt-1">Lower numbers appear first in promotional logo listings.</div>
+                                </form>
+                            @else
+                                <span class="text-muted">N/A</span>
+                            @endif
+                        </dd>
+
                         <dt class="col-sm-3">Search Priority</dt>
                         <dd class="col-sm-9">{{ $company->search_priority ?? 'N/A' }}</dd>
 
@@ -263,6 +320,44 @@
                 </div>
             </div>
 
+            <div class="card logo-promotion-consent-card">
+                <div class="card-header">
+                    <h3 class="card-title">Admin Promotional Logo</h3>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        Control admin approval for promotional logo use. This does not change the company's own consent setting.
+                    </p>
+                    <form action="{{ route('admin.logo-management.update-admin-status', $company) }}" method="POST">
+                        @csrf
+                        @method('PATCH')
+                        <input type="hidden" name="redirect_to" value="company">
+                        <div class="form-group mb-2">
+                            <label for="logoPromotionAdminSelect" class="small font-weight-bold">Admin approval</label>
+                            <select name="logo_promotion_admin_enabled"
+                                    id="logoPromotionAdminSelect"
+                                    class="form-control form-control-sm"
+                                    {{ $company->logo ? '' : 'disabled' }}>
+                                <option value="0" {{ !(bool) $company->logo_promotion_admin_enabled ? 'selected' : '' }}>
+                                    Disabled by admin
+                                </option>
+                                <option value="1" {{ (bool) $company->logo_promotion_admin_enabled ? 'selected' : '' }}>
+                                    Enabled by admin
+                                </option>
+                            </select>
+                        </div>
+                        @if(!$company->logo)
+                            <p class="small text-warning mb-0">
+                                Upload a company logo before enabling admin approval.
+                            </p>
+                        @endif
+                        <button type="submit" class="btn btn-primary btn-sm mt-3" {{ $company->logo ? '' : 'disabled' }}>
+                            Save Admin Setting
+                        </button>
+                    </form>
+                </div>
+            </div>
+
             <!-- Users List -->
             <div class="card">
                 <div class="card-header">
@@ -294,92 +389,95 @@
         </div>
     </div>
 
-    <!-- Marketplace inventory (company_inventory ↔ inventory_master) -->
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header d-flex flex-wrap align-items-center justify-content-between">
-                    <h3 class="card-title mb-2 mb-md-0">Marketplace inventory</h3>
-                    <div class="card-tools">
-                        <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addCompanyInventoryModal">
-                            <i class="fas fa-plus"></i> Add product from catalog
+    @if($companyType === 'provider')
+        <!-- Marketplace inventory (company_inventory ↔ inventory_master) -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header d-flex flex-wrap align-items-center justify-content-between">
+                        <h3 class="card-title mb-2 mb-md-0">Marketplace inventory</h3>
+                        <div class="card-tools">
+                            <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addCompanyInventoryModal">
+                                <i class="fas fa-plus"></i> Add product from catalog
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            Products listed here are available in this company’s marketplace (<code>company_inventory</code> linked to <code>inventory_master</code>).
+                            Use search to find rows; add or remove links without leaving this page.
+                        </p>
+                        <table id="companyInventoryTable" class="table table-bordered table-striped table-sm" style="width:100%">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Model</th>
+                                    <th>Brand</th>
+                                    <th>PSM Code</th>
+                                    <th>Dimensions</th>
+                                    <th>Weight</th>
+                                    <th>Qty</th>
+                                    <th>Rental price</th>
+                                    <th>Software code</th>
+                                    <th style="width:90px;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add product from inventory_master -->
+        <div class="modal fade" id="addCompanyInventoryModal" tabindex="-1" role="dialog" aria-labelledby="addCompanyInventoryModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="addCompanyInventoryModalLabel">Add product to company inventory</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="inventoryMasterSearch">Search catalog (model, PSM code, brand)</label>
+                            <input type="text" class="form-control" id="inventoryMasterSearch" placeholder="Type at least 2 characters…" autocomplete="off">
+                        </div>
+                        <input type="hidden" id="selectedProductId" value="">
+                        <div id="inventoryMasterSearchHint" class="small text-muted mb-2">Only products not already linked to this company are shown.</div>
+                        <div id="inventoryMasterSearchResults" class="list-group mb-3" style="max-height: 300px; overflow-y: auto;"></div>
+                        <div id="selectedProductSummary" class="alert alert-secondary py-2 d-none" role="alert"></div>
+                        <div class="form-row">
+                            <div class="form-group col-md-4">
+                                <label for="addInvQuantity">Quantity</label>
+                                <input type="number" class="form-control" id="addInvQuantity" value="1" min="1">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label for="addInvRental">Rental price (optional)</label>
+                                <input type="number" class="form-control" id="addInvRental" min="0" step="0.01" placeholder="Leave blank for unset">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label for="addInvSoftware">Software code (optional)</label>
+                                <input type="text" class="form-control" id="addInvSoftware" maxlength="255">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="confirmAddInventoryBtn" disabled>
+                            <i class="fas fa-link"></i> Link product
                         </button>
                     </div>
                 </div>
-                <div class="card-body">
-                    <p class="text-muted small mb-3">
-                        Products listed here are available in this company’s marketplace (<code>company_inventory</code> linked to <code>inventory_master</code>).
-                        Use search to find rows; add or remove links without leaving this page.
-                    </p>
-                    <table id="companyInventoryTable" class="table table-bordered table-striped table-sm" style="width:100%">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Model</th>
-                                <th>Brand</th>
-                                <th>PSM Code</th>
-                                <th>Dimensions</th>
-                                <th>Weight</th>
-                                <th>Qty</th>
-                                <th>Rental price</th>
-                                <th>Software code</th>
-                                <th style="width:90px;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
             </div>
         </div>
-    </div>
-
-    <!-- Add product from inventory_master -->
-    <div class="modal fade" id="addCompanyInventoryModal" tabindex="-1" role="dialog" aria-labelledby="addCompanyInventoryModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="addCompanyInventoryModalLabel">Add product to company inventory</h5>
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label for="inventoryMasterSearch">Search catalog (model, PSM code, brand)</label>
-                        <input type="text" class="form-control" id="inventoryMasterSearch" placeholder="Type at least 2 characters…" autocomplete="off">
-                    </div>
-                    <input type="hidden" id="selectedProductId" value="">
-                    <div id="inventoryMasterSearchHint" class="small text-muted mb-2">Only products not already linked to this company are shown.</div>
-                    <div id="inventoryMasterSearchResults" class="list-group mb-3" style="max-height: 300px; overflow-y: auto;"></div>
-                    <div id="selectedProductSummary" class="alert alert-secondary py-2 d-none" role="alert"></div>
-                    <div class="form-row">
-                        <div class="form-group col-md-4">
-                            <label for="addInvQuantity">Quantity</label>
-                            <input type="number" class="form-control" id="addInvQuantity" value="1" min="1">
-                        </div>
-                        <div class="form-group col-md-4">
-                            <label for="addInvRental">Rental price (optional)</label>
-                            <input type="number" class="form-control" id="addInvRental" min="0" step="0.01" placeholder="Leave blank for unset">
-                        </div>
-                        <div class="form-group col-md-4">
-                            <label for="addInvSoftware">Software code (optional)</label>
-                            <input type="text" class="form-control" id="addInvSoftware" maxlength="255">
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="confirmAddInventoryBtn" disabled>
-                        <i class="fas fa-link"></i> Link product
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+    @endif
 @stop
 
 @section('js')
     @include('partials.responsive-js')
+    @if($companyType === 'provider')
     <script>
         $(function () {
             $.ajaxSetup({
@@ -569,5 +667,6 @@
             });
         });
     </script>
+    @endif
 @stop
 

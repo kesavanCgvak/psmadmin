@@ -354,14 +354,19 @@ class ProviderApiKeyController extends Controller
     }
 
     /**
-     * Admin addresses for registration-style notifications (see config/mail.php).
+     * Admin inbox(es) for Open API access requests (config/mail.php).
      *
      * @return list<string>
      */
     private function adminNotificationRecipients(): array
     {
-        $raw = config('mail.to.addresses', []);
-        $list = is_array($raw) ? $raw : [$raw];
+        $dedicated = config('mail.open_api_access_request.addresses', []);
+        if (is_array($dedicated) && $dedicated !== []) {
+            return $dedicated;
+        }
+
+        $registrationNotify = config('mail.to.addresses', []);
+        $list = is_array($registrationNotify) ? $registrationNotify : [$registrationNotify];
         $emails = array_values(array_filter(array_map(static function ($v) {
             return is_string($v) ? trim($v) : '';
         }, $list)));

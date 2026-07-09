@@ -19,6 +19,8 @@ use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\GeoController;
 use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\IntegrationController;
+use App\Http\Controllers\Api\InventoryMasterDataController;
+use App\Http\Controllers\Api\InventoryMasterSpecExportController;
 use App\Http\Controllers\Api\IssueTypeController;
 use App\Http\Controllers\Api\JobNegotiationController;
 use App\Http\Controllers\Api\LocationController;
@@ -28,6 +30,7 @@ use App\Http\Controllers\Api\PaymentStatusController;
 use App\Http\Controllers\Api\PartnerProductController;
 use App\Http\Controllers\Api\PricingSchemeController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\PromotionalLogoController;
 use App\Http\Controllers\Api\ProviderApiKeyController;
 use App\Http\Controllers\Api\RegistrationCheckController;
 use App\Http\Controllers\Api\RentalJobActionsController;
@@ -73,6 +76,9 @@ Route::get('/terms-and-conditions', [TermsAndConditionsController::class, 'index
 
 // Rental software company logos (public endpoint)
 Route::get('/rental-software-company-logos', [RentalSoftwareCompanyLogoController::class, 'index']);
+
+// Promotional company logos (public endpoint; user consent + admin approval)
+Route::get('/promotional-logos', [PromotionalLogoController::class, 'index']);
 
 
 // CMS pages (public; HTML already sanitized when saved in admin)
@@ -148,6 +154,7 @@ Route::middleware('jwt.verify')->group(function () {
     Route::get('/company/preferences', [CompanyController::class, 'getPreferences']);
     Route::put('/company/preferences', [CompanyController::class, 'updatePreferences']);
     Route::put('/companies/{id}/gear-finder-visibility', [CompanyController::class, 'updateGearFinderVisibility']);
+    Route::put('/company/logo-promotion-consent', [CompanyController::class, 'updateLogoPromotionConsent']);
 
     Route::get('/company/images', [CompanyController::class, 'getImages']);
     Route::post('/company/images', [CompanyController::class, 'uploadImage']);
@@ -181,6 +188,11 @@ Route::middleware('jwt.verify')->group(function () {
 
 Route::middleware('jwt.verify')->get('/products/{product_id}', [ProductController::class, 'show'])
     ->whereNumber('product_id');
+Route::middleware('jwt.verify')->get('/inventory-master/physical-details', [InventoryMasterDataController::class, 'show']);
+Route::middleware(['jwt.verify', 'throttle:5,1'])->post(
+    '/inventory-master/specifications/export-sql',
+    [InventoryMasterSpecExportController::class, 'export']
+);
 Route::middleware('jwt.verify')->post('/products/create-or-attach', [ProductController::class, 'createOrAttach']);
 Route::middleware('jwt.verify')->post('/products/import', [ProductController::class, 'importProducts']); // Legacy endpoint
 

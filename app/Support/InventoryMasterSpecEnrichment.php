@@ -19,6 +19,14 @@ final class InventoryMasterSpecEnrichment
         'weight_unit_id',
     ];
 
+    /** @var list<string> */
+    public const DIMENSION_WEIGHT_FIELDS = [
+        'height',
+        'width',
+        'length',
+        'weight',
+    ];
+
     public static function isFieldEmpty(mixed $value): bool
     {
         return $value === null || $value === '';
@@ -156,6 +164,11 @@ final class InventoryMasterSpecEnrichment
                     ->from('inventory_master_ai_specs')
                     ->whereColumn('inventory_master_ai_specs.inventory_master_id', 'inventory_master.id')
                     ->where('inventory_master_ai_specs.status', InventoryMasterAiSpec::STATUS_PENDING);
+            })
+            ->whereNotExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('inventory_master_ai_rejections')
+                    ->whereColumn('inventory_master_ai_rejections.inventory_master_id', 'inventory_master.id');
             });
 
         if (!$retryIncomplete) {
@@ -164,6 +177,11 @@ final class InventoryMasterSpecEnrichment
                     ->from('inventory_master_ai_specs')
                     ->whereColumn('inventory_master_ai_specs.inventory_master_id', 'inventory_master.id')
                     ->where('inventory_master_ai_specs.status', InventoryMasterAiSpec::STATUS_APPROVED);
+            })->whereNotExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('inventory_master_ai_specs')
+                    ->whereColumn('inventory_master_ai_specs.inventory_master_id', 'inventory_master.id')
+                    ->where('inventory_master_ai_specs.status', InventoryMasterAiSpec::STATUS_INSUFFICIENT_INFORMATION);
             });
         }
 
@@ -177,6 +195,31 @@ final class InventoryMasterSpecEnrichment
                 $inner->orWhereNull($field);
             }
         });
+    }
+
+    public static function scopeMissingDimensionOrWeight(Builder $query): Builder
+    {
+        return $query->where(function (Builder $inner) {
+            foreach (self::DIMENSION_WEIGHT_FIELDS as $field) {
+                $inner->orWhereNull($field)->orWhere($field, '');
+            }
+        });
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function missingDimensionOrWeightFields(Product $product): array
+    {
+        $missing = [];
+
+        foreach (self::DIMENSION_WEIGHT_FIELDS as $field) {
+            if (self::isFieldEmpty($product->{$field})) {
+                $missing[] = $field;
+            }
+        }
+
+        return $missing;
     }
 
     /**
