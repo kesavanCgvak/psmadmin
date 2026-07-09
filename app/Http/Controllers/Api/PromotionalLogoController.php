@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 class PromotionalLogoController extends Controller
 {
     /**
-     * Public API: active promotional company logos (user consent + admin approval), sorted by display order.
+     * Public API: active promotional provider logos (user consent + admin approval), sorted by display order.
      */
     public function index(): JsonResponse
     {

@@ -15,6 +15,7 @@ class LogoManagementController extends Controller
     public function index()
     {
         $companies = Company::query()
+            ->providers()
             ->where('logo_available_for_promotion', true)
             ->whereNotNull('logo')
             ->where('logo', '!=', '')
@@ -41,6 +42,11 @@ class LogoManagementController extends Controller
         }
 
         $enabled = (bool) $request->boolean('logo_promotion_admin_enabled');
+
+        if (!$company->isProviderCompany()) {
+            return redirect()->back()
+                ->with('error', 'Promotional logo management is only available for provider companies.');
+        }
 
         if ($enabled && empty($company->logo)) {
             return redirect()->back()
@@ -72,6 +78,11 @@ class LogoManagementController extends Controller
             return redirect()->back()
                 ->withErrors($validator)
                 ->withInput();
+        }
+
+        if (!$company->isProviderCompany()) {
+            return redirect()->back()
+                ->with('error', 'Promotional logo management is only available for provider companies.');
         }
 
         $company->update([

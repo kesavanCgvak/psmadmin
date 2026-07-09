@@ -345,6 +345,13 @@ class CompanyController extends Controller
                 ], 404);
             }
 
+            if (!$company->isProviderCompany()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Promotional logo consent is only available for provider companies.',
+                ], 403);
+            }
+
             $validated = $request->validate([
                 'logo_available_for_promotion' => 'required|boolean',
             ]);
@@ -491,7 +498,7 @@ class CompanyController extends Controller
                 $request->type => $relativePath
             ]);
 
-            if ($request->type === 'logo') {
+            if ($request->type === 'logo' && $company->isProviderCompany()) {
                 $company->applyLogoPromotionConsent(true);
             }
 

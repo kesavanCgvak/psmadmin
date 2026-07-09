@@ -341,9 +341,26 @@ class Company extends Model
      */
     public function isLogoPromotionActive(): bool
     {
-        return !empty($this->logo)
+        return $this->isProviderCompany()
+            && !empty($this->logo)
             && (bool) $this->logo_available_for_promotion
             && (bool) $this->logo_promotion_admin_enabled;
+    }
+
+    /**
+     * Whether this company is a provider account.
+     */
+    public function isProviderCompany(): bool
+    {
+        return strtolower((string) ($this->account_type ?? '')) === 'provider';
+    }
+
+    /**
+     * Scope to provider companies only.
+     */
+    public function scopeProviders($query)
+    {
+        return $query->whereRaw('LOWER(account_type) = ?', ['provider']);
     }
 
     /**
@@ -352,6 +369,7 @@ class Company extends Model
     public function scopePromotionalLogosActive($query)
     {
         return $query
+            ->providers()
             ->whereNotNull('logo')
             ->where('logo', '!=', '')
             ->where('logo_available_for_promotion', true)
