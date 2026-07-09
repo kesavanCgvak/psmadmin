@@ -19,6 +19,14 @@ final class InventoryMasterSpecEnrichment
         'weight_unit_id',
     ];
 
+    /** @var list<string> */
+    public const DIMENSION_WEIGHT_FIELDS = [
+        'height',
+        'width',
+        'length',
+        'weight',
+    ];
+
     public static function isFieldEmpty(mixed $value): bool
     {
         return $value === null || $value === '';
@@ -187,6 +195,31 @@ final class InventoryMasterSpecEnrichment
                 $inner->orWhereNull($field);
             }
         });
+    }
+
+    public static function scopeMissingDimensionOrWeight(Builder $query): Builder
+    {
+        return $query->where(function (Builder $inner) {
+            foreach (self::DIMENSION_WEIGHT_FIELDS as $field) {
+                $inner->orWhereNull($field)->orWhere($field, '');
+            }
+        });
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function missingDimensionOrWeightFields(Product $product): array
+    {
+        $missing = [];
+
+        foreach (self::DIMENSION_WEIGHT_FIELDS as $field) {
+            if (self::isFieldEmpty($product->{$field})) {
+                $missing[] = $field;
+            }
+        }
+
+        return $missing;
     }
 
     /**

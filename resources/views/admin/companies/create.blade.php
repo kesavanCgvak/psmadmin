@@ -332,7 +332,7 @@
                         </div>
                     </div>
 
-                    <div class="col-md-6">
+                    <div id="rental_software_group" class="col-md-6 @if(strtolower((string) old('account_type', '')) === 'user') d-none @endif">
                         <div class="form-group">
                             <label for="rental_software_id">Rental Software</label>
                             <select class="form-control @error('rental_software_id') is-invalid @enderror"
@@ -376,7 +376,7 @@
                         </div>
                     </div>
 
-                    <div class="col-md-6">
+                    <div id="pricing_scheme_group" class="col-md-6 @if(strtolower((string) old('account_type', '')) === 'user') d-none @endif">
                         <div class="form-group">
                             <label for="pricing_scheme_id">Pricing Scheme</label>
                             <select class="form-control @error('pricing_scheme_id') is-invalid @enderror"
@@ -414,15 +414,22 @@
 @section('js')
 <script>
 $(document).ready(function() {
-    function syncOpenApiAccessVisibility() {
+    function syncAccountTypeFieldVisibility() {
         var isProvider = $('#account_type').val() === 'provider';
+        var isUser = $('#account_type').val() === 'user';
+
         $('#open_api_access_group').toggleClass('d-none', !isProvider);
         if (!isProvider) {
             $('#is_open_api_enabled_no').prop('checked', true);
         }
+
+        $('#rental_software_group, #pricing_scheme_group').toggleClass('d-none', isUser);
+        if (isUser) {
+            $('#rental_software_id, #pricing_scheme_id').val('');
+        }
     }
-    $('#account_type').on('change', syncOpenApiAccessVisibility);
-    syncOpenApiAccessVisibility();
+    $('#account_type').on('change', syncAccountTypeFieldVisibility);
+    syncAccountTypeFieldVisibility();
 
     // Store initial values for form reload scenarios
     const initialCountryId = "{{ old('country_id') }}";

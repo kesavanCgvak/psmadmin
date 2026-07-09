@@ -393,92 +393,95 @@
         </div>
     </div>
 
-    <!-- Marketplace inventory (company_inventory ↔ inventory_master) -->
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header d-flex flex-wrap align-items-center justify-content-between">
-                    <h3 class="card-title mb-2 mb-md-0">Marketplace inventory</h3>
-                    <div class="card-tools">
-                        <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addCompanyInventoryModal">
-                            <i class="fas fa-plus"></i> Add product from catalog
+    @if($companyType === 'provider')
+        <!-- Marketplace inventory (company_inventory ↔ inventory_master) -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header d-flex flex-wrap align-items-center justify-content-between">
+                        <h3 class="card-title mb-2 mb-md-0">Marketplace inventory</h3>
+                        <div class="card-tools">
+                            <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addCompanyInventoryModal">
+                                <i class="fas fa-plus"></i> Add product from catalog
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            Products listed here are available in this company’s marketplace (<code>company_inventory</code> linked to <code>inventory_master</code>).
+                            Use search to find rows; add or remove links without leaving this page.
+                        </p>
+                        <table id="companyInventoryTable" class="table table-bordered table-striped table-sm" style="width:100%">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Model</th>
+                                    <th>Brand</th>
+                                    <th>PSM Code</th>
+                                    <th>Dimensions</th>
+                                    <th>Weight</th>
+                                    <th>Qty</th>
+                                    <th>Rental price</th>
+                                    <th>Software code</th>
+                                    <th style="width:90px;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add product from inventory_master -->
+        <div class="modal fade" id="addCompanyInventoryModal" tabindex="-1" role="dialog" aria-labelledby="addCompanyInventoryModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="addCompanyInventoryModalLabel">Add product to company inventory</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="inventoryMasterSearch">Search catalog (model, PSM code, brand)</label>
+                            <input type="text" class="form-control" id="inventoryMasterSearch" placeholder="Type at least 2 characters…" autocomplete="off">
+                        </div>
+                        <input type="hidden" id="selectedProductId" value="">
+                        <div id="inventoryMasterSearchHint" class="small text-muted mb-2">Only products not already linked to this company are shown.</div>
+                        <div id="inventoryMasterSearchResults" class="list-group mb-3" style="max-height: 300px; overflow-y: auto;"></div>
+                        <div id="selectedProductSummary" class="alert alert-secondary py-2 d-none" role="alert"></div>
+                        <div class="form-row">
+                            <div class="form-group col-md-4">
+                                <label for="addInvQuantity">Quantity</label>
+                                <input type="number" class="form-control" id="addInvQuantity" value="1" min="1">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label for="addInvRental">Rental price (optional)</label>
+                                <input type="number" class="form-control" id="addInvRental" min="0" step="0.01" placeholder="Leave blank for unset">
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label for="addInvSoftware">Software code (optional)</label>
+                                <input type="text" class="form-control" id="addInvSoftware" maxlength="255">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="confirmAddInventoryBtn" disabled>
+                            <i class="fas fa-link"></i> Link product
                         </button>
                     </div>
                 </div>
-                <div class="card-body">
-                    <p class="text-muted small mb-3">
-                        Products listed here are available in this company’s marketplace (<code>company_inventory</code> linked to <code>inventory_master</code>).
-                        Use search to find rows; add or remove links without leaving this page.
-                    </p>
-                    <table id="companyInventoryTable" class="table table-bordered table-striped table-sm" style="width:100%">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Model</th>
-                                <th>Brand</th>
-                                <th>PSM Code</th>
-                                <th>Dimensions</th>
-                                <th>Weight</th>
-                                <th>Qty</th>
-                                <th>Rental price</th>
-                                <th>Software code</th>
-                                <th style="width:90px;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
             </div>
         </div>
-    </div>
-
-    <!-- Add product from inventory_master -->
-    <div class="modal fade" id="addCompanyInventoryModal" tabindex="-1" role="dialog" aria-labelledby="addCompanyInventoryModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="addCompanyInventoryModalLabel">Add product to company inventory</h5>
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label for="inventoryMasterSearch">Search catalog (model, PSM code, brand)</label>
-                        <input type="text" class="form-control" id="inventoryMasterSearch" placeholder="Type at least 2 characters…" autocomplete="off">
-                    </div>
-                    <input type="hidden" id="selectedProductId" value="">
-                    <div id="inventoryMasterSearchHint" class="small text-muted mb-2">Only products not already linked to this company are shown.</div>
-                    <div id="inventoryMasterSearchResults" class="list-group mb-3" style="max-height: 300px; overflow-y: auto;"></div>
-                    <div id="selectedProductSummary" class="alert alert-secondary py-2 d-none" role="alert"></div>
-                    <div class="form-row">
-                        <div class="form-group col-md-4">
-                            <label for="addInvQuantity">Quantity</label>
-                            <input type="number" class="form-control" id="addInvQuantity" value="1" min="1">
-                        </div>
-                        <div class="form-group col-md-4">
-                            <label for="addInvRental">Rental price (optional)</label>
-                            <input type="number" class="form-control" id="addInvRental" min="0" step="0.01" placeholder="Leave blank for unset">
-                        </div>
-                        <div class="form-group col-md-4">
-                            <label for="addInvSoftware">Software code (optional)</label>
-                            <input type="text" class="form-control" id="addInvSoftware" maxlength="255">
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="confirmAddInventoryBtn" disabled>
-                        <i class="fas fa-link"></i> Link product
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+    @endif
 @stop
 
 @section('js')
     @include('partials.responsive-js')
+    @if($companyType === 'provider')
     <script>
         $(function () {
             $.ajaxSetup({
@@ -668,5 +671,6 @@
             });
         });
     </script>
+    @endif
 @stop
 

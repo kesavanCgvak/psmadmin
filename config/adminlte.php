@@ -393,6 +393,12 @@ return [
             'icon_color' => 'info',
         ],
         [
+            'text' => 'Products Missing Specifications',
+            'route' => 'admin.products-missing-specifications.index',
+            'icon' => 'fas fa-fw fa-ruler-combined',
+            'icon_color' => 'warning',
+        ],
+        [
             'text' => 'Rejected AI Products',
             'route' => 'admin.ai-rejections.index',
             'icon' => 'fas fa-fw fa-ban',
