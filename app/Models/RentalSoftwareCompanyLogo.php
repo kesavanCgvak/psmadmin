@@ -12,6 +12,7 @@ class RentalSoftwareCompanyLogo extends Model
     protected $fillable = [
         'company_name',
         'logo_path',
+        'link',
         'is_active',
         'sort_order',
     ];
