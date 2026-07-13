@@ -42,6 +42,7 @@
                         <th>Sort Order</th>
                         <th>Logo</th>
                         <th>Company Name</th>
+                        <th>Link</th>
                         <th>Status</th>
                         <th>Created At</th>
                         <th>Actions</th>
@@ -59,6 +60,15 @@
                                      style="max-height: 48px; max-width: 120px; object-fit: contain;">
                             </td>
                             <td><strong>{{ $logo->company_name }}</strong></td>
+                            <td>
+                                @if($logo->link)
+                                    <a href="{{ $logo->link }}" target="_blank" rel="noopener noreferrer" title="{{ $logo->link }}">
+                                        <i class="fas fa-external-link-alt"></i> View
+                                    </a>
+                                @else
+                                    <span class="text-muted">—</span>
+                                @endif
+                            </td>
                             <td>
                                 @if($logo->is_active)
                                     <span class="badge badge-success">Active</span>
@@ -84,7 +94,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center text-muted">No rental software company logos found.</td>
+                            <td colspan="8" class="text-center text-muted">No rental software company logos found.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -100,8 +110,8 @@
             initResponsiveDataTable('rentalSoftwareCompanyLogosTable', {
                 "order": [[1, "asc"]],
                 "columnDefs": [
-                    { "orderable": false, "targets": [2, -1] },
-                    { "searchable": false, "targets": [2, -1] },
+                    { "orderable": false, "targets": [2, 4, -1] },
+                    { "searchable": false, "targets": [2, 4, -1] },
                     { "responsivePriority": 1, "targets": 3 },
                     { "responsivePriority": 2, "targets": -1 }
                 ]

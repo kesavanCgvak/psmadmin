@@ -25,7 +25,7 @@ class RentalSoftwareCompanyLogoController extends Controller
                 ->where('is_active', true)
                 ->orderBy('sort_order', 'asc')
                 ->orderBy('id', 'asc')
-                ->select(['id', 'company_name', 'logo_path', 'is_active']);
+                ->select(['id', 'company_name', 'logo_path', 'link', 'is_active']);
 
             Log::info('RentalSoftwareCompanyLogo API: SQL query', [
                 'sql' => $query->toSql(),
@@ -44,6 +44,7 @@ class RentalSoftwareCompanyLogoController extends Controller
                     'id' => $logo->id,
                     'company_name' => $logo->company_name,
                     'logo_path' => InventoryImageManagementService::publicUrl($logo->logo_path),
+                    'link' => $logo->link,
                     'is_active' => $logo->is_active,
                 ];
             });

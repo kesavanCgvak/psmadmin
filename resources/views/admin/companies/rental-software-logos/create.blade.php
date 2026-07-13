@@ -34,6 +34,20 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="link">Link (URL)</label>
+                    <input type="url"
+                           class="form-control @error('link') is-invalid @enderror"
+                           id="link"
+                           name="link"
+                           value="{{ old('link') }}"
+                           placeholder="https://example.com">
+                    @error('link')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <small class="form-text text-muted">Optional. Website URL for this company logo.</small>
+                </div>
+
+                <div class="form-group">
                     <label for="logo">Logo Image <span class="text-danger">*</span></label>
                     <div class="custom-file">
                         <input type="file"

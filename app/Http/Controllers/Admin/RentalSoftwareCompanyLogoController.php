@@ -54,6 +54,7 @@ class RentalSoftwareCompanyLogoController extends Controller
         RentalSoftwareCompanyLogo::create([
             'company_name' => trim($request->company_name),
             'logo_path' => $logoPath,
+            'link' => $this->normalizeLink($request->input('link')),
             'is_active' => $request->boolean('is_active'),
             'sort_order' => (int) $request->input('sort_order'),
         ]);
@@ -91,6 +92,7 @@ class RentalSoftwareCompanyLogoController extends Controller
 
         $data = [
             'company_name' => trim($request->company_name),
+            'link' => $this->normalizeLink($request->input('link')),
             'is_active' => $request->boolean('is_active'),
             'sort_order' => (int) $request->input('sort_order'),
         ];
@@ -135,6 +137,7 @@ class RentalSoftwareCompanyLogoController extends Controller
 
         $rules = [
             'company_name' => 'required|string|max:255',
+            'link' => 'nullable|url|max:2048',
             'is_active' => 'boolean',
             'sort_order' => ['required', 'integer', 'min:1', 'max:999999', $sortOrderRule],
         ];
@@ -146,6 +149,17 @@ class RentalSoftwareCompanyLogoController extends Controller
         }
 
         return Validator::make($request->all(), $rules, $this->validationMessages());
+    }
+
+    private function normalizeLink(?string $link): ?string
+    {
+        if ($link === null) {
+            return null;
+        }
+
+        $trimmed = trim($link);
+
+        return $trimmed === '' ? null : $trimmed;
     }
 
     /**

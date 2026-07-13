@@ -34,6 +34,20 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="link">Link (URL)</label>
+                    <input type="url"
+                           class="form-control @error('link') is-invalid @enderror"
+                           id="link"
+                           name="link"
+                           value="{{ old('link', $logo->link) }}"
+                           placeholder="https://example.com">
+                    @error('link')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <small class="form-text text-muted">Optional. Website URL for this company logo.</small>
+                </div>
+
+                <div class="form-group">
                     <label>Current Logo</label>
                     <div>
                         <img src="{{ $logo->logo_url }}"
