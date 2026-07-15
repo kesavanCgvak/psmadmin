@@ -363,6 +363,7 @@ Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handleWebhook'
 // ------------------------------
 Route::middleware('jwt.verify')->group(function () {
     Route::get('/subscriptions/current', [SubscriptionController::class, 'getCurrent']);
+    Route::get('/subscriptions/trial-incentive', [SubscriptionController::class, 'trialIncentive']);
     Route::post('/subscriptions/cancel', [SubscriptionController::class, 'cancel']);
     Route::post('/subscriptions/update-payment', [SubscriptionController::class, 'updatePaymentMethod']);
     Route::get('/subscription/payment-method', [SubscriptionController::class, 'getPaymentMethod']);

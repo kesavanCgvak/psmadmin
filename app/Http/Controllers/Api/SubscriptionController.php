@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\StripeSubscriptionService;
+use App\Services\TrialIncentiveService;
 use App\Models\Subscription;
 use App\Models\Setting;
 use App\Mail\SubscriptionCanceledNotification;
@@ -18,9 +19,14 @@ class SubscriptionController extends Controller
 {
     protected $subscriptionService;
 
-    public function __construct(StripeSubscriptionService $subscriptionService)
-    {
+    protected $trialIncentiveService;
+
+    public function __construct(
+        StripeSubscriptionService $subscriptionService,
+        TrialIncentiveService $trialIncentiveService
+    ) {
         $this->subscriptionService = $subscriptionService;
+        $this->trialIncentiveService = $trialIncentiveService;
         Stripe::setApiKey(config('services.stripe.secret'));
     }
 
@@ -153,7 +159,7 @@ class SubscriptionController extends Controller
                 ], 404);
             }
             
-            return response()->json([
+            $response = [
                 'success' => true,
                 'subscription' => [
                     'id' => $subscription->id,
@@ -169,7 +175,13 @@ class SubscriptionController extends Controller
                     'is_company_subscription' => $isCompanySubscription,
                     'company_id' => $isCompanySubscription ? $user->company_id : null,
                 ],
-            ]);
+            ];
+
+            if ($isCompanySubscription && $user->company_id) {
+                $response['trial_incentive'] = $this->trialIncentiveService->getProgressForCompany((int) $user->company_id);
+            }
+
+            return response()->json($response);
         } catch (\Exception $e) {
             Log::error('Failed to get current subscription', [
                 'user_id' => $user->id ?? null,
@@ -180,6 +192,43 @@ class SubscriptionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve subscription',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get provider trial incentive progress (inventory milestones).
+     */
+    public function trialIncentive(Request $request)
+    {
+        $paymentCheck = $this->checkPaymentEnabled();
+        if ($paymentCheck) {
+            return $paymentCheck;
+        }
+
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+            $user->load('company');
+
+            if (! $user->company || strtolower($user->company->account_type ?? '') !== 'provider') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Trial incentives are only available for provider accounts.',
+                ], 403);
+            }
+
+            return response()->json([
+                'success' => true,
+                'trial_incentive' => $this->trialIncentiveService->getProgressForCompany((int) $user->company_id),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to get trial incentive progress', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve trial incentive progress',
             ], 500);
         }
     }
