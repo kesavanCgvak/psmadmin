@@ -28,12 +28,10 @@
                         <td><strong>Bonus months added</strong></td>
                         <td>{{ $bonus_months_applied }}</td>
                     </tr>
-                    @if($trial_end_date)
                     <tr>
                         <td><strong>New trial end date</strong></td>
                         <td>{{ $trial_end_date }}</td>
                     </tr>
-                    @endif
                     <tr>
                         <td><strong>Milestones earned</strong></td>
                         <td>{{ $grants_summary }}</td>

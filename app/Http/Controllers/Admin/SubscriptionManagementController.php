@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Subscription;
 use App\Services\StripeSubscriptionService;
+use App\Services\TrialIncentiveService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -12,9 +13,14 @@ class SubscriptionManagementController extends Controller
 {
     protected $stripeService;
 
-    public function __construct(StripeSubscriptionService $stripeService)
-    {
+    protected $trialIncentiveService;
+
+    public function __construct(
+        StripeSubscriptionService $stripeService,
+        TrialIncentiveService $trialIncentiveService
+    ) {
         $this->stripeService = $stripeService;
+        $this->trialIncentiveService = $trialIncentiveService;
     }
 
     /**
@@ -106,8 +112,13 @@ class SubscriptionManagementController extends Controller
      */
     public function show($id)
     {
-        $subscription = Subscription::with(['user.profile', 'user.company'])
+        $subscription = Subscription::with(['user.profile', 'user.company', 'trialIncentiveGrants'])
             ->findOrFail($id);
+
+        $trialIncentive = null;
+        if ($subscription->company_id && strtolower($subscription->account_type ?? '') === 'provider') {
+            $trialIncentive = $this->trialIncentiveService->getProgressForCompany((int) $subscription->company_id);
+        }
 
         // Calculate days until trial end
         $daysUntilTrialEnd = null;
@@ -130,7 +141,8 @@ class SubscriptionManagementController extends Controller
             'daysUntilTrialEnd',
             'daysUntilPeriodEnd',
             'stripeSubscriptionUrl',
-            'stripeCustomerUrl'
+            'stripeCustomerUrl',
+            'trialIncentive'
         ));
     }
 
