@@ -33,7 +33,7 @@ class EvaluateTrialIncentives extends Command
 
         foreach ($companyIds as $companyId) {
             $company = Company::query()->find($companyId);
-            if (! $company || $company->account_type !== 'provider') {
+            if (! $company || strtolower($company->account_type ?? '') !== 'provider') {
                 continue;
             }
 

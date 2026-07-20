@@ -374,6 +374,8 @@ class SubscriptionController extends Controller
             return $paymentCheck;
         }
 
+        $user = null;
+
         try {
             $user = JWTAuth::parseToken()->authenticate();
             
@@ -467,7 +469,10 @@ class SubscriptionController extends Controller
             // Ensure payment method is attached to the customer before setting default
             $paymentMethod = \Stripe\PaymentMethod::retrieve($paymentMethodId);
             if ($paymentMethod->customer && $paymentMethod->customer !== $stripeCustomerId) {
-                throw new \Exception('Payment method is attached to a different customer.');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment method is attached to a different customer.',
+                ], 400);
             }
 
             if (!$paymentMethod->customer) {
@@ -519,13 +524,30 @@ class SubscriptionController extends Controller
                 'subscription_status' => $subscription->stripe_status,
                 'is_company_subscription' => $isCompanySubscription,
             ]);
-            
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Stripe\Exception\CardException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Card was declined: ' . $e->getMessage()
+                'message' => 'Card was declined: ' . $e->getMessage(),
             ], 400);
-        } catch (\Exception $e) {
+        } catch (ApiErrorException $e) {
+            Log::error('Stripe API error while updating payment method', [
+                'user_id' => $user->id ?? null,
+                'error' => $e->getMessage(),
+                'stripe_code' => $e->getStripeCode(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment service error: ' . $e->getMessage(),
+            ], 502);
+        } catch (\Throwable $e) {
             Log::error('Failed to update payment method', [
                 'user_id' => $user->id ?? null,
                 'error' => $e->getMessage(),
@@ -534,7 +556,7 @@ class SubscriptionController extends Controller
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to update payment method'
+                'message' => 'Failed to update payment method',
             ], 500);
         }
     }

@@ -131,7 +131,7 @@ class TrialIncentiveService
         }
 
         $company = Company::query()->find($companyId);
-        if (! $company || $company->account_type !== 'provider') {
+        if (! $company || strtolower($company->account_type ?? '') !== 'provider') {
             return $empty;
         }
 
@@ -358,8 +358,8 @@ class TrialIncentiveService
         array $grants,
         int $productCount
     ): void {
-        $company = Company::query()->with('providerOwner')->find($companyId);
-        $owner = $company?->providerOwner;
+        $company = Company::query()->find($companyId);
+        $owner = $company?->providerOwner();
 
         if (! $owner?->email) {
             return;
