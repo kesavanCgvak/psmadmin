@@ -16,3 +16,6 @@ Schedule::command('supply-jobs:send-renter-rating-reminders')->daily();
 
 // Mark email logs pending for 60+ minutes as failed (likely delivery failure)
 Schedule::command('email-logs:mark-stale-failed --minutes=60')->hourly();
+
+// Reconcile provider inventory trial incentives (safety net for missed hooks)
+Schedule::command('subscriptions:evaluate-trial-incentives')->daily();

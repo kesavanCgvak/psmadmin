@@ -44,6 +44,11 @@ class Subscription extends Model
         return $this->belongsTo(Company::class);
     }
 
+    public function trialIncentiveGrants()
+    {
+        return $this->hasMany(SubscriptionTrialIncentiveGrant::class);
+    }
+
     public function isActive(): bool
     {
         // Active only if status is active or trialing

@@ -206,6 +206,11 @@ class Company extends Model
             ->latestOfMany();
     }
 
+    public function trialIncentiveGrants()
+    {
+        return $this->hasMany(SubscriptionTrialIncentiveGrant::class);
+    }
+
     /**
      * Get all subscriptions for this company (for reporting/analytics)
      */

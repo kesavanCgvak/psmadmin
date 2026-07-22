@@ -113,6 +113,13 @@ class EmailTemplateSeeder extends Seeder
                 'file' => 'subscriptionCanceled.blade.php',
             ],
             [
+                'name' => 'trialIncentiveGranted',
+                'subject' => 'Your Free Trial Has Been Extended',
+                'description' => 'Email sent when a provider earns bonus trial months from marketplace inventory milestones',
+                'variables' => ['user_full_name', 'company_name', 'product_count', 'bonus_months_applied', 'trial_end_date', 'grants_summary', 'current_year'],
+                'file' => 'trialIncentiveGranted.blade.php',
+            ],
+            [
                 'name' => 'support-request',
                 'subject' => 'New Support Request',
                 'description' => 'Email sent to support team when a new support request is submitted',
