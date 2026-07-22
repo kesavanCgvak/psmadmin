@@ -62,6 +62,11 @@ return [
     'contact_search_path' => env('FLEX_CONTACT_SEARCH_PATH', '/f5/api/contact/search'),
     'contact_create_path' => env('FLEX_CONTACT_CREATE_PATH', '/f5/api/contact'),
     'resource_type_path' => env('FLEX_RESOURCE_TYPE_PATH', '/f5/api/resource-type/nodes'),
+    /** Query params for GET resource-type/nodes (Flex Client type lookup). */
+    'resource_type_query' => [
+        'classname' => env('FLEX_RESOURCE_TYPE_CLASSNAME', 'resource-type'),
+        'nodeId' => env('FLEX_RESOURCE_TYPE_NODE_ID', 'root'),
+    ],
     'global_search_path' => env('FLEX_GLOBAL_SEARCH_PATH', '/f5/api/search'),
     'element_create_path' => env('FLEX_ELEMENT_CREATE_PATH', '/f5/api/element'),
 

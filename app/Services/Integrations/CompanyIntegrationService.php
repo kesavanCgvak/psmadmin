@@ -81,13 +81,17 @@ class CompanyIntegrationService
         $integration = DB::transaction(function () use ($existingDifferentSource, $companyId, $integrationType, $data) {
             $existingDifferentSource->delete();
 
-            return CompanyIntegration::updateOrCreate(
-                [
-                    'company_id' => $companyId,
-                    'integration_type' => $integrationType,
-                ],
-                $data
-            );
+            // Remove any existing row via query builder so we never decrypt a stale
+            // api_key (e.g. after APP_KEY rotation — updateOrCreate would throw "The MAC is invalid").
+            DB::table('company_integrations')
+                ->where('company_id', $companyId)
+                ->where('integration_type', $integrationType)
+                ->delete();
+
+            return CompanyIntegration::create(array_merge([
+                'company_id' => $companyId,
+                'integration_type' => $integrationType,
+            ], $data));
         });
 
         if ($integrationType === 'rentman') {

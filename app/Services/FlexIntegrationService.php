@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Company;
 use App\Models\CompanyIntegration;
+use App\Models\Country;
 use App\Models\Equipment;
 use App\Models\FlexIntegrationLog;
 use App\Models\Product;
@@ -33,6 +34,8 @@ class FlexIntegrationService
 
     protected ?FlexIntegrationLogger $flexLogger = null;
 
+    protected ?int $rentalRequestId = null;
+
     public function __construct(
         protected int $providerCompanyId,
         protected CompanyIntegration $integration,
@@ -45,6 +48,116 @@ class FlexIntegrationService
         $this->flexLogger = $logger;
 
         return $this;
+    }
+
+    public function setRentalRequestId(?int $rentalRequestId): self
+    {
+        $this->rentalRequestId = $rentalRequestId;
+
+        return $this;
+    }
+
+    /**
+     * Central Flex HTTP client: logs URL, payload, response, and next_step for every call.
+     *
+     * @param  array<string, mixed>|null  $payload  Query params for GET, JSON body for POST/PUT/PATCH
+     */
+    protected function flexHttp(
+        string $method,
+        string $url,
+        ?array $payload,
+        string $action,
+        string $nextStep,
+        ?string $flexQuoteId = null,
+        ?string $flexProductId = null,
+    ): \Illuminate\Http\Client\Response {
+        $method = strtoupper($method);
+        $rentalRequestId = $this->rentalRequestId ?? 0;
+
+        FlexIntegrationDebugLog::step(
+            $rentalRequestId,
+            $this->providerCompanyId,
+            $action,
+            'REQUEST',
+            [
+                'http_method' => $method,
+                'api_url' => $url,
+                'request_payload' => $payload,
+            ],
+            $nextStep,
+        );
+
+        $this->logIntegration(
+            $action,
+            FlexIntegrationLog::STATUS_PROCESSING,
+            $url,
+            $payload,
+            null,
+            $method . ' outbound — next: ' . $nextStep,
+            $flexQuoteId,
+            $flexProductId,
+        );
+
+        try {
+            $pending = Http::timeout($this->timeout)
+                ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']));
+
+            $response = match ($method) {
+                'GET' => $pending->get($url, $payload ?? []),
+                'POST' => $pending->post($url, $payload ?? []),
+                'PUT' => $pending->put($url, $payload ?? []),
+                'PATCH' => $pending->patch($url, $payload ?? []),
+                'DELETE' => $pending->delete($url, $payload ?? []),
+                default => throw new \InvalidArgumentException('Unsupported Flex HTTP method: ' . $method),
+            };
+        } catch (\Throwable $e) {
+            FlexIntegrationDebugLog::apiCall(
+                $rentalRequestId,
+                $this->providerCompanyId,
+                $action,
+                $method,
+                $url,
+                $payload,
+                null,
+                null,
+                false,
+                $nextStep,
+                $e->getMessage(),
+            );
+
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_API_ERROR,
+                FlexIntegrationLog::STATUS_FAILED,
+                $url,
+                $payload,
+                null,
+                $e->getMessage(),
+                $flexQuoteId,
+                $flexProductId,
+            );
+
+            throw $e;
+        }
+
+        $json = $response->json();
+        $bodyForLog = is_array($json) ? $json : ['raw' => self::truncateHttpBody($response->body())];
+        $success = $response->successful();
+
+        FlexIntegrationDebugLog::apiCall(
+            $rentalRequestId,
+            $this->providerCompanyId,
+            $action,
+            $method,
+            $url,
+            $payload,
+            $response->status(),
+            $bodyForLog,
+            $success,
+            $nextStep,
+            $success ? null : ('HTTP ' . $response->status()),
+        );
+
+        return $response;
     }
 
     public static function forProviderCompany(int $providerCompanyId): ?self
@@ -186,12 +299,16 @@ class FlexIntegrationService
             $url = $this->baseUrl . '/' . ltrim($path, '/');
 
             try {
-                $response = Http::timeout($this->timeout)
-                    ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']))
-                    ->get($url, [
+                $response = $this->flexHttp(
+                    'GET',
+                    $url,
+                    [
                         'elementId' => '',
                         'parentElementId' => '',
-                    ]);
+                    ],
+                    FlexIntegrationLog::ACTION_FETCH_ELEMENT_FIELDS,
+                    'Use resolved quote field defaults (statusId, locationId, etc.) when creating sales quote',
+                );
 
                 $json = $response->json();
 
@@ -308,9 +425,13 @@ class FlexIntegrationService
         $expectedName = 'Pro Subrental Marketplace';
 
         try {
-            $response = Http::timeout($this->timeout)
-                ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']))
-                ->get($url);
+            $response = $this->flexHttp(
+                'GET',
+                $url,
+                null,
+                FlexIntegrationLog::ACTION_FETCH_REFERRAL_SOURCE,
+                'Attach referralSourceId to sales quote create payload',
+            );
 
             $body = $response->json();
 
@@ -402,67 +523,75 @@ class FlexIntegrationService
     public function getOrCreateClient(User $requester): string
     {
         $profile = $requester->profile ?? UserProfile::where('user_id', $requester->id)->first();
+        $requesterName = self::resolveRequesterDisplayName($requester, $profile);
 
-        $firstName = trim((string) ($profile->first_name ?? ''));
-        $lastName = trim((string) ($profile->last_name ?? ''));
-        $email = trim((string) ($profile->email ?? $requester->email ?? ''));
-        $mobile = trim((string) ($profile->mobile ?? ''));
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            FlexIntegrationLog::ACTION_CREATE_CLIENT,
+            'STARTED',
+            ['name' => $requesterName !== '' ? $requesterName : null],
+            'Search Flex contact by requester name only; create contact if not found',
+        );
 
-        if ($email !== '') {
-            $found = $this->searchContact($email);
+        if ($requesterName !== '') {
+            $found = $this->searchContact($requesterName);
             if ($found !== null) {
                 Log::info('Flex Integration: Client Found', [
                     'provider_company_id' => $this->providerCompanyId,
                     'client_id' => $found,
+                    'matched_by' => 'name',
                 ]);
+
+                FlexIntegrationDebugLog::step(
+                    $this->rentalRequestId ?? 0,
+                    $this->providerCompanyId,
+                    FlexIntegrationLog::ACTION_CREATE_CLIENT,
+                    'SUCCESS',
+                    ['flex_client_id' => $found, 'matched_by' => 'name'],
+                    'Create Flex sales quote using this clientId',
+                );
 
                 return $found;
             }
         }
 
-        $nameSearch = trim($firstName . ' ' . $lastName);
-        if ($nameSearch !== '') {
-            $found = $this->searchContact($nameSearch);
-            if ($found !== null) {
-                Log::info('Flex Integration: Client Found', [
-                    'provider_company_id' => $this->providerCompanyId,
-                    'client_id' => $found,
-                ]);
-
-                return $found;
-            }
+        $clientResourceType = $this->getClientResourceType();
+        if (!$clientResourceType) {
+            throw new \RuntimeException('Flex Client resource type id not found (GET resource-type/nodes?classname=resource-type&nodeId=root, name = Client).');
         }
 
-        $clientTypeId = $this->getClientResourceTypeId();
-        if (!$clientTypeId) {
-            throw new \RuntimeException('Flex Client resource type id not found (GET /f5/api/resource-type, name = Client).');
-        }
+        $requester->loadMissing(['company.country', 'company.state', 'company.city']);
 
-        $payload = array_filter([
-            'salutation' => '',
-            'firstName' => $firstName !== '' ? $firstName : ($requester->username ?? 'Customer'),
-            'lastName' => $lastName !== '' ? $lastName : '—',
-            'organization' => false,
-            'email' => $email !== '' ? $email : null,
-            'mobilePhone' => $mobile !== '' ? $mobile : null,
-            'resourceTypes' => [['id' => $clientTypeId]],
-        ], fn ($v) => $v !== null && $v !== []);
+        $payload = self::buildFlexContactCreatePayload($requester, $profile, $clientResourceType);
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            FlexIntegrationLog::ACTION_CREATE_CLIENT,
+            'CREATE_REQUEST',
+            [
+                'company_id' => $requester->company?->id,
+                'has_address' => ($payload['addresses'] ?? []) !== [],
+                'has_phone' => $payload['mobilePhone'] !== null,
+                'has_email' => ($payload['email'] ?? '') !== '',
+                'address_city' => $requester->company?->city?->name,
+                'address_state' => $requester->company?->state?->name,
+                'address_country' => $requester->company?->country?->name,
+            ],
+            'POST Flex Create Contact API',
+        );
 
         $path = config('flex.contact_create_path', '/f5/api/contact');
         $url = $this->baseUrl . '/' . ltrim($path, '/');
 
-        $this->logIntegration(
-            FlexIntegrationLog::ACTION_CREATE_CLIENT,
-            FlexIntegrationLog::STATUS_PROCESSING,
+        $response = $this->flexHttp(
+            'POST',
             $url,
             $payload,
-            null,
-            'POST create Flex contact (outbound payload)',
+            FlexIntegrationLog::ACTION_CREATE_CLIENT,
+            'Create Flex sales quote with resolved clientId',
         );
-
-        $response = Http::timeout($this->timeout)
-            ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']))
-            ->post($url, $payload);
 
         $body = $response->json();
 
@@ -516,6 +645,15 @@ class FlexIntegrationService
             'client_id' => (string) $id,
         ]);
 
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            FlexIntegrationLog::ACTION_CREATE_CLIENT,
+            'SUCCESS',
+            ['flex_client_id' => (string) $id, 'matched_by' => 'created'],
+            'Create Flex sales quote using this clientId',
+        );
+
         return (string) $id;
     }
 
@@ -567,18 +705,13 @@ class FlexIntegrationService
         $path = config('flex.element_create_path', '/f5/api/element');
         $url = rtrim($this->baseUrl . '/' . ltrim($path, '/'), '/') . '/';
 
-        $this->logIntegration(
-            FlexIntegrationLog::ACTION_CREATE_QUOTE,
-            FlexIntegrationLog::STATUS_PROCESSING,
+        $response = $this->flexHttp(
+            'POST',
             $url,
             $payload,
-            null,
-            'POST create sales quote (outbound payload)',
+            FlexIntegrationLog::ACTION_CREATE_QUOTE,
+            'Attach inventory line items to the new sales quote',
         );
-
-        $response = Http::timeout($this->timeout)
-            ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']))
-            ->post($url, $payload);
 
         $data = $response->json();
 
@@ -655,9 +788,13 @@ class FlexIntegrationService
         ];
 
         try {
-            $response = Http::timeout($this->timeout)
-                ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']))
-                ->get($url, $params);
+            $response = $this->flexHttp(
+                'GET',
+                $url,
+                $params,
+                FlexIntegrationLog::ACTION_SEARCH_PRODUCT,
+                'Attach found resource to sales quote (or mark product missing)',
+            );
 
             $data = $response->json();
 
@@ -759,20 +896,15 @@ class FlexIntegrationService
 
         ];
 
-        $this->logIntegration(
-            FlexIntegrationLog::ACTION_ADD_PRODUCT_TO_QUOTE,
-            FlexIntegrationLog::STATUS_PROCESSING,
+        $response = $this->flexHttp(
+            'POST',
             $url,
             $requestPayload,
-            null,
-            'POST add line item (outbound payload)',
+            FlexIntegrationLog::ACTION_ADD_PRODUCT_TO_QUOTE,
+            'Track fin-doc-quick-line-added event (or process next product line)',
             $salesQuoteId,
             $resourceId,
         );
-
-        $response = Http::timeout($this->timeout)
-            ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']))
-            ->post($url, $requestPayload);
 
         $data = $response->json();
 
@@ -833,18 +965,13 @@ class FlexIntegrationService
         $payload = ['eventType' => 'fin-doc-quick-line-added'];
 
         try {
-            $this->logIntegration(
-                FlexIntegrationLog::ACTION_TRACK_EVENT,
-                FlexIntegrationLog::STATUS_PROCESSING,
+            $response = $this->flexHttp(
+                'POST',
                 $url,
                 $payload,
-                null,
-                'POST user-event-tracking (outbound payload)',
+                FlexIntegrationLog::ACTION_TRACK_EVENT,
+                'Continue with next product line or finalize supply job sync',
             );
-
-            $response = Http::timeout($this->timeout)
-                ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']))
-                ->post($url, $payload);
 
             $body = $response->json();
 
@@ -949,9 +1076,13 @@ class FlexIntegrationService
         $params = ['searchText' => $searchText];
 
         try {
-            $response = Http::timeout($this->timeout)
-                ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']))
-                ->get($url, $params);
+            $response = $this->flexHttp(
+                'GET',
+                $url,
+                $params,
+                FlexIntegrationLog::ACTION_CREATE_CLIENT,
+                'Reuse found Flex contact as clientId by name (or create contact if not found)',
+            );
 
             $data = $response->json();
 
@@ -1005,20 +1136,53 @@ class FlexIntegrationService
 
     protected function getClientResourceTypeId(): ?string
     {
-        $cacheKey = 'flex_client_resource_type_id_' . $this->providerCompanyId;
+        $type = $this->getClientResourceType();
+
+        return isset($type['id']) ? (string) $type['id'] : null;
+    }
+
+    /**
+     * @return array{id: string, name: string}|null
+     */
+    protected function getClientResourceType(): ?array
+    {
+        $cacheKey = 'flex_client_resource_type_' . $this->providerCompanyId;
         $ttl = (int) config('flex.client_resource_type_cache_ttl', 86400);
         $cached = Cache::get($cacheKey);
-        if ($cached !== null && $cached !== '') {
-            return (string) $cached;
+        if (is_array($cached) && !empty($cached['id'])) {
+            return [
+                'id' => (string) $cached['id'],
+                'name' => (string) ($cached['name'] ?? 'Client'),
+            ];
+        }
+        if (is_string($cached) && $cached !== '') {
+            return ['id' => $cached, 'name' => 'Client'];
         }
 
-        $path = config('flex.resource_type_path', '/f5/api/resource-type');
+        // Legacy cache key from earlier releases.
+        $legacyCached = Cache::get('flex_client_resource_type_id_' . $this->providerCompanyId);
+        if (is_string($legacyCached) && $legacyCached !== '') {
+            $resolved = ['id' => $legacyCached, 'name' => 'Client'];
+            Cache::put($cacheKey, $resolved, $ttl);
+
+            return $resolved;
+        }
+
+        $path = config('flex.resource_type_path', '/f5/api/resource-type/nodes');
         $url = $this->baseUrl . '/' . ltrim($path, '/');
+        $params = array_filter(
+            config('flex.resource_type_query', ['classname' => 'resource-type', 'nodeId' => 'root']),
+            static fn ($v) => $v !== null && $v !== '',
+        );
 
         try {
-            $response = Http::timeout($this->timeout)
-                ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']))
-                ->get($url);
+            $response = $this->flexHttp(
+                'GET',
+                $url,
+                $params !== [] ? $params : null,
+                FlexIntegrationLog::ACTION_DIAGNOSTIC,
+                'Use Client resource type id when creating Flex contact',
+            );
 
             $data = $response->json();
 
@@ -1027,7 +1191,7 @@ class FlexIntegrationService
                     FlexIntegrationLog::ACTION_API_ERROR,
                     FlexIntegrationLog::STATUS_FAILED,
                     $url,
-                    null,
+                    $params,
                     is_array($data) ? $data : ['raw' => $response->body()],
                     'Resource type HTTP ' . $response->status(),
                 );
@@ -1044,14 +1208,20 @@ class FlexIntegrationService
                 if (!is_array($item)) {
                     continue;
                 }
-                $name = $item['name'] ?? '';
-                if (is_string($name) && strcasecmp(trim($name), 'Client') === 0) {
+                if (!empty($item['deleted'])) {
+                    continue;
+                }
+                $name = trim((string) ($item['name'] ?? ''));
+                if ($name !== '' && strcasecmp($name, 'Client') === 0) {
                     $id = $item['id'] ?? null;
                     if ($id !== null && $id !== '') {
-                        $idStr = (string) $id;
-                        Cache::put($cacheKey, $idStr, $ttl);
+                        $resolved = [
+                            'id' => (string) $id,
+                            'name' => $name,
+                        ];
+                        Cache::put($cacheKey, $resolved, $ttl);
 
-                        return $idStr;
+                        return $resolved;
                     }
                 }
             }
@@ -1062,7 +1232,7 @@ class FlexIntegrationService
                 FlexIntegrationLog::ACTION_API_ERROR,
                 FlexIntegrationLog::STATUS_FAILED,
                 $url,
-                null,
+                $params,
                 null,
                 $e->getMessage(),
             );
@@ -1072,10 +1242,133 @@ class FlexIntegrationService
     }
 
     /**
+     * Build Flex POST /contact payload from requester profile and requester company address.
+     *
+     * @param  array{id: string, name: string}  $clientResourceType
+     * @return array<string, mixed>
+     */
+    protected static function buildFlexContactCreatePayload(
+        User $requester,
+        ?UserProfile $profile,
+        array $clientResourceType,
+    ): array {
+        $firstName = trim((string) ($profile->first_name ?? ''));
+        $lastName = trim((string) ($profile->last_name ?? ''));
+        $email = trim((string) ($profile->email ?? $requester->email ?? ''));
+        $mobile = trim((string) ($profile->mobile ?? ''));
+
+        $company = $requester->company;
+        if ($company !== null) {
+            $company->loadMissing(['country', 'state', 'city']);
+        }
+
+        $country = $company?->country;
+        $phoneEntry = self::buildFlexPhoneEntry($mobile, $country);
+        $addressEntry = $company ? self::buildFlexContactAddress($company) : null;
+
+        $payload = [
+            'salutation' => 'None',
+            'firstName' => $firstName !== '' ? $firstName : ($requester->username ?? 'Customer'),
+            'middleName' => '',
+            'lastName' => $lastName !== '' ? $lastName : '—',
+            'employerId' => null,
+            'birthday' => null,
+            'defaultTermsInherited' => true,
+            'organization' => false,
+            'jobTitle' => null,
+            'assignedNumber' => null,
+            'tagIds' => null,
+            'defaultBillToContact' => true,
+            'resourceTypes' => [
+                [
+                    'id' => $clientResourceType['id'],
+                    'name' => $clientResourceType['name'],
+                ],
+            ],
+            'phoneNumbers' => $phoneEntry !== null ? [$phoneEntry] : [],
+            'mobilePhone' => $phoneEntry,
+            'officePhone' => null,
+            'internetAddresses' => $email !== '' ? [
+                ['url' => $email, 'name' => 'Email'],
+            ] : [],
+            'email' => $email !== '' ? $email : null,
+            'contactTypes' => [],
+            'addresses' => $addressEntry !== null ? [$addressEntry] : [],
+        ];
+
+        return $payload;
+    }
+
+    protected static function buildFlexPhoneEntry(string $mobile, ?Country $country): ?array
+    {
+        $dialNumber = preg_replace('/\D+/', '', $mobile) ?? '';
+        if ($dialNumber === '') {
+            return null;
+        }
+
+        $isoCode = trim((string) ($country?->iso_code ?? ''));
+        $countryCode = trim((string) ($country?->phone_code ?? ''));
+        $countryCode = ltrim($countryCode, '+');
+
+        return [
+            'dialNumber' => $dialNumber,
+            'isoCode' => $isoCode !== '' ? $isoCode : '',
+            'countryCode' => $countryCode !== '' ? $countryCode : '',
+            'name' => 'Mobile Phone',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected static function buildFlexContactAddress(Company $company): ?array
+    {
+        $company->loadMissing(['country', 'state', 'city']);
+
+        $line1 = trim((string) ($company->address_line_1 ?? ''));
+        $line2 = trim((string) ($company->address_line_2 ?? ''));
+
+        // Resolve names via company relations (city_id → cities, state_id → states_provinces, country_id → countries).
+        $cityName = trim((string) ($company->city?->name ?? ''));
+        $stateName = trim((string) ($company->state?->name ?? ''));
+        $countryName = trim((string) ($company->country?->name ?? ''));
+
+        $postalCode = trim((string) ($company->postal_code ?? ''));
+
+        if ($line1 === '' && $line2 === '' && $cityName === '' && $postalCode === '') {
+            return null;
+        }
+
+        return [
+            'name' => 'Work',
+            'line1' => $line1,
+            'line2' => $line2,
+            'city' => $cityName,
+            'stateOrProvince' => $stateName,
+            'postalCode' => $postalCode,
+            'country' => $countryName,
+        ];
+    }
+
+    protected static function resolveRequesterDisplayName(User $requester, ?UserProfile $profile): string
+    {
+        if ($profile !== null) {
+            $fromProfile = trim((string) $profile->full_name);
+            if ($fromProfile !== '') {
+                return $fromProfile;
+            }
+        }
+
+        return trim((string) ($requester->username ?? $requester->name ?? ''));
+    }
+
+    /**
      * One-shot checklist logged to flex_integration_logs + flex-integration.log before client/quote calls.
      */
     public function logPreFlightDiagnostics(int $rentalRequestId): void
     {
+        $this->rentalRequestId = $rentalRequestId;
+
         if ($this->flexLogger === null) {
             FlexIntegrationDebugLog::warning($rentalRequestId, $this->providerCompanyId, 'DIAGNOSTIC', 'SKIPPED', [
                 'reason' => 'FlexIntegrationLogger not attached to FlexIntegrationService',
@@ -1083,6 +1376,15 @@ class FlexIntegrationService
 
             return;
         }
+
+        FlexIntegrationDebugLog::step(
+            $rentalRequestId,
+            $this->providerCompanyId,
+            'DIAGNOSTIC',
+            'STARTED',
+            ['flex_api_base_url' => $this->baseUrl],
+            'Fetch element fields, referral source, and Client resource type',
+        );
 
         $settings = $this->quoteSettings();
 
@@ -1140,6 +1442,7 @@ class FlexIntegrationService
             'default_pricing_model_id_set' => !empty($settings['default_pricing_model_id']),
             'include_currency_in_quote' => (bool) config('flex.include_currency_in_quote', false),
             'resource_type_path' => config('flex.resource_type_path'),
+            'resource_type_query' => config('flex.resource_type_query'),
         ];
 
         $this->logIntegration(
@@ -1176,15 +1479,20 @@ class FlexIntegrationService
         }
 
         $clientRt = $this->getClientResourceTypeId();
-        $rtUrl = $this->baseUrl . '/' . ltrim(config('flex.resource_type_path', '/f5/api/resource-type/nodes'), '/');
+        $rtPath = config('flex.resource_type_path', '/f5/api/resource-type/nodes');
+        $rtQuery = http_build_query(array_filter(
+            config('flex.resource_type_query', ['classname' => 'resource-type', 'nodeId' => 'root']),
+            static fn ($v) => $v !== null && $v !== '',
+        ));
+        $rtUrl = $this->baseUrl . '/' . ltrim($rtPath, '/') . ($rtQuery !== '' ? '?' . $rtQuery : '');
         if (!$clientRt) {
             $this->logIntegration(
                 FlexIntegrationLog::ACTION_DIAGNOSTIC,
                 FlexIntegrationLog::STATUS_FAILED,
                 $rtUrl,
+                config('flex.resource_type_query'),
                 null,
-                null,
-                'BLOCKER: Flex resource type named "Client" not found — verify GET resource-type/nodes (or FLEX_RESOURCE_TYPE_PATH) on this Flex instance',
+                'BLOCKER: Flex resource type named "Client" not found — verify GET resource-type/nodes?classname=resource-type&nodeId=root on this Flex instance',
             );
         } else {
             $this->logIntegration(
@@ -1207,9 +1515,13 @@ class FlexIntegrationService
         $url = $this->baseUrl . '/' . ltrim($path, '/');
 
         try {
-            $response = Http::timeout($this->timeout)
-                ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']))
-                ->get($url);
+            $response = $this->flexHttp(
+                'GET',
+                $url,
+                null,
+                FlexIntegrationLog::ACTION_DIAGNOSTIC,
+                'Compare referral source names and resolve Pro Subrental Marketplace id',
+            );
 
             $body = $response->json();
             $items = self::normalizeFlexItemArray($body);
