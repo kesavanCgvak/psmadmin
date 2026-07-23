@@ -32,22 +32,26 @@ class HubSpotService
      * - true  => contact exists
      * - false => contact does not exist
      * - null  => unknown (API failure or misconfiguration)
+     *
+     * @param  array<string, mixed>  $context  Optional tracing context (user_id, company_id, correlation_id, etc.)
      */
-    public function contactExists(string $email): ?bool
+    public function contactExists(string $email, array $context = []): ?bool
     {
-        Log::info('Checking if HubSpot contact exists for email.', [
+        $logContext = array_merge($context, [
             'email' => $email,
+            'timestamp' => now()->toIso8601String(),
         ]);
 
+        Log::info('Checking if HubSpot contact exists for email.', $logContext);
+
         if (!$this->isConfigured()) {
-            Log::warning('HubSpot contact existence check skipped: missing access token.');
+            Log::warning('HubSpot contact existence check skipped: missing access token.', array_merge($logContext, [
+                'hubspot_configured' => false,
+            ]));
             return null;
         }
 
         $path = '/crm/v3/objects/contacts/search';
-        Log::info('HubSpot API request - contact search.', [
-            'url' => $this->baseUrl . $path,
-        ]);
         $fullUrl = $this->baseUrl . $path;
         $payload = [
             'filterGroups' => [
@@ -65,36 +69,49 @@ class HubSpotService
             'properties' => ['email'],
         ];
 
-        Log::info('HubSpot API request - contact search.', [
+        Log::info('HubSpot API request - contact search.', array_merge($logContext, [
             'url' => $fullUrl,
             'payload' => $payload,
-        ]);
+        ]));
 
         try {
             $response = Http::withToken($this->accessToken)
                 ->baseUrl($this->baseUrl)
                 ->post($path, $payload);
 
+            $status = $response->status();
+            $body = $response->body();
+
+            Log::info('HubSpot API response - contact search.', array_merge($logContext, [
+                'status' => $status,
+                'body' => $body,
+            ]));
+
             if ($response->failed()) {
-                Log::error('HubSpot contact search failed.', [
+                Log::error('HubSpot contact search failed.', array_merge($logContext, [
                     'url' => $fullUrl,
                     'payload' => $payload,
-                    'email' => $email,
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                ]);
+                    'status' => $status,
+                    'body' => $body,
+                ]));
                 return null;
             }
 
             $data = $response->json();
             $results = $data['results'] ?? [];
+            $exists = !empty($results);
 
-            return !empty($results);
+            Log::info('HubSpot contact existence check result.', array_merge($logContext, [
+                'exists' => $exists,
+                'result_count' => is_array($results) ? count($results) : 0,
+            ]));
+
+            return $exists;
         } catch (\Throwable $e) {
-            Log::error('HubSpot contact search exception.', [
-                'email' => $email,
+            Log::error('HubSpot contact search exception.', array_merge($logContext, [
                 'error' => $e->getMessage(),
-            ]);
+                'exception_class' => get_class($e),
+            ]));
 
             return null;
         }
@@ -104,13 +121,21 @@ class HubSpotService
      * Create a new contact in HubSpot.
      *
      * On failure, logs the error and returns false.
+     *
+     * @param  array<string, mixed>  $properties
+     * @param  array<string, mixed>  $context  Optional tracing context (user_id, company_id, correlation_id, etc.)
      */
-    public function createContact(array $properties): bool
+    public function createContact(array $properties, array $context = []): bool
     {
+        $logContext = array_merge($context, [
+            'timestamp' => now()->toIso8601String(),
+        ]);
+
         if (!$this->isConfigured()) {
-            Log::warning('HubSpot contact creation skipped: missing access token.', [
-                'properties' => $properties,
-            ]);
+            Log::warning('HubSpot contact creation skipped: missing access token.', array_merge($logContext, [
+                'payload' => ['properties' => $properties],
+                'hubspot_configured' => false,
+            ]));
             return false;
         }
 
@@ -118,40 +143,52 @@ class HubSpotService
         $fullUrl = $this->baseUrl . $path;
         $payload = ['properties' => $properties];
 
-        Log::info('HubSpot API request - create contact.', [
+        Log::info('HubSpot API request - create contact.', array_merge($logContext, [
             'url' => $fullUrl,
             'payload' => $payload,
-        ]);
+        ]));
 
         try {
             $response = Http::withToken($this->accessToken)
                 ->baseUrl($this->baseUrl)
                 ->post($path, $payload);
 
+            $status = $response->status();
+            $body = $response->body();
+
+            Log::info('HubSpot API response - create contact.', array_merge($logContext, [
+                'status' => $status,
+                'body' => $body,
+            ]));
+
             if ($response->failed()) {
-                Log::error('HubSpot contact creation failed.', [
+                Log::error('HubSpot contact creation failed.', array_merge($logContext, [
                     'url' => $fullUrl,
                     'payload' => $payload,
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                ]);
+                    'status' => $status,
+                    'body' => $body,
+                    'final_status' => 'failed',
+                ]));
                 return false;
             }
 
-            Log::info('HubSpot contact created successfully.', [
-                'properties' => $properties,
+            Log::info('HubSpot contact created successfully.', array_merge($logContext, [
+                'payload' => $payload,
                 'hubspot_response' => $response->json(),
-            ]);
+                'status' => $status,
+                'final_status' => 'success',
+            ]));
 
             return true;
         } catch (\Throwable $e) {
-            Log::error('HubSpot contact creation exception.', [
-                'properties' => $properties,
+            Log::error('HubSpot contact creation exception.', array_merge($logContext, [
+                'payload' => $payload,
                 'error' => $e->getMessage(),
-            ]);
+                'exception_class' => get_class($e),
+                'final_status' => 'failed_exception',
+            ]));
 
             return false;
         }
     }
 }
-
