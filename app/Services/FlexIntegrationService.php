@@ -9,6 +9,8 @@ use App\Models\Equipment;
 use App\Models\FlexIntegrationLog;
 use App\Models\Product;
 use App\Models\RentalJob;
+use App\Models\RentalJobComment;
+use App\Models\SupplyJob;
 use App\Models\User;
 use App\Models\UserProfile;
 use App\Support\FlexIntegrationDebugLog;
@@ -61,6 +63,7 @@ class FlexIntegrationService
      * Central Flex HTTP client: logs URL, payload, response, and next_step for every call.
      *
      * @param  array<string, mixed>|null  $payload  Query params for GET, JSON body for POST/PUT/PATCH
+     * @param  string  $bodyMode  'json' (default) | 'query' (POST/PUT/PATCH params as query string, empty body — matches Flex Swagger add-resource)
      */
     protected function flexHttp(
         string $method,
@@ -70,9 +73,15 @@ class FlexIntegrationService
         string $nextStep,
         ?string $flexQuoteId = null,
         ?string $flexProductId = null,
+        string $bodyMode = 'json',
     ): \Illuminate\Http\Client\Response {
         $method = strtoupper($method);
         $rentalRequestId = $this->rentalRequestId ?? 0;
+        $requestUrl = $url;
+
+        if ($bodyMode === 'query' && $payload !== null && $payload !== [] && in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+            $requestUrl .= (str_contains($url, '?') ? '&' : '?') . http_build_query($payload);
+        }
 
         FlexIntegrationDebugLog::step(
             $rentalRequestId,
@@ -81,7 +90,8 @@ class FlexIntegrationService
             'REQUEST',
             [
                 'http_method' => $method,
-                'api_url' => $url,
+                'api_url' => $requestUrl,
+                'body_mode' => $bodyMode,
                 'request_payload' => $payload,
             ],
             $nextStep,
@@ -90,7 +100,7 @@ class FlexIntegrationService
         $this->logIntegration(
             $action,
             FlexIntegrationLog::STATUS_PROCESSING,
-            $url,
+            $requestUrl,
             $payload,
             null,
             $method . ' outbound — next: ' . $nextStep,
@@ -99,15 +109,25 @@ class FlexIntegrationService
         );
 
         try {
-            $pending = Http::timeout($this->timeout)
-                ->withHeaders(array_merge($this->authHeaders(), ['Content-Type' => 'application/json']));
+            $headers = $this->authHeaders();
+            if ($bodyMode === 'json') {
+                $headers['Content-Type'] = 'application/json';
+            }
+
+            $pending = Http::timeout($this->timeout)->withHeaders($headers);
 
             $response = match ($method) {
-                'GET' => $pending->get($url, $payload ?? []),
-                'POST' => $pending->post($url, $payload ?? []),
-                'PUT' => $pending->put($url, $payload ?? []),
-                'PATCH' => $pending->patch($url, $payload ?? []),
-                'DELETE' => $pending->delete($url, $payload ?? []),
+                'GET' => $pending->get($requestUrl, $bodyMode === 'query' ? [] : ($payload ?? [])),
+                'POST' => $bodyMode === 'query'
+                    ? $pending->withBody('', 'text/plain')->post($requestUrl)
+                    : $pending->post($requestUrl, $payload ?? []),
+                'PUT' => $bodyMode === 'query'
+                    ? $pending->withBody('', 'text/plain')->put($requestUrl)
+                    : $pending->put($requestUrl, $payload ?? []),
+                'PATCH' => $bodyMode === 'query'
+                    ? $pending->withBody('', 'text/plain')->patch($requestUrl)
+                    : $pending->patch($requestUrl, $payload ?? []),
+                'DELETE' => $pending->delete($requestUrl, $bodyMode === 'query' ? [] : ($payload ?? [])),
                 default => throw new \InvalidArgumentException('Unsupported Flex HTTP method: ' . $method),
             };
         } catch (\Throwable $e) {
@@ -116,7 +136,7 @@ class FlexIntegrationService
                 $this->providerCompanyId,
                 $action,
                 $method,
-                $url,
+                $requestUrl,
                 $payload,
                 null,
                 null,
@@ -128,7 +148,7 @@ class FlexIntegrationService
             $this->logIntegration(
                 FlexIntegrationLog::ACTION_API_ERROR,
                 FlexIntegrationLog::STATUS_FAILED,
-                $url,
+                $requestUrl,
                 $payload,
                 null,
                 $e->getMessage(),
@@ -148,7 +168,7 @@ class FlexIntegrationService
             $this->providerCompanyId,
             $action,
             $method,
-            $url,
+            $requestUrl,
             $payload,
             $response->status(),
             $bodyForLog,
@@ -174,6 +194,11 @@ class FlexIntegrationService
         $apiKey = (string) $integration->api_key;
 
         return new self($providerCompanyId, $integration, $baseUrl, $apiKey);
+    }
+
+    public function getBaseUrlForLogging(): string
+    {
+        return $this->baseUrl;
     }
 
     protected function logIntegration(
@@ -285,8 +310,14 @@ class FlexIntegrationService
             return [];
         }
 
-        $definitionId = $this->quoteSettings()['sales_quote_definition_id'] ?? null;
-        if (empty($definitionId)) {
+        try {
+            $definitionId = $this->getSalesQuoteDefinitionId();
+        } catch (\Throwable $e) {
+            Log::warning('Flex Integration: cannot fetch element fields — Quote definitionId unresolved', [
+                'provider_company_id' => $this->providerCompanyId,
+                'error' => $e->getMessage(),
+            ]);
+
             return [];
         }
 
@@ -577,7 +608,9 @@ class FlexIntegrationService
                 'has_email' => ($payload['email'] ?? '') !== '',
                 'address_city' => $requester->company?->city?->name,
                 'address_state' => $requester->company?->state?->name,
-                'address_country' => $requester->company?->country?->name,
+                'address_country_code' => strtoupper(trim((string) ($requester->company?->country?->iso_code ?? ''))),
+                'address_postal_code' => trim((string) ($requester->company?->postal_code ?? '')),
+                'address_payload' => $payload['addresses'][0] ?? null,
             ],
             'POST Flex Create Contact API',
         );
@@ -659,10 +692,8 @@ class FlexIntegrationService
 
     public function createSalesQuote(RentalJob $rentalJob, string $clientId): array
     {
+        $definitionId = $this->getSalesQuoteDefinitionId();
         $settings = $this->quoteSettings();
-        if (empty($settings['sales_quote_definition_id'])) {
-            throw new \RuntimeException('Flex sales quote definition id is not configured (set FLEX_SALES_QUOTE_DEFINITION_ID in .env).');
-        }
 
         $referralSourceId = $this->getProSubrentalReferralSourceId();
         if (!$referralSourceId) {
@@ -678,7 +709,7 @@ class FlexIntegrationService
         $resolved = $this->resolveQuoteFieldIds();
 
         $payload = [
-            'definitionId' => $settings['sales_quote_definition_id'],
+            'definitionId' => $definitionId,
             'name' => $rentalJob->name,
             'plannedStartDate' => $start,
             'plannedEndDate' => $end,
@@ -701,6 +732,20 @@ class FlexIntegrationService
                 $payload['currencyId'] = $currencyId;
             }
         }
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'CREATE_QUOTE',
+            'PAYLOAD',
+            [
+                'definitionId' => $definitionId,
+                'clientId' => $clientId,
+                'referralSourceId' => $referralSourceId,
+                'name' => $payload['name'] ?? null,
+            ],
+            'POST /f5/api/element/ to create sales quote',
+        );
 
         $path = config('flex.element_create_path', '/f5/api/element');
         $url = rtrim($this->baseUrl . '/' . ltrim($path, '/'), '/') . '/';
@@ -728,6 +773,13 @@ class FlexIntegrationService
                 $responseForLog,
                 'HTTP ' . $response->status() . ' — see raw_body_preview & response in flex_integration_logs',
             );
+
+            Log::error('Flex Integration: Quote create failed', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'http_status' => $response->status(),
+                'body' => self::truncateHttpBody($response->body(), 500),
+            ]);
 
             throw new \RuntimeException(
                 'Flex sales quote create failed: HTTP ' . $response->status() . ' — '
@@ -766,6 +818,8 @@ class FlexIntegrationService
         Log::info('Flex Integration: Quote Created', [
             'provider_company_id' => $this->providerCompanyId,
             'rental_job_id' => $rentalJob->id,
+            'rental_request_id' => $this->rentalRequestId,
+            'definition_id' => $definitionId,
             'element_id' => $elementIdStr,
             'element_number' => $elementNumber,
         ]);
@@ -781,11 +835,25 @@ class FlexIntegrationService
         $path = config('flex.global_search_path', '/f5/api/search');
         $url = $this->baseUrl . '/' . ltrim($path, '/');
         $params = [
-            'searchTypes' => 'inventory-model',
             'searchText' => $searchText,
-            'page' => 0,
-            'size' => 20,
+            'searchTypes' => 'inventory-model',
+            'canIncludeSerialUnits' => 'false',
+            'includeDeleted' => 'false',
+            'includeClosed' => 'false',
+            'maxResults' => 30,
         ];
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'PRODUCT_SEARCH',
+            'STARTED',
+            [
+                'search_text' => $searchText,
+                'params' => $params,
+            ],
+            'Match inventory-model by case-insensitive name or create if missing',
+        );
 
         try {
             $response = $this->flexHttp(
@@ -793,7 +861,7 @@ class FlexIntegrationService
                 $url,
                 $params,
                 FlexIntegrationLog::ACTION_SEARCH_PRODUCT,
-                'Attach found resource to sales quote (or mark product missing)',
+                'Attach found resource to sales quote (or create inventory model if not found)',
             );
 
             $data = $response->json();
@@ -808,10 +876,20 @@ class FlexIntegrationService
                     'HTTP ' . $response->status(),
                 );
 
+                Log::error('Flex Integration: Product search failed', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $this->rentalRequestId,
+                    'search_text' => $searchText,
+                    'http_status' => $response->status(),
+                ]);
+
                 return null;
             }
 
-            $items = $data['content'] ?? $data['results'] ?? [];
+            $items = self::normalizeFlexItemArray($data);
+            if ($items === []) {
+                $items = $data['content'] ?? $data['results'] ?? [];
+            }
             if (!is_array($items) || $items === []) {
                 $this->logIntegration(
                     FlexIntegrationLog::ACTION_PRODUCT_NOT_FOUND,
@@ -824,14 +902,41 @@ class FlexIntegrationService
 
                 Log::info('Flex Integration: Product Not Found', [
                     'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $this->rentalRequestId,
                     'search_text' => $searchText,
                 ]);
+
+                FlexIntegrationDebugLog::step(
+                    $this->rentalRequestId ?? 0,
+                    $this->providerCompanyId,
+                    'PRODUCT_SEARCH',
+                    'NOT_FOUND',
+                    ['search_text' => $searchText],
+                    'Create inventory model in Flex',
+                );
 
                 return null;
             }
 
-            $first = $items[0];
-            $id = is_array($first) ? ($first['id'] ?? null) : null;
+            $needle = mb_strtolower(trim($searchText));
+            $matched = null;
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $name = mb_strtolower(trim((string) ($item['name'] ?? '')));
+                if ($name !== '' && $name === $needle) {
+                    $matched = $item;
+                    break;
+                }
+            }
+
+            // Fall back to first hit when Flex search already scoped by full product name
+            if ($matched === null && is_array($items[0] ?? null)) {
+                $matched = $items[0];
+            }
+
+            $id = is_array($matched) ? ($matched['id'] ?? null) : null;
             if ($id === null || $id === '') {
                 $this->logIntegration(
                     FlexIntegrationLog::ACTION_PRODUCT_NOT_FOUND,
@@ -839,7 +944,7 @@ class FlexIntegrationService
                     $url,
                     $params,
                     is_array($data) ? $data : null,
-                    'First hit missing id',
+                    'Hit missing id',
                 );
 
                 return null;
@@ -852,7 +957,7 @@ class FlexIntegrationService
                 FlexIntegrationLog::STATUS_SUCCESS,
                 $url,
                 $params,
-                is_array($first) ? $first : null,
+                is_array($matched) ? $matched : null,
                 null,
                 null,
                 $idStr,
@@ -860,9 +965,24 @@ class FlexIntegrationService
 
             Log::info('Flex Integration: Product Found', [
                 'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
                 'flex_resource_id' => $idStr,
                 'search_text' => $searchText,
+                'matched_name' => is_array($matched) ? ($matched['name'] ?? null) : null,
             ]);
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'PRODUCT_SEARCH',
+                'FOUND',
+                [
+                    'search_text' => $searchText,
+                    'flex_resource_id' => $idStr,
+                    'matched_name' => is_array($matched) ? ($matched['name'] ?? null) : null,
+                ],
+                'Persist flex_resource_id and attach to quote',
+            );
 
             return $idStr;
         } catch (\Throwable $e) {
@@ -875,8 +995,559 @@ class FlexIntegrationService
                 $e->getMessage(),
             );
 
+            Log::error('Flex Integration: Product search exception', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'search_text' => $searchText,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return null;
         }
+    }
+
+    /**
+     * Resolve Flex inventory-model id for a rental request product (cached → search → create).
+     */
+    public function resolveFlexResourceForProduct(
+        string $displayName,
+        ?string $cachedFlexResourceId,
+        int $productId,
+    ): ?string {
+        $rentalRequestId = $this->rentalRequestId ?? 0;
+
+        FlexIntegrationDebugLog::step(
+            $rentalRequestId,
+            $this->providerCompanyId,
+            'PRODUCT_RESOLVE',
+            'STARTED',
+            [
+                'product_id' => $productId,
+                'name' => $displayName,
+                'cached_flex_resource_id' => $cachedFlexResourceId,
+            ],
+            'Validate cached ID, search by name, or create inventory model',
+        );
+
+        // Case 1: company inventory already has a FLEX Resource ID
+        if ($cachedFlexResourceId !== null && $cachedFlexResourceId !== '') {
+            if ($this->flexInventoryModelExists($cachedFlexResourceId)) {
+                Log::info('Flex Integration: Reusing cached FLEX Resource ID', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $rentalRequestId,
+                    'product_id' => $productId,
+                    'flex_resource_id' => $cachedFlexResourceId,
+                ]);
+
+                FlexIntegrationDebugLog::step(
+                    $rentalRequestId,
+                    $this->providerCompanyId,
+                    'PRODUCT_RESOLVE',
+                    'FROM_CACHED_ID',
+                    [
+                        'product_id' => $productId,
+                        'flex_resource_id' => $cachedFlexResourceId,
+                    ],
+                    'Attach resource to sales quote',
+                );
+
+                return $cachedFlexResourceId;
+            }
+
+            Log::warning('Flex Integration: Cached FLEX Resource ID invalid; falling back to search', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $rentalRequestId,
+                'product_id' => $productId,
+                'flex_resource_id' => $cachedFlexResourceId,
+            ]);
+        }
+
+        // Case 2: search FLEX inventory by product name
+        $foundId = $this->searchFlexProduct($displayName);
+        if ($foundId) {
+            self::persistFlexResourceOnInventory($this->providerCompanyId, $productId, $foundId);
+            $this->logPersistResourceId($productId, $foundId, 'search');
+
+            return $foundId;
+        }
+
+        // Case 3: create inventory model in FLEX
+        try {
+            $createdId = $this->createFlexInventoryModel($displayName);
+            self::persistFlexResourceOnInventory($this->providerCompanyId, $productId, $createdId);
+            $this->logPersistResourceId($productId, $createdId, 'create');
+
+            FlexIntegrationDebugLog::step(
+                $rentalRequestId,
+                $this->providerCompanyId,
+                'PRODUCT_RESOLVE',
+                'CREATED',
+                [
+                    'product_id' => $productId,
+                    'flex_resource_id' => $createdId,
+                    'name' => $displayName,
+                ],
+                'Attach newly created resource to sales quote',
+            );
+
+            return $createdId;
+        } catch (\Throwable $e) {
+            Log::error('Flex Integration: Product create failed', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $rentalRequestId,
+                'product_id' => $productId,
+                'name' => $displayName,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            FlexIntegrationDebugLog::step(
+                $rentalRequestId,
+                $this->providerCompanyId,
+                'PRODUCT_RESOLVE',
+                'CREATE_FAILED',
+                [
+                    'product_id' => $productId,
+                    'name' => $displayName,
+                    'error' => $e->getMessage(),
+                ],
+                'Mark product missing; continue with next line',
+            );
+
+            return null;
+        }
+    }
+
+    /**
+     * Validate that a FLEX inventory-model still exists (GET /inventory-model/{id}).
+     */
+    public function flexInventoryModelExists(string $resourceId): bool
+    {
+        $detailsPath = rtrim(config('flex.details_path', '/f5/api/inventory-model'), '/');
+        $url = $this->baseUrl . '/' . ltrim($detailsPath, '/') . '/' . $resourceId;
+
+        try {
+            $response = $this->flexHttp(
+                'GET',
+                $url,
+                null,
+                FlexIntegrationLog::ACTION_VALIDATE_PRODUCT,
+                'Reuse validated resource ID or fall back to name search',
+                null,
+                $resourceId,
+            );
+
+            $data = $response->json();
+            $exists = $response->successful() && !empty(($data['id'] ?? $data['name'] ?? null));
+
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_VALIDATE_PRODUCT,
+                $exists ? FlexIntegrationLog::STATUS_SUCCESS : FlexIntegrationLog::STATUS_FAILED,
+                $url,
+                ['resource_id' => $resourceId],
+                is_array($data) ? $data : ['raw' => self::truncateHttpBody($response->body())],
+                $exists ? null : ('HTTP ' . $response->status()),
+                null,
+                $resourceId,
+            );
+
+            Log::info('Flex Integration: Validate inventory model', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'flex_resource_id' => $resourceId,
+                'exists' => $exists,
+                'http_status' => $response->status(),
+            ]);
+
+            return $exists;
+        } catch (\Throwable $e) {
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_VALIDATE_PRODUCT,
+                FlexIntegrationLog::STATUS_FAILED,
+                $url,
+                ['resource_id' => $resourceId],
+                null,
+                $e->getMessage(),
+                null,
+                $resourceId,
+            );
+
+            Log::warning('Flex Integration: Validate inventory model exception', [
+                'provider_company_id' => $this->providerCompanyId,
+                'flex_resource_id' => $resourceId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return false;
+        }
+    }
+
+    /**
+     * GET /inventory-group/list — use the group named "Non-Serialized Model".
+     */
+    public function getNonSerializedModelInventoryGroupId(): string
+    {
+        $expectedName = (string) config('flex.inventory_model_group_name', 'Non-Serialized Model');
+        $cacheKey = 'flex_inventory_group_' . $this->providerCompanyId . '_' . md5(mb_strtolower($expectedName));
+        $ttl = (int) config('flex.inventory_group_cache_ttl', 86400);
+
+        return Cache::remember($cacheKey, $ttl, function () use ($expectedName) {
+            $path = config('flex.inventory_group_list_path', '/f5/api/inventory-group/list');
+            $url = $this->baseUrl . '/' . ltrim($path, '/');
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'INVENTORY_GROUP',
+                'STARTED',
+                [
+                    'api_url' => $url,
+                    'expected_group_name' => $expectedName,
+                ],
+                'Select inventory group by name for product create',
+            );
+
+            $response = $this->flexHttp(
+                'GET',
+                $url,
+                null,
+                FlexIntegrationLog::ACTION_FETCH_INVENTORY_GROUP,
+                'Create inventory model under the selected groupId',
+            );
+
+            $data = $response->json();
+
+            if (!$response->successful()) {
+                $this->logIntegration(
+                    FlexIntegrationLog::ACTION_FETCH_INVENTORY_GROUP,
+                    FlexIntegrationLog::STATUS_FAILED,
+                    $url,
+                    ['expected_group_name' => $expectedName],
+                    is_array($data) ? $data : ['raw' => self::truncateHttpBody($response->body())],
+                    'HTTP ' . $response->status(),
+                );
+
+                Log::error('Flex Integration: Inventory group list failed', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $this->rentalRequestId,
+                    'expected_group_name' => $expectedName,
+                    'http_status' => $response->status(),
+                    'body' => self::truncateHttpBody($response->body(), 500),
+                ]);
+
+                throw new \RuntimeException(
+                    'Flex inventory group list failed: HTTP ' . $response->status()
+                );
+            }
+
+            $items = self::normalizeFlexItemArray($data);
+            $matched = null;
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                if (strcasecmp(trim((string) ($item['name'] ?? '')), $expectedName) === 0) {
+                    $matched = $item;
+                    break;
+                }
+            }
+
+            if ($matched === null || empty($matched['id'])) {
+                $this->logIntegration(
+                    FlexIntegrationLog::ACTION_FETCH_INVENTORY_GROUP,
+                    FlexIntegrationLog::STATUS_FAILED,
+                    $url,
+                    ['expected_group_name' => $expectedName],
+                    is_array($data) ? $data : null,
+                    'Inventory group named "' . $expectedName . '" not found',
+                );
+
+                Log::error('Flex Integration: Inventory group not found by name', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $this->rentalRequestId,
+                    'expected_group_name' => $expectedName,
+                    'groups_count' => count($items),
+                ]);
+
+                throw new \RuntimeException(
+                    'Flex inventory group named "' . $expectedName . '" was not found. Cannot create inventory models.'
+                );
+            }
+
+            $groupId = (string) $matched['id'];
+
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_FETCH_INVENTORY_GROUP,
+                FlexIntegrationLog::STATUS_SUCCESS,
+                $url,
+                ['expected_group_name' => $expectedName],
+                [
+                    'selected_group_id' => $groupId,
+                    'selected_group_name' => $matched['name'] ?? $expectedName,
+                    'parentGroupId' => $matched['parentGroupId'] ?? null,
+                ],
+            );
+
+            Log::info('Flex Integration: Selected inventory group', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'group_id' => $groupId,
+                'group_name' => $matched['name'] ?? $expectedName,
+            ]);
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'INVENTORY_GROUP',
+                'SELECTED',
+                [
+                    'group_id' => $groupId,
+                    'group_name' => $matched['name'] ?? $expectedName,
+                ],
+                'POST inventory-model with this groupId',
+            );
+
+            return $groupId;
+        });
+    }
+
+    /**
+     * @deprecated Use getNonSerializedModelInventoryGroupId()
+     */
+    public function getRootInventoryGroupId(): string
+    {
+        return $this->getNonSerializedModelInventoryGroupId();
+    }
+
+    /**
+     * POST /inventory-model — create a new FLEX inventory model under "Non-Serialized Model".
+     */
+    public function createFlexInventoryModel(string $productName): string
+    {
+        $groupId = $this->getNonSerializedModelInventoryGroupId();
+        $path = config('flex.inventory_model_create_path', '/f5/api/inventory-model');
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+        $payload = [
+            'name' => $productName,
+            'groupId' => $groupId,
+        ];
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'PRODUCT_CREATE',
+            'STARTED',
+            [
+                'name' => $productName,
+                'groupId' => $groupId,
+            ],
+            'POST /f5/api/inventory-model then persist flex_resource_id',
+        );
+
+        $response = $this->flexHttp(
+            'POST',
+            $url,
+            $payload,
+            FlexIntegrationLog::ACTION_CREATE_PRODUCT,
+            'Persist new flex_resource_id on company_inventory and attach to quote',
+        );
+
+        $data = $response->json();
+
+        if (!$response->successful()) {
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_CREATE_PRODUCT,
+                FlexIntegrationLog::STATUS_FAILED,
+                $url,
+                $payload,
+                is_array($data) ? $data : ['raw' => self::truncateHttpBody($response->body())],
+                'HTTP ' . $response->status(),
+            );
+
+            Log::error('Flex Integration: Create inventory model failed', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'payload' => $payload,
+                'http_status' => $response->status(),
+                'body' => self::truncateHttpBody($response->body(), 500),
+            ]);
+
+            throw new \RuntimeException(
+                'Flex inventory model create failed: HTTP ' . $response->status() . ' — '
+                . self::truncateHttpBody($response->body(), 500)
+            );
+        }
+
+        $id = $data['id'] ?? null;
+        if ($id === null || $id === '') {
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_CREATE_PRODUCT,
+                FlexIntegrationLog::STATUS_FAILED,
+                $url,
+                $payload,
+                is_array($data) ? $data : null,
+                'Missing id in create inventory-model response',
+            );
+
+            throw new \RuntimeException('Flex inventory model create: missing id in response.');
+        }
+
+        $idStr = (string) $id;
+
+        $this->logIntegration(
+            FlexIntegrationLog::ACTION_CREATE_PRODUCT,
+            FlexIntegrationLog::STATUS_SUCCESS,
+            $url,
+            $payload,
+            is_array($data) ? $data : null,
+            null,
+            null,
+            $idStr,
+        );
+
+        Log::info('Flex Integration: Product Created', [
+            'provider_company_id' => $this->providerCompanyId,
+            'rental_request_id' => $this->rentalRequestId,
+            'name' => $productName,
+            'group_id' => $groupId,
+            'flex_resource_id' => $idStr,
+        ]);
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'PRODUCT_CREATE',
+            'SUCCESS',
+            [
+                'name' => $productName,
+                'groupId' => $groupId,
+                'flex_resource_id' => $idStr,
+            ],
+            'Persist flex_resource_id on company_inventory',
+        );
+
+        return $idStr;
+    }
+
+    /**
+     * GET /element-definition/identity — resolve Quote definitionId by name.
+     */
+    public function getSalesQuoteDefinitionId(): string
+    {
+        $cacheKey = 'flex_quote_definition_id_' . $this->providerCompanyId;
+        $ttl = (int) config('flex.element_definition_cache_ttl', 86400);
+
+        return Cache::remember($cacheKey, $ttl, function () {
+            $path = config('flex.element_definition_identity_path', '/f5/api/element-definition/identity');
+            $url = $this->baseUrl . '/' . ltrim($path, '/');
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'DEFINITION_ID',
+                'STARTED',
+                ['api_url' => $url],
+                'Find element definition where name equals Quote',
+            );
+
+            $response = $this->flexHttp(
+                'GET',
+                $url,
+                null,
+                FlexIntegrationLog::ACTION_FETCH_DEFINITION_ID,
+                'Use selected Quote definitionId when creating sales quote',
+            );
+
+            $data = $response->json();
+
+            if (!$response->successful()) {
+                $this->logIntegration(
+                    FlexIntegrationLog::ACTION_FETCH_DEFINITION_ID,
+                    FlexIntegrationLog::STATUS_FAILED,
+                    $url,
+                    null,
+                    is_array($data) ? $data : ['raw' => self::truncateHttpBody($response->body())],
+                    'HTTP ' . $response->status(),
+                );
+
+                Log::error('Flex Integration: element-definition/identity failed', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $this->rentalRequestId,
+                    'http_status' => $response->status(),
+                    'body' => self::truncateHttpBody($response->body(), 500),
+                ]);
+
+                throw new \RuntimeException(
+                    'Flex element-definition list failed: HTTP ' . $response->status()
+                    . '. Cannot resolve Quote definitionId.'
+                );
+            }
+
+            $items = self::normalizeFlexItemArray($data);
+            $quoteDef = null;
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                if (strcasecmp(trim((string) ($item['name'] ?? '')), 'Quote') === 0) {
+                    $quoteDef = $item;
+                    break;
+                }
+            }
+
+            if ($quoteDef === null || empty($quoteDef['id'])) {
+                $this->logIntegration(
+                    FlexIntegrationLog::ACTION_FETCH_DEFINITION_ID,
+                    FlexIntegrationLog::STATUS_FAILED,
+                    $url,
+                    null,
+                    is_array($data) ? $data : null,
+                    'No element definition with name "Quote" found',
+                );
+
+                Log::error('Flex Integration: Quote definition not found in element-definition list', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $this->rentalRequestId,
+                    'definitions_count' => count($items),
+                ]);
+
+                throw new \RuntimeException(
+                    'Flex element-definition list does not contain a definition named "Quote". Cannot create sales quote.'
+                );
+            }
+
+            $definitionId = (string) $quoteDef['id'];
+
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_FETCH_DEFINITION_ID,
+                FlexIntegrationLog::STATUS_SUCCESS,
+                $url,
+                null,
+                [
+                    'selected_definition_id' => $definitionId,
+                    'selected_name' => $quoteDef['name'] ?? 'Quote',
+                ],
+            );
+
+            Log::info('Flex Integration: Selected Quote definitionId', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'definition_id' => $definitionId,
+            ]);
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'DEFINITION_ID',
+                'SELECTED',
+                ['definition_id' => $definitionId],
+                'Create sales quote with this definitionId',
+            );
+
+            return $definitionId;
+        });
     }
 
     /**
@@ -887,13 +1558,11 @@ class FlexIntegrationService
         $base = rtrim($this->baseUrl . '/' . ltrim(config('flex.financial_line_item_path', '/f5/api/financial-document-line-item'), '/'), '/');
         $url = $base . '/' . $salesQuoteId . '/add-resource/' . $resourceId;
 
+        // Flex Swagger expects these as query params with an empty POST body (not JSON).
         $requestPayload = [
-            'resourceParentId ' => '',
+            'resourceParentId' => '',
             'managedResourceLineItemType' => 'inventory-model',
             'quantity' => $quantity,
-            'parentLineItemId' => '',
-            'nextSiblingId' => '',
-
         ];
 
         $response = $this->flexHttp(
@@ -904,6 +1573,7 @@ class FlexIntegrationService
             'Track fin-doc-quick-line-added event (or process next product line)',
             $salesQuoteId,
             $resourceId,
+            'query',
         );
 
         $data = $response->json();
@@ -930,7 +1600,10 @@ class FlexIntegrationService
             );
         }
 
-        $lineId = $data['id'] ?? $data['lineItemId'] ?? $data['financialDocumentLineItemId'] ?? null;
+        $lineId = $data['id']
+            ?? $data['lineItemId']
+            ?? $data['financialDocumentLineItemId']
+            ?? (is_array($data['addedResourceLineIds'] ?? null) ? ($data['addedResourceLineIds'][0] ?? null) : null);
         $lineIdStr = $lineId !== null && $lineId !== '' ? (string) $lineId : null;
 
         $this->logIntegration(
@@ -946,16 +1619,375 @@ class FlexIntegrationService
 
         Log::info('Flex Integration: Product Added', [
             'provider_company_id' => $this->providerCompanyId,
+            'rental_request_id' => $this->rentalRequestId,
             'sales_quote_id' => $salesQuoteId,
             'resource_id' => $resourceId,
             'line_id' => $lineIdStr,
             'quantity' => $quantity,
+            'response' => is_array($data) ? $data : null,
         ]);
 
         return [
             'flex_product_id' => $lineIdStr,
             'response' => is_array($data) ? $data : null,
         ];
+    }
+
+    /**
+     * POST /financial-document/{quoteId}/address-data — set Quote Venue (right address).
+     * Soft-fails: logs errors and continues.
+     */
+    public function setQuoteVenueAddress(string $quoteId, RentalJob $rentalJob): bool
+    {
+        $addressFreeText = self::resolveQuoteVenueAddressText($rentalJob);
+        if ($addressFreeText === null) {
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'QUOTE_VENUE',
+                'SKIPPED',
+                [
+                    'flex_quote_id' => $quoteId,
+                    'reason' => 'no_delivery_or_shipping_address',
+                    'shipping_method' => $rentalJob->shipping_method,
+                ],
+                'Continue with quote notes / product attach',
+            );
+
+            Log::info('Flex Integration: Quote venue skipped — no address on rental request', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'flex_quote_id' => $quoteId,
+            ]);
+
+            return false;
+        }
+
+        $pattern = config(
+            'flex.financial_document_address_path_pattern',
+            '/f5/api/financial-document/%s/address-data'
+        );
+        $path = sprintf($pattern, $quoteId);
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+        $payload = [
+            'addressLocation' => 'right',
+            'addressFreeText' => $addressFreeText,
+        ];
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'QUOTE_VENUE',
+            'STARTED',
+            [
+                'flex_quote_id' => $quoteId,
+                'payload' => $payload,
+            ],
+            'POST financial-document address-data',
+        );
+
+        try {
+            // Flex Swagger expects addressLocation / addressFreeText as query params with an empty POST body.
+            $response = $this->flexHttp(
+                'POST',
+                $url,
+                $payload,
+                FlexIntegrationLog::ACTION_SET_QUOTE_ADDRESS,
+                'Add rental request messages as quote note (or attach products)',
+                $quoteId,
+                null,
+                'query',
+            );
+
+            $data = $response->json();
+
+            if (!$response->successful()) {
+                $this->logIntegration(
+                    FlexIntegrationLog::ACTION_SET_QUOTE_ADDRESS,
+                    FlexIntegrationLog::STATUS_FAILED,
+                    $url,
+                    $payload,
+                    is_array($data) ? $data : ['raw' => self::truncateHttpBody($response->body())],
+                    'HTTP ' . $response->status(),
+                    $quoteId,
+                );
+
+                Log::error('Flex Integration: Quote venue address failed', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $this->rentalRequestId,
+                    'flex_quote_id' => $quoteId,
+                    'http_status' => $response->status(),
+                    'payload' => $payload,
+                    'body' => self::truncateHttpBody($response->body(), 500),
+                ]);
+
+                return false;
+            }
+
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_SET_QUOTE_ADDRESS,
+                FlexIntegrationLog::STATUS_SUCCESS,
+                $url,
+                $payload,
+                is_array($data) ? $data : ['raw' => self::truncateHttpBody($response->body())],
+                null,
+                $quoteId,
+            );
+
+            Log::info('Flex Integration: Quote venue address set', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'flex_quote_id' => $quoteId,
+                'address_free_text' => $addressFreeText,
+                'response' => is_array($data) ? $data : null,
+            ]);
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'QUOTE_VENUE',
+                'SUCCESS',
+                [
+                    'flex_quote_id' => $quoteId,
+                    'address_free_text' => $addressFreeText,
+                ],
+                'Add rental request messages as quote note (or attach products)',
+            );
+
+            return true;
+        } catch (\Throwable $e) {
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_SET_QUOTE_ADDRESS,
+                FlexIntegrationLog::STATUS_FAILED,
+                $url,
+                $payload,
+                null,
+                $e->getMessage(),
+                $quoteId,
+            );
+
+            Log::error('Flex Integration: Quote venue address exception', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'flex_quote_id' => $quoteId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'QUOTE_VENUE',
+                'FAILED',
+                [
+                    'flex_quote_id' => $quoteId,
+                    'error' => $e->getMessage(),
+                ],
+                'Continue quote flow despite venue failure',
+            );
+
+            return false;
+        }
+    }
+
+    /**
+     * Prefer delivery address; fall back to shipping-style address text when present.
+     * PSM stores both delivery/ship-to-site addresses on rental_jobs.delivery_address.
+     */
+    public static function resolveQuoteVenueAddressText(RentalJob $rentalJob): ?string
+    {
+        $deliveryAddress = trim((string) ($rentalJob->delivery_address ?? ''));
+        if ($deliveryAddress !== '') {
+            return $deliveryAddress;
+        }
+
+        // No separate shipping_address column; treat empty delivery_address as skip.
+        return null;
+    }
+
+    /**
+     * POST /element-notification — attach combined public/private messages as a Quote note.
+     * Soft-fails: logs errors and continues.
+     */
+    public function addQuoteNoteFromRentalMessages(
+        string $quoteId,
+        RentalJob $rentalJob,
+        SupplyJob $supplyJob,
+    ): bool {
+        $notes = self::buildCombinedQuoteNote($rentalJob, $supplyJob);
+        if ($notes === null) {
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'QUOTE_NOTE',
+                'SKIPPED',
+                [
+                    'flex_quote_id' => $quoteId,
+                    'reason' => 'no_public_or_private_message',
+                ],
+                'Continue with product attach',
+            );
+
+            Log::info('Flex Integration: Quote note skipped — no messages', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'flex_quote_id' => $quoteId,
+                'supply_job_id' => $supplyJob->id,
+            ]);
+
+            return false;
+        }
+
+        $path = config('flex.element_notification_path', '/f5/api/element-notification');
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+        $payload = [
+            'projectElementId' => $quoteId,
+            'notes' => $notes,
+            'resourceId' => null,
+        ];
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'QUOTE_NOTE',
+            'STARTED',
+            [
+                'flex_quote_id' => $quoteId,
+                'combined_notes' => $notes,
+                'payload' => $payload,
+            ],
+            'POST element-notification',
+        );
+
+        try {
+            $response = $this->flexHttp(
+                'POST',
+                $url,
+                $payload,
+                FlexIntegrationLog::ACTION_CREATE_QUOTE_NOTE,
+                'Attach inventory line items to the sales quote',
+                $quoteId,
+            );
+
+            $data = $response->json();
+
+            if (!$response->successful()) {
+                $this->logIntegration(
+                    FlexIntegrationLog::ACTION_CREATE_QUOTE_NOTE,
+                    FlexIntegrationLog::STATUS_FAILED,
+                    $url,
+                    $payload,
+                    is_array($data) ? $data : ['raw' => self::truncateHttpBody($response->body())],
+                    'HTTP ' . $response->status(),
+                    $quoteId,
+                );
+
+                Log::error('Flex Integration: Quote note create failed', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $this->rentalRequestId,
+                    'flex_quote_id' => $quoteId,
+                    'http_status' => $response->status(),
+                    'payload' => $payload,
+                    'body' => self::truncateHttpBody($response->body(), 500),
+                ]);
+
+                return false;
+            }
+
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_CREATE_QUOTE_NOTE,
+                FlexIntegrationLog::STATUS_SUCCESS,
+                $url,
+                $payload,
+                is_array($data) ? $data : ['raw' => self::truncateHttpBody($response->body())],
+                null,
+                $quoteId,
+            );
+
+            Log::info('Flex Integration: Quote note created', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'flex_quote_id' => $quoteId,
+                'notes' => $notes,
+                'response' => is_array($data) ? $data : null,
+            ]);
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'QUOTE_NOTE',
+                'SUCCESS',
+                [
+                    'flex_quote_id' => $quoteId,
+                    'notes_length' => strlen($notes),
+                ],
+                'Attach inventory line items to the sales quote',
+            );
+
+            return true;
+        } catch (\Throwable $e) {
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_CREATE_QUOTE_NOTE,
+                FlexIntegrationLog::STATUS_FAILED,
+                $url,
+                $payload,
+                null,
+                $e->getMessage(),
+                $quoteId,
+            );
+
+            Log::error('Flex Integration: Quote note exception', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'flex_quote_id' => $quoteId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'QUOTE_NOTE',
+                'FAILED',
+                [
+                    'flex_quote_id' => $quoteId,
+                    'error' => $e->getMessage(),
+                ],
+                'Continue quote flow despite note failure',
+            );
+
+            return false;
+        }
+    }
+
+    /**
+     * Combine public (global_message) and provider private message into one note body.
+     */
+    public static function buildCombinedQuoteNote(RentalJob $rentalJob, SupplyJob $supplyJob): ?string
+    {
+        $publicMessage = trim((string) ($rentalJob->global_message ?? ''));
+
+        $privateMessage = trim((string) (
+            RentalJobComment::query()
+                ->where('supply_job_id', $supplyJob->id)
+                ->where('is_private', true)
+                ->orderBy('id')
+                ->value('message') ?? ''
+        ));
+
+        $sections = [];
+        if ($publicMessage !== '') {
+            $sections[] = "Public Message:\n" . $publicMessage;
+        }
+        if ($privateMessage !== '') {
+            $sections[] = "Private Message:\n" . $privateMessage;
+        }
+
+        if ($sections === []) {
+            return null;
+        }
+
+        return implode("\n\n", $sections);
     }
 
     public function trackFinDocQuickLineAdded(): void
@@ -1050,7 +2082,6 @@ class FlexIntegrationService
     protected function quoteSettings(): array
     {
         return [
-            'sales_quote_definition_id' => config('flex.sales_quote_definition_id'),
             'currency_id' => null,
             'status_id' => config('flex.sales_quote_status_id'),
             'person_responsible_id' => config('flex.sales_quote_person_responsible_id'),
@@ -1328,14 +2359,23 @@ class FlexIntegrationService
         $line1 = trim((string) ($company->address_line_1 ?? ''));
         $line2 = trim((string) ($company->address_line_2 ?? ''));
 
-        // Resolve names via company relations (city_id → cities, state_id → states_provinces, country_id → countries).
+        // Resolve names via company relations (city_id → cities, state_id → states_provinces).
         $cityName = trim((string) ($company->city?->name ?? ''));
         $stateName = trim((string) ($company->state?->name ?? ''));
-        $countryName = trim((string) ($company->country?->name ?? ''));
+
+        // Flex expects ISO country code (e.g. US), not the country display name.
+        $countryCode = strtoupper(trim((string) ($company->country?->iso_code ?? '')));
 
         $postalCode = trim((string) ($company->postal_code ?? ''));
 
-        if ($line1 === '' && $line2 === '' && $cityName === '' && $postalCode === '') {
+        if (
+            $line1 === ''
+            && $line2 === ''
+            && $cityName === ''
+            && $stateName === ''
+            && $postalCode === ''
+            && $countryCode === ''
+        ) {
             return null;
         }
 
@@ -1346,7 +2386,7 @@ class FlexIntegrationService
             'city' => $cityName,
             'stateOrProvince' => $stateName,
             'postalCode' => $postalCode,
-            'country' => $countryName,
+            'country' => $countryCode,
         ];
     }
 
@@ -1382,15 +2422,28 @@ class FlexIntegrationService
             $this->providerCompanyId,
             'DIAGNOSTIC',
             'STARTED',
-            ['flex_api_base_url' => $this->baseUrl],
-            'Fetch element fields, referral source, and Client resource type',
+            [
+                'flex_api_base_url' => $this->baseUrl,
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $rentalRequestId,
+            ],
+            'Fetch Quote definitionId, element fields, referral source, and Client resource type',
         );
 
         $settings = $this->quoteSettings();
-
+        $definitionId = null;
         $missingBlockers = [];
-        if (empty($settings['sales_quote_definition_id'])) {
-            $missingBlockers[] = 'definitionId (FLEX_SALES_QUOTE_DEFINITION_ID)';
+
+        try {
+            $definitionId = $this->getSalesQuoteDefinitionId();
+        } catch (\Throwable $e) {
+            $missingBlockers[] = 'definitionId (GET element-definition/identity name=Quote)';
+            Log::error('Flex Integration: Pre-flight definitionId failed', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $rentalRequestId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
         }
 
         $optionalUnsetInSettings = [];
@@ -1427,7 +2480,9 @@ class FlexIntegrationService
         $configSummary = [
             'flex_api_base_url' => $this->baseUrl,
             'provider_company_id' => $this->providerCompanyId,
+            'rental_request_id' => $rentalRequestId,
             'auth_header_mode' => config('flex.auth_header'),
+            'selected_definition_id' => $definitionId,
             'missing_blocker_settings' => $missingBlockers,
             'optional_quote_fields_not_in_env' => $optionalUnsetInSettings,
             'use_element_fields_api' => (bool) config('flex.use_element_fields_api', true),
@@ -1435,7 +2490,7 @@ class FlexIntegrationService
             'defaults_from_element_fields_api' => $defaultsFromApi,
             'merged_quote_field_ids_for_payload' => $mergedQuoteIds,
             'quote_field_ids_still_empty_after_merge' => $quoteIdsStillEmpty,
-            'definition_id_set' => !empty($settings['sales_quote_definition_id']),
+            'definition_id_set' => !empty($definitionId),
             'status_id_set' => !empty($settings['status_id']),
             'person_responsible_id_set' => !empty($settings['person_responsible_id']),
             'location_id_set' => !empty($settings['location_id']),
@@ -1452,8 +2507,8 @@ class FlexIntegrationService
             $configSummary,
             null,
             $missingBlockers === []
-                ? 'Quote IDs: env overrides GET element/{definitionId}/fields; see merged_quote_field_ids_for_payload'
-                : 'BLOCKER: sales quote definitionId missing — set FLEX_SALES_QUOTE_DEFINITION_ID in .env',
+                ? 'Quote definitionId from element-definition/identity; env overrides optional field IDs from GET element/{definitionId}/fields'
+                : 'BLOCKER: Quote definitionId missing — GET element-definition/identity must include name "Quote"',
         );
 
         $referralId = $this->getProSubrentalReferralSourceId();
@@ -1572,9 +2627,56 @@ class FlexIntegrationService
 
     public static function persistFlexResourceOnInventory(int $providerCompanyId, int $productId, string $flexResourceId): void
     {
-        Equipment::query()
+        $updated = Equipment::query()
             ->where('company_id', $providerCompanyId)
             ->where('product_id', $productId)
             ->update(['flex_resource_id' => $flexResourceId]);
+
+        Log::info('Flex Integration: Database update flex_resource_id', [
+            'provider_company_id' => $providerCompanyId,
+            'product_id' => $productId,
+            'flex_resource_id' => $flexResourceId,
+            'rows_updated' => $updated,
+        ]);
+
+        if ($updated === 0) {
+            Log::warning('Flex Integration: No company_inventory row to update with flex_resource_id', [
+                'provider_company_id' => $providerCompanyId,
+                'product_id' => $productId,
+                'flex_resource_id' => $flexResourceId,
+            ]);
+        }
+    }
+
+    protected function logPersistResourceId(int $productId, string $flexResourceId, string $source): void
+    {
+        $this->logIntegration(
+            FlexIntegrationLog::ACTION_PERSIST_RESOURCE_ID,
+            FlexIntegrationLog::STATUS_SUCCESS,
+            null,
+            [
+                'product_id' => $productId,
+                'flex_resource_id' => $flexResourceId,
+                'source' => $source,
+                'table' => 'company_inventory',
+            ],
+            null,
+            null,
+            null,
+            $flexResourceId,
+        );
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'DATABASE_UPDATE',
+            'FLEX_RESOURCE_ID',
+            [
+                'product_id' => $productId,
+                'flex_resource_id' => $flexResourceId,
+                'source' => $source,
+            ],
+            'Attach product to sales quote',
+        );
     }
 }

@@ -272,8 +272,18 @@ class CreateFlexQuoteFromRentalRequestJob
                     'flex_quote_id' => $quoteId,
                     'flex_quote_number' => $quoteNumber,
                 ],
-                'Resolve Flex resource IDs and attach each supply job product as a line item',
+                'Set quote venue address and optional notes, then attach products',
             );
+
+            $venueSet = $service->setQuoteVenueAddress($quoteId, $rentalJob);
+            if ($venueSet) {
+                $appendStep('Quote venue address set in Flex');
+            }
+
+            $noteAdded = $service->addQuoteNoteFromRentalMessages($quoteId, $rentalJob, $supplyJob);
+            if ($noteAdded) {
+                $appendStep('Quote note added from rental request messages');
+            }
 
             foreach ($supplyJob->products as $line) {
                 $product = $line->product;
@@ -306,38 +316,13 @@ class CreateFlexQuoteFromRentalRequestJob
                     ->where('product_id', $product->id)
                     ->first();
 
-                $flexResourceId = $inventory?->flex_resource_id;
-                if ($flexResourceId) {
-                    FlexIntegrationDebugLog::step(
-                        $rentalJob->id,
-                        $providerId,
-                        'PRODUCT_RESOLVED',
-                        'FROM_INVENTORY',
-                        [
-                            'product_id' => $product->id,
-                            'flex_resource_id' => $flexResourceId,
-                        ],
-                        'POST financial-document-line-item add-resource for this product',
-                    );
-                }
+                $cachedFlexResourceId = $inventory?->flex_resource_id;
 
-                if (!$flexResourceId) {
-                    $flexResourceId = $service->searchFlexProduct($displayName);
-                    if ($flexResourceId) {
-                        FlexIntegrationService::persistFlexResourceOnInventory($providerId, (int) $product->id, $flexResourceId);
-                        FlexIntegrationDebugLog::step(
-                            $rentalJob->id,
-                            $providerId,
-                            'PRODUCT_RESOLVED',
-                            'FROM_SEARCH',
-                            [
-                                'product_id' => $product->id,
-                                'flex_resource_id' => $flexResourceId,
-                            ],
-                            'POST financial-document-line-item add-resource for this product',
-                        );
-                    }
-                }
+                $flexResourceId = $service->resolveFlexResourceForProduct(
+                    $displayName,
+                    $cachedFlexResourceId !== null && $cachedFlexResourceId !== '' ? (string) $cachedFlexResourceId : null,
+                    (int) $product->id,
+                );
 
                 if (!$flexResourceId) {
                     $missing[] = $displayName;
@@ -348,7 +333,7 @@ class CreateFlexQuoteFromRentalRequestJob
                         null,
                         ['product_id' => $product->id, 'name' => $displayName, 'quantity' => $qty],
                         null,
-                        'Not found in Flex inventory search',
+                        'Not found or created in Flex inventory',
                     );
                     FlexIntegrationDebugLog::step(
                         $rentalJob->id,
@@ -366,6 +351,19 @@ class CreateFlexQuoteFromRentalRequestJob
 
                     continue;
                 }
+
+                FlexIntegrationDebugLog::step(
+                    $rentalJob->id,
+                    $providerId,
+                    'PRODUCT_RESOLVED',
+                    'READY',
+                    [
+                        'product_id' => $product->id,
+                        'flex_resource_id' => $flexResourceId,
+                        'name' => $displayName,
+                    ],
+                    'POST financial-document-line-item add-resource for this product',
+                );
 
                 try {
                     FlexIntegrationDebugLog::step(
@@ -483,9 +481,22 @@ class CreateFlexQuoteFromRentalRequestJob
                     'flex_quote_id' => $quoteId,
                     'attached_count' => count($attached),
                     'missing_count' => count($missing),
+                    'rental_request_id' => $rentalJob->id,
+                    'provider_id' => $providerId,
                 ],
                 'Process next supply job or refresh rental job Flex summary',
             );
+
+            \Illuminate\Support\Facades\Log::info('Flex Integration: Provider sync final success', [
+                'rental_request_id' => $rentalJob->id,
+                'provider_id' => $providerId,
+                'flex_company_base_url' => $service->getBaseUrlForLogging(),
+                'sync_status' => $syncStatus,
+                'flex_quote_id' => $quoteId,
+                'flex_quote_number' => $quoteNumber,
+                'attached_count' => count($attached),
+                'missing_count' => count($missing),
+            ]);
         } catch (\Throwable $e) {
             FlexIntegrationDebugLog::step(
                 $rentalJob->id,
