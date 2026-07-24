@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Company;
+use App\Support\DefaultImagePath;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 
@@ -19,14 +20,18 @@ class PromotionalLogoController extends Controller
                 ->promotionalLogosActive()
                 ->get(['id', 'name', 'logo', 'account_type', 'logo_promotion_sort_order']);
 
-            $data = $companies->map(fn (Company $company) => [
-                'id' => $company->id,
-                'company_name' => $company->name,
-                'account_type' => $company->account_type,
-                'logo_path' => $company->logo,
-                'logo_url' => url($company->logo),
-                'sort_order' => (int) $company->logo_promotion_sort_order,
-            ])->values();
+            $data = $companies->map(function (Company $company) {
+                $logoPath = DefaultImagePath::companyLogo($company->logo);
+
+                return [
+                    'id' => $company->id,
+                    'company_name' => $company->name,
+                    'account_type' => $company->account_type,
+                    'logo_path' => $logoPath,
+                    'logo_url' => DefaultImagePath::companyLogoUrl($company->logo),
+                    'sort_order' => (int) $company->logo_promotion_sort_order,
+                ];
+            })->values();
 
             return response()->json([
                 'success' => true,

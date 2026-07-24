@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\DefaultImagePath;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -12,7 +13,7 @@ class CompanyResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
-            'logo' => $this->logo,
+            'logo' => DefaultImagePath::companyLogo($this->logo),
             'description' => $this->description,
             'image1' => $this->image1,
             'image2' => $this->image2,

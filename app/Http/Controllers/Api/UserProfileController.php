@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Validation\Rule;
+use App\Support\DefaultImagePath;
 
 
 class UserProfileController extends Controller
@@ -120,7 +121,7 @@ class UserProfileController extends Controller
                 'username' => $user->username,
                 'mobile' => $profile->mobile,
                 'email' => $profile->email,
-                'avatar_path' => $profile->profile_picture,
+                'avatar_path' => DefaultImagePath::profileImage($profile->profile_picture),
             ];
 
             return response()->json([

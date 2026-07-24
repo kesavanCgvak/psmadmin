@@ -17,6 +17,7 @@ use App\Models\CompanyRating;
 use App\Models\CompanyBlock;
 use App\Models\CompanyProviderBlock;
 use App\Models\JobRating;
+use App\Support\DefaultImagePath;
 
 
 
@@ -41,7 +42,7 @@ class CompanyController extends Controller
             $companyDetails = [
                 'name' => $company->name,
                 'description' => $company->description,
-                'logo' => $company->logo,
+                'logo' => DefaultImagePath::companyLogo($company->logo),
                 'logo_available_for_promotion' => (bool) $company->logo_available_for_promotion,
                 'logo_promotion_consent_at' => $company->logo_promotion_consent_at?->toIso8601String(),
                 'logo_promotion_admin_enabled' => (bool) $company->logo_promotion_admin_enabled,
@@ -532,10 +533,7 @@ class CompanyController extends Controller
             $company = $user->company;
 
             $images = [
-                'logo' => $company->logo ? [
-                    'path' => $company->logo,
-                    'url' => url($company->logo)
-                ] : null,
+                'logo' => DefaultImagePath::companyLogoPayload($company->logo),
                 'logo_available_for_promotion' => (bool) $company->logo_available_for_promotion,
                 'logo_promotion_consent_at' => $company->logo_promotion_consent_at?->toIso8601String(),
                 'logo_promotion_admin_enabled' => (bool) $company->logo_promotion_admin_enabled,
@@ -969,7 +967,7 @@ class CompanyController extends Controller
                 return [
                     'id' => $cid,
                     'name' => $first->company_name,
-                    'company_logo' => $first->company_logo,
+                    'company_logo' => DefaultImagePath::companyLogo($first->company_logo),
                     'rating' => $first->company_rating,
                     // If admin override exists, use it for the displayed overall rating.
                     'average_rating' => $displayAverageRating,
@@ -1301,7 +1299,7 @@ class CompanyController extends Controller
                 return [
                     'id' => $company->id,
                     'name' => $company->name,
-                    'company_logo' => $company->logo ?? null,
+                    'company_logo' => DefaultImagePath::companyLogo($company->logo),
 
                     // Location fields
                     'city' => $company->city?->name ?? null,
