@@ -35,6 +35,7 @@
         <div class="col-md-4">
             <div class="card card-primary card-outline">
                 <div class="card-body box-profile">
+                    @if($subscription->user)
                     <div class="text-center">
                         @if($subscription->user->profile?->profile_picture && file_exists(public_path($subscription->user->profile->profile_picture)))
                             <img class="profile-user-img img-fluid img-circle img-bordered-sm"
@@ -86,6 +87,21 @@
                     <a href="{{ route('admin.users.show', $subscription->user->id) }}" class="btn btn-primary btn-block">
                         <i class="fas fa-user"></i> View User Profile
                     </a>
+                    @else
+                    <div class="text-center">
+                        <div class="profile-user-img img-fluid img-circle img-bordered-sm bg-danger d-flex align-items-center justify-content-center text-white mx-auto"
+                             style="width: 100px; height: 100px; font-size: 36px; font-weight: bold;">
+                            ?
+                        </div>
+                    </div>
+                    <h3 class="profile-username text-center text-danger">User deleted</h3>
+                    <p class="text-muted text-center">
+                        Linked user ID: {{ $subscription->user_id ?? '—' }}
+                        @if($subscription->company_id)
+                            <br>Company ID: {{ $subscription->company_id }}
+                        @endif
+                    </p>
+                    @endif
                 </div>
             </div>
         </div>
@@ -459,9 +475,11 @@
                                         <i class="fas fa-sync"></i> Sync with Stripe
                                     </button>
                                 </form>
-                                <a href="{{ route('admin.users.show', $subscription->user->id) }}" class="btn btn-primary">
-                                    <i class="fas fa-user"></i> View User Profile
-                                </a>
+                                @if($subscription->user)
+                                    <a href="{{ route('admin.users.show', $subscription->user->id) }}" class="btn btn-primary">
+                                        <i class="fas fa-user"></i> View User Profile
+                                    </a>
+                                @endif
                             </div>
                         </div>
                     </div>
