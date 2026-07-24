@@ -11,6 +11,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class SyncUserToHubSpot implements ShouldQueue
 {
@@ -18,12 +19,15 @@ class SyncUserToHubSpot implements ShouldQueue
 
     public int $userId;
 
+    public ?string $correlationId;
+
     /**
      * Create a new job instance.
      */
-    public function __construct(int $userId)
+    public function __construct(int $userId, ?string $correlationId = null)
     {
         $this->userId = $userId;
+        $this->correlationId = $correlationId;
     }
 
     /**
@@ -31,55 +35,77 @@ class SyncUserToHubSpot implements ShouldQueue
      */
     public function handle(HubSpotService $hubSpotService): void
     {
-        $user = User::with('profile')->find($this->userId);
+        $correlationId = $this->correlationId ?: (string) Str::uuid();
+        $contextBase = [
+            'correlation_id' => $correlationId,
+            'user_id' => $this->userId,
+            'timestamp' => now()->toIso8601String(),
+        ];
+
+        Log::info('HubSpot contact creation job started.', $contextBase);
+
+        $user = User::with(['profile', 'company'])->find($this->userId);
 
         if (!$user) {
-            Log::warning('HubSpot sync skipped: user not found.', [
-                'user_id' => $this->userId,
-            ]);
+            Log::warning('HubSpot contact creation skipped: user not found.', array_merge($contextBase, [
+                'final_status' => 'skipped_user_not_found',
+            ]));
             return;
         }
 
-        Log::info('HubSpot sync job started for user.', [
-            'user_id' => $user->id,
-            'email_verified' => $user->email_verified,
+        $context = array_merge($contextBase, [
+            'company_id' => $user->company_id,
+            'email' => $user->preferred_email ?? $user->email,
+            'account_type' => $user->account_type,
+            'email_verified' => (bool) $user->email_verified,
+            'hubspot_configured' => $hubSpotService->isConfigured(),
         ]);
+
+        Log::info('HubSpot contact creation job loaded user context.', $context);
 
         // Only sync verified users
         if (!$user->email_verified) {
-            Log::info('HubSpot sync skipped: user not email-verified.', [
-                'user_id' => $user->id,
-                'email_verified' => $user->email_verified,
-            ]);
+            Log::info('HubSpot contact creation skipped: user not email-verified.', array_merge($context, [
+                'final_status' => 'skipped_not_verified',
+            ]));
             return;
         }
 
         $email = $user->preferred_email;
 
         if (empty($email)) {
-            Log::warning('HubSpot sync skipped: user has no email.', [
-                'user_id' => $user->id,
-            ]);
+            Log::warning('HubSpot contact creation skipped: user has no email.', array_merge($context, [
+                'final_status' => 'skipped_no_email',
+            ]));
             return;
         }
 
-        $exists = $hubSpotService->contactExists($email);
+        $context['email'] = $email;
+
+        if (!$hubSpotService->isConfigured()) {
+            Log::error('HubSpot contact creation failed: missing access token configuration.', array_merge($context, [
+                'final_status' => 'failed_not_configured',
+            ]));
+            return;
+        }
+
+        Log::info('HubSpot contact existence check initiated.', $context);
+        $exists = $hubSpotService->contactExists($email, $context);
 
         // If we know the contact exists, do not create it again.
         if ($exists === true) {
-            Log::info('HubSpot contact already exists, skipping creation.', [
-                'user_id' => $user->id,
-                'email' => $email,
-            ]);
+            Log::info('HubSpot contact already exists, skipping creation.', array_merge($context, [
+                'final_status' => 'skipped_already_exists',
+            ]));
             return;
         }
 
         // If existence is unknown due to API/config issues, log and bail out to avoid duplicates.
         if ($exists === null) {
-            Log::warning('HubSpot contact existence unknown, skipping creation to avoid duplicates.', [
-                'user_id' => $user->id,
-                'email' => $email,
-            ]);
+            Log::warning('HubSpot contact existence unknown, skipping creation to avoid duplicates.', array_merge($context, [
+                'final_status' => 'skipped_existence_unknown',
+                'reason' => 'contactExists returned null (API failure, timeout, or misconfiguration). Registration is unaffected.',
+            ]));
             return;
         }
 
@@ -102,10 +128,6 @@ class SyncUserToHubSpot implements ShouldQueue
             $configProps['email'] ?? 'email' => $email,
         ];
 
-        // if (!empty($fullName) && !empty($configProps['full_name'])) {
-        //     $properties[$configProps['full_name']] = $fullName;
-        // }
-
         if (!empty($firstName) && !empty($configProps['firstname'])) {
             $properties[$configProps['firstname']] = $firstName;
         }
@@ -122,27 +144,22 @@ class SyncUserToHubSpot implements ShouldQueue
             $properties[$configProps['user_type']] = $userType;
         }
 
-        Log::info('HubSpot sync prepared properties.', [
-            'user_id' => $user->id,
-            'email' => $email,
-            'properties' => $properties,
-        ]);
+        Log::info('HubSpot contact creation payload prepared.', array_merge($context, [
+            'payload' => ['properties' => $properties],
+        ]));
 
-        $created = $hubSpotService->createContact($properties);
+        $created = $hubSpotService->createContact($properties, $context);
 
         if (!$created) {
             // Error already logged in service; do not throw to avoid impacting user flow.
-            Log::warning('HubSpot contact creation reported failure.', [
-                'user_id' => $user->id,
-                'email' => $email,
-            ]);
+            Log::warning('HubSpot contact creation reported failure.', array_merge($context, [
+                'final_status' => 'failed',
+            ]));
             return;
         }
 
-        Log::info('HubSpot sync job completed successfully for user.', [
-            'user_id' => $user->id,
-            'email' => $email,
-        ]);
+        Log::info('HubSpot contact creation completed successfully.', array_merge($context, [
+            'final_status' => 'success',
+        ]));
     }
 }
-
