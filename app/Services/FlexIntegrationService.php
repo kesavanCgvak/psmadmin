@@ -14,8 +14,10 @@ use App\Models\SupplyJob;
 use App\Models\User;
 use App\Models\UserProfile;
 use App\Support\FlexIntegrationDebugLog;
+use App\Support\ProductNormalizer;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -830,7 +832,152 @@ class FlexIntegrationService
         ];
     }
 
-    public function searchFlexProduct(string $searchText): ?string
+    /**
+     * Build ordered Flex search candidates: exact → normalized → shortened variants.
+     * Stops are applied by the caller once a match is found.
+     *
+     * @return list<string>
+     */
+    public function buildProductSearchCandidates(string $productName): array
+    {
+        $candidates = [];
+        $exact = trim(preg_replace('/\s+/u', ' ', $productName) ?? '');
+        if ($exact !== '') {
+            $candidates[] = $exact;
+        }
+
+        $normalized = $this->normalizeProductNameForSearch($exact !== '' ? $exact : $productName);
+        if ($normalized !== '' && !$this->searchCandidateExists($candidates, $normalized)) {
+            $candidates[] = $normalized;
+        }
+
+        $source = $normalized !== '' ? $normalized : $exact;
+        if ($source === '') {
+            return [];
+        }
+
+        $words = preg_split('/\s+/u', $source, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $significant = array_values(array_filter($words, static function (string $word): bool {
+            return mb_strlen($word) >= 2;
+        }));
+
+        if (count($significant) >= 2) {
+            $shortTwo = $significant[0] . ' ' . $significant[1];
+            if (!$this->searchCandidateExists($candidates, $shortTwo)) {
+                $candidates[] = $shortTwo;
+            }
+        }
+
+        $modelCode = ProductNormalizer::extractModelCode($source);
+        if ($modelCode !== null && trim($modelCode) !== '' && !$this->searchCandidateExists($candidates, $modelCode)) {
+            $candidates[] = trim($modelCode);
+        } elseif (count($significant) >= 1) {
+            // Prefer a token that looks like a model code (has a digit); else last significant word
+            $codeLike = null;
+            foreach ($significant as $word) {
+                if (preg_match('/\d/', $word)) {
+                    $codeLike = $word;
+                }
+            }
+            $shortOne = $codeLike ?? $significant[count($significant) - 1];
+            if (!$this->searchCandidateExists($candidates, $shortOne)) {
+                $candidates[] = $shortOne;
+            }
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * Normalize a product name for Flex search: strip special chars, collapse whitespace.
+     * Example: "Yamaha-QL5 Digital Mixer" → "Yamaha QL5 Digital Mixer"
+     */
+    public function normalizeProductNameForSearch(string $productName): string
+    {
+        $value = preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $productName) ?? '';
+        $value = preg_replace('/\s+/u', ' ', $value) ?? '';
+
+        return trim($value);
+    }
+
+    /**
+     * @param  list<string>  $candidates
+     */
+    protected function searchCandidateExists(array $candidates, string $candidate): bool
+    {
+        $needle = mb_strtolower(trim($candidate));
+        foreach ($candidates as $existing) {
+            if (mb_strtolower(trim($existing)) === $needle) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Try Flex product search strategies in order; stop on the first successful match.
+     */
+    public function searchFlexProductWithStrategies(string $productName): ?string
+    {
+        $candidates = $this->buildProductSearchCandidates($productName);
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'PRODUCT_SEARCH_STRATEGIES',
+            'STARTED',
+            [
+                'product_name' => $productName,
+                'candidates' => $candidates,
+            ],
+            'Search each candidate until a match is found',
+        );
+
+        foreach ($candidates as $index => $candidate) {
+            // First (exact name) may use Flex's ranked first hit; later strategies require exact name match
+            $exactNameOnly = $index > 0;
+            $foundId = $this->searchFlexProduct($candidate, $exactNameOnly);
+            if ($foundId) {
+                FlexIntegrationDebugLog::step(
+                    $this->rentalRequestId ?? 0,
+                    $this->providerCompanyId,
+                    'PRODUCT_SEARCH_STRATEGIES',
+                    'MATCHED',
+                    [
+                        'strategy_index' => $index,
+                        'search_text' => $candidate,
+                        'exact_name_only' => $exactNameOnly,
+                        'flex_resource_id' => $foundId,
+                    ],
+                    'Stop remaining strategies; persist flex_resource_id',
+                );
+
+                return $foundId;
+            }
+        }
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'PRODUCT_SEARCH_STRATEGIES',
+            'NOT_FOUND',
+            [
+                'product_name' => $productName,
+                'candidates' => $candidates,
+            ],
+            'Create inventory model in Flex',
+        );
+
+        return null;
+    }
+
+    /**
+     * Search Flex inventory-model by name.
+     *
+     * @param  bool  $exactNameOnly  When true, do not fall back to the first search hit
+     */
+    public function searchFlexProduct(string $searchText, bool $exactNameOnly = false): ?string
     {
         $path = config('flex.global_search_path', '/f5/api/search');
         $url = $this->baseUrl . '/' . ltrim($path, '/');
@@ -850,6 +997,7 @@ class FlexIntegrationService
             'STARTED',
             [
                 'search_text' => $searchText,
+                'exact_name_only' => $exactNameOnly,
                 'params' => $params,
             ],
             'Match inventory-model by case-insensitive name or create if missing',
@@ -932,8 +1080,21 @@ class FlexIntegrationService
             }
 
             // Fall back to first hit when Flex search already scoped by full product name
-            if ($matched === null && is_array($items[0] ?? null)) {
+            if ($matched === null && !$exactNameOnly && is_array($items[0] ?? null)) {
                 $matched = $items[0];
+            }
+
+            if ($matched === null) {
+                $this->logIntegration(
+                    FlexIntegrationLog::ACTION_PRODUCT_NOT_FOUND,
+                    FlexIntegrationLog::STATUS_FAILED,
+                    $url,
+                    $params,
+                    is_array($data) ? $data : null,
+                    $exactNameOnly ? 'No exact inventory-model name match' : 'No usable inventory-model hit',
+                );
+
+                return null;
             }
 
             $id = is_array($matched) ? ($matched['id'] ?? null) : null;
@@ -1063,8 +1224,8 @@ class FlexIntegrationService
             ]);
         }
 
-        // Case 2: search FLEX inventory by product name
-        $foundId = $this->searchFlexProduct($displayName);
+        // Case 2: multi-strategy search in FLEX inventory by product name
+        $foundId = $this->searchFlexProductWithStrategies($displayName);
         if ($foundId) {
             self::persistFlexResourceOnInventory($this->providerCompanyId, $productId, $foundId);
             $this->logPersistResourceId($productId, $foundId, 'search');
@@ -1117,6 +1278,139 @@ class FlexIntegrationService
 
             return null;
         }
+    }
+
+    /**
+     * Fetch (or create) a FLEX Resource ID for a company_inventory row and persist it.
+     *
+     * @return array{success: bool, action: string, message: string, resource_id: string}
+     *
+     * @throws \InvalidArgumentException When product/name data is missing
+     * @throws \RuntimeException When Flex create fails or other API errors occur
+     */
+    public function fetchAndLinkFlexResourceId(Equipment $equipment): array
+    {
+        $equipment->loadMissing(['product.brand']);
+
+        $product = $equipment->product;
+        if (!$product) {
+            throw new \InvalidArgumentException('Product not found for this company inventory record.');
+        }
+
+        $displayName = self::productDisplayName($product);
+        if (trim($displayName) === '') {
+            throw new \InvalidArgumentException('Product name is empty; cannot search or create in FLEX.');
+        }
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'FETCH_FLEX_RESOURCE_ID',
+            'STARTED',
+            [
+                'company_inventory_id' => $equipment->id,
+                'company_id' => $equipment->company_id,
+                'product_id' => $equipment->product_id,
+                'name' => $displayName,
+                'cached_flex_resource_id' => $equipment->flex_resource_id,
+            ],
+            'Validate cached ID, multi-strategy search, or create inventory model',
+        );
+
+        $cachedId = $equipment->flex_resource_id;
+        if ($cachedId !== null && $cachedId !== '') {
+            if ($this->flexInventoryModelExists((string) $cachedId)) {
+                FlexIntegrationDebugLog::step(
+                    $this->rentalRequestId ?? 0,
+                    $this->providerCompanyId,
+                    'FETCH_FLEX_RESOURCE_ID',
+                    'FROM_CACHED_ID',
+                    [
+                        'company_inventory_id' => $equipment->id,
+                        'flex_resource_id' => $cachedId,
+                    ],
+                    'Return linked Resource ID',
+                );
+
+                return [
+                    'success' => true,
+                    'action' => 'matched',
+                    'message' => 'Product found in FLEX and Resource ID has been linked.',
+                    'resource_id' => (string) $cachedId,
+                ];
+            }
+
+            Log::warning('Flex Integration: Cached FLEX Resource ID invalid; falling back to search', [
+                'provider_company_id' => $this->providerCompanyId,
+                'company_inventory_id' => $equipment->id,
+                'product_id' => $equipment->product_id,
+                'flex_resource_id' => $cachedId,
+            ]);
+        }
+
+        $foundId = $this->searchFlexProductWithStrategies($displayName);
+        if ($foundId) {
+            $this->persistFlexResourceOnEquipment($equipment, $foundId, 'search');
+
+            return [
+                'success' => true,
+                'action' => 'matched',
+                'message' => 'Product found in FLEX and Resource ID has been linked.',
+                'resource_id' => $foundId,
+            ];
+        }
+
+        $createdId = $this->createFlexInventoryModel($displayName);
+        $this->persistFlexResourceOnEquipment($equipment, $createdId, 'create');
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'FETCH_FLEX_RESOURCE_ID',
+            'CREATED',
+            [
+                'company_inventory_id' => $equipment->id,
+                'product_id' => $equipment->product_id,
+                'flex_resource_id' => $createdId,
+                'name' => $displayName,
+            ],
+            'Return newly created Resource ID',
+        );
+
+        return [
+            'success' => true,
+            'action' => 'created',
+            'message' => 'Product was not found in FLEX. A new resource was created and linked successfully.',
+            'resource_id' => $createdId,
+        ];
+    }
+
+    /**
+     * Persist flex_resource_id on a specific company_inventory row inside a transaction.
+     */
+    protected function persistFlexResourceOnEquipment(Equipment $equipment, string $flexResourceId, string $source): void
+    {
+        DB::transaction(function () use ($equipment, $flexResourceId) {
+            $locked = Equipment::query()->whereKey($equipment->id)->lockForUpdate()->first();
+            if (!$locked) {
+                throw new \RuntimeException('Company inventory record no longer exists.');
+            }
+
+            $locked->flex_resource_id = $flexResourceId;
+            $locked->save();
+
+            $equipment->flex_resource_id = $flexResourceId;
+        });
+
+        $this->logPersistResourceId((int) $equipment->product_id, $flexResourceId, $source);
+
+        Log::info('Flex Integration: Database update flex_resource_id (by inventory id)', [
+            'provider_company_id' => $this->providerCompanyId,
+            'company_inventory_id' => $equipment->id,
+            'product_id' => $equipment->product_id,
+            'flex_resource_id' => $flexResourceId,
+            'source' => $source,
+        ]);
     }
 
     /**
@@ -2627,10 +2921,12 @@ class FlexIntegrationService
 
     public static function persistFlexResourceOnInventory(int $providerCompanyId, int $productId, string $flexResourceId): void
     {
-        $updated = Equipment::query()
-            ->where('company_id', $providerCompanyId)
-            ->where('product_id', $productId)
-            ->update(['flex_resource_id' => $flexResourceId]);
+        $updated = DB::transaction(function () use ($providerCompanyId, $productId, $flexResourceId) {
+            return Equipment::query()
+                ->where('company_id', $providerCompanyId)
+                ->where('product_id', $productId)
+                ->update(['flex_resource_id' => $flexResourceId]);
+        });
 
         Log::info('Flex Integration: Database update flex_resource_id', [
             'provider_company_id' => $providerCompanyId,

@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\FetchFlexResourceIdRequest;
 use App\Models\Equipment;
 use App\Support\InventoryImageSyncService;
 use App\Models\LinearUnit;
 use App\Models\Product;
 use App\Models\WeightUnit;
+use App\Services\FlexIntegrationService;
 use App\Services\FlexService;
 use App\Services\InventoryImportService;
 use App\Support\PsmCodeGenerator;
@@ -537,6 +539,80 @@ class FlexInventoryController extends Controller
             ?: WeightUnit::whereRaw('LOWER(name) = ?', [$normalized])->first();
 
         return $unit?->id;
+    }
+
+    /**
+     * Fetch (or create) a FLEX Resource ID for a company inventory product and persist it.
+     * POST /api/company-inventory/fetch-flex-resource-id
+     */
+    public function fetchFlexResourceId(FetchFlexResourceIdRequest $request): JsonResponse
+    {
+        $user = $this->getAuthenticatedUser();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $companyId = $user->company_id;
+        if (!$companyId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Company not found for this user.',
+            ], 403);
+        }
+
+        $equipment = Equipment::query()
+            ->with(['product.brand'])
+            ->whereKey((int) $request->input('company_inventory_id'))
+            ->first();
+
+        if (!$equipment || (int) $equipment->company_id !== (int) $companyId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Company inventory record not found for your company.',
+            ], 404);
+        }
+
+        $flex = FlexIntegrationService::forProviderCompany((int) $companyId);
+        if (!$flex) {
+            return response()->json([
+                'success' => false,
+                'message' => 'FLEX integration is not configured for this company. Please add API credentials (base URL and API key) before fetching a Resource ID.',
+            ], 422);
+        }
+
+        try {
+            $result = $flex->fetchAndLinkFlexResourceId($equipment);
+
+            return response()->json($result, 200);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\RuntimeException $e) {
+            Log::error('Fetch Flex Resource ID failed', [
+                'company_id' => $companyId,
+                'company_inventory_id' => $equipment->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 502);
+        } catch (\Throwable $e) {
+            Log::error('Fetch Flex Resource ID unexpected error', [
+                'company_id' => $companyId,
+                'company_inventory_id' => $equipment->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An unexpected error occurred while fetching the FLEX Resource ID.',
+            ], 500);
+        }
     }
 
     protected function getAuthenticatedUser()

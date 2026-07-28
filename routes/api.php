@@ -237,6 +237,10 @@ Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
     Route::post('/link-inventory', [FlexInventoryController::class, 'linkInventory']);
 });
 
+Route::middleware(['jwt.verify'])->prefix('company-inventory')->group(function () {
+    Route::post('/fetch-flex-resource-id', [FlexInventoryController::class, 'fetchFlexResourceId']);
+});
+
 // Rentman equipment (local cache + import; search is DB-only)
 Route::middleware(['jwt.verify'])->prefix('rentman/equipment')->group(function () {
     Route::post('/sync', [RentmanEquipmentController::class, 'sync']);
