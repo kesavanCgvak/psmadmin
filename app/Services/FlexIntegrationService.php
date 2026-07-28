@@ -833,8 +833,7 @@ class FlexIntegrationService
     }
 
     /**
-     * Build ordered Flex search candidates: exact → normalized → shortened variants.
-     * Stops are applied by the caller once a match is found.
+     * Build ordered Flex search candidates: exact → normalized → prefix/suffix → model → meaningful singles.
      *
      * @return list<string>
      */
@@ -857,35 +856,112 @@ class FlexIntegrationService
         }
 
         $words = preg_split('/\s+/u', $source, -1, PREG_SPLIT_NO_EMPTY) ?: [];
-        $significant = array_values(array_filter($words, static function (string $word): bool {
-            return mb_strlen($word) >= 2;
+        $significant = array_values(array_filter($words, function (string $word): bool {
+            return !$this->isInsignificantSearchToken($word);
         }));
 
-        if (count($significant) >= 2) {
-            $shortTwo = $significant[0] . ' ' . $significant[1];
-            if (!$this->searchCandidateExists($candidates, $shortTwo)) {
-                $candidates[] = $shortTwo;
+        $wordCount = count($significant);
+        if ($wordCount === 0) {
+            return $candidates;
+        }
+
+        // Prefix combinations: first 2..n-1 words (e.g. "SHURE SM57")
+        for ($len = $wordCount - 1; $len >= 2; $len--) {
+            $prefix = implode(' ', array_slice($significant, 0, $len));
+            if (!$this->searchCandidateExists($candidates, $prefix)) {
+                $candidates[] = $prefix;
+            }
+        }
+
+        // Suffix combinations: last 2..n-1 words (e.g. "SM57 Microphone")
+        for ($len = 2; $len < $wordCount; $len++) {
+            $suffix = implode(' ', array_slice($significant, -$len));
+            if (!$this->searchCandidateExists($candidates, $suffix)) {
+                $candidates[] = $suffix;
             }
         }
 
         $modelCode = ProductNormalizer::extractModelCode($source);
-        if ($modelCode !== null && trim($modelCode) !== '' && !$this->searchCandidateExists($candidates, $modelCode)) {
-            $candidates[] = trim($modelCode);
-        } elseif (count($significant) >= 1) {
-            // Prefer a token that looks like a model code (has a digit); else last significant word
-            $codeLike = null;
-            foreach ($significant as $word) {
-                if (preg_match('/\d/', $word)) {
-                    $codeLike = $word;
+        if ($modelCode !== null && trim($modelCode) !== '') {
+            $modelCode = trim($modelCode);
+            if (!$this->searchCandidateExists($candidates, $modelCode)) {
+                $candidates[] = $modelCode;
+            }
+
+            // Model code + remaining descriptive words after it (e.g. "SM57 Microphone")
+            $modelIndex = $this->findTokenIndexContaining($significant, $modelCode);
+            if ($modelIndex !== null && $modelIndex < $wordCount - 1) {
+                $afterModel = array_slice($significant, $modelIndex);
+                $modelPhrase = implode(' ', $afterModel);
+                if (!$this->searchCandidateExists($candidates, $modelPhrase)) {
+                    $candidates[] = $modelPhrase;
                 }
             }
-            $shortOne = $codeLike ?? $significant[count($significant) - 1];
-            if (!$this->searchCandidateExists($candidates, $shortOne)) {
-                $candidates[] = $shortOne;
+        }
+
+        // Meaningful single tokens: brand (first), model-like (has digit), last descriptive word
+        $singleTokens = [];
+        $singleTokens[] = $significant[0];
+        if ($wordCount > 1) {
+            $singleTokens[] = $significant[$wordCount - 1];
+        }
+        foreach ($significant as $word) {
+            if (preg_match('/\d/', $word)) {
+                $singleTokens[] = $word;
+            }
+        }
+
+        foreach ($singleTokens as $token) {
+            if ($this->isInsignificantSearchToken($token)) {
+                continue;
+            }
+            if (!$this->searchCandidateExists($candidates, $token)) {
+                $candidates[] = $token;
             }
         }
 
         return $candidates;
+    }
+
+    /**
+     * Skip filler / tiny tokens that produce noisy Flex searches.
+     */
+    protected function isInsignificantSearchToken(string $token): bool
+    {
+        $normalized = mb_strtolower(trim($token));
+        if ($normalized === '' || mb_strlen($normalized) < 2) {
+            return true;
+        }
+
+        static $stopwords = [
+            'a', 'an', 'the', 'and', 'or', 'for', 'with', 'of', 'to', 'in', 'on', 'by', 'at',
+        ];
+
+        return in_array($normalized, $stopwords, true);
+    }
+
+    /**
+     * @param  list<string>  $tokens
+     */
+    protected function findTokenIndexContaining(array $tokens, string $needle): ?int
+    {
+        $needleNorm = mb_strtolower(preg_replace('/\s+/u', '', $needle) ?? '');
+        if ($needleNorm === '') {
+            return null;
+        }
+
+        foreach ($tokens as $index => $token) {
+            $tokenNorm = mb_strtolower(preg_replace('/[^a-z0-9]+/iu', '', $token) ?? '');
+            if ($tokenNorm !== '' && (
+                $tokenNorm === $needleNorm
+                || str_contains($tokenNorm, $needleNorm)
+                || str_contains($needleNorm, $tokenNorm)
+            )) {
+                return $index;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -916,11 +992,15 @@ class FlexIntegrationService
     }
 
     /**
-     * Try Flex product search strategies in order; stop on the first successful match.
+     * Collect unique Flex inventory-model matches across all search scenarios.
+     * Continues through every candidate; dedupes by Resource ID; preserves best-first order.
+     *
+     * @return list<array{resource_id: string, name: string, matched_by: string}>
      */
-    public function searchFlexProductWithStrategies(string $productName): ?string
+    public function collectFlexProductMatches(string $productName): array
     {
         $candidates = $this->buildProductSearchCandidates($productName);
+        $matchesById = [];
 
         FlexIntegrationDebugLog::step(
             $this->rentalRequestId ?? 0,
@@ -931,53 +1011,88 @@ class FlexIntegrationService
                 'product_name' => $productName,
                 'candidates' => $candidates,
             ],
-            'Search each candidate until a match is found',
+            'Search all candidates and collect unique matches',
         );
 
         foreach ($candidates as $index => $candidate) {
-            // First (exact name) may use Flex's ranked first hit; later strategies require exact name match
-            $exactNameOnly = $index > 0;
-            $foundId = $this->searchFlexProduct($candidate, $exactNameOnly);
-            if ($foundId) {
-                FlexIntegrationDebugLog::step(
-                    $this->rentalRequestId ?? 0,
-                    $this->providerCompanyId,
-                    'PRODUCT_SEARCH_STRATEGIES',
-                    'MATCHED',
-                    [
-                        'strategy_index' => $index,
-                        'search_text' => $candidate,
-                        'exact_name_only' => $exactNameOnly,
-                        'flex_resource_id' => $foundId,
-                    ],
-                    'Stop remaining strategies; persist flex_resource_id',
-                );
+            $hits = $this->searchFlexProductHits($candidate);
+            foreach ($hits as $hit) {
+                $resourceId = $hit['resource_id'];
+                if (isset($matchesById[$resourceId])) {
+                    continue;
+                }
 
-                return $foundId;
+                $matchesById[$resourceId] = [
+                    'resource_id' => $resourceId,
+                    'name' => $hit['name'],
+                    'matched_by' => $candidate,
+                ];
+
+                Log::info('Flex Integration: Collected product match from search scenario', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $this->rentalRequestId,
+                    'strategy_index' => $index,
+                    'search_text' => $candidate,
+                    'flex_resource_id' => $resourceId,
+                    'flex_product_name' => $hit['name'],
+                ]);
             }
         }
+
+        $matches = array_values($matchesById);
 
         FlexIntegrationDebugLog::step(
             $this->rentalRequestId ?? 0,
             $this->providerCompanyId,
             'PRODUCT_SEARCH_STRATEGIES',
-            'NOT_FOUND',
+            $matches === [] ? 'NOT_FOUND' : 'COLLECTED',
             [
                 'product_name' => $productName,
                 'candidates' => $candidates,
+                'match_count' => count($matches),
+                'matches' => array_map(static function (array $match): array {
+                    return [
+                        'resource_id' => $match['resource_id'],
+                        'name' => $match['name'],
+                        'matched_by' => $match['matched_by'],
+                    ];
+                }, $matches),
             ],
-            'Create inventory model in Flex',
+            $matches === []
+                ? 'Create inventory model in Flex or await user confirmation'
+                : 'Return matches for user selection or auto-resolve first hit',
         );
 
-        return null;
+        return $matches;
     }
 
     /**
-     * Search Flex inventory-model by name.
+     * Try Flex product search strategies and return the best (first unique) match.
+     * Used by quote-sync resolve flow where a single Resource ID is required.
      *
-     * @param  bool  $exactNameOnly  When true, do not fall back to the first search hit
+     * @return array{resource_id: string, flex_product_name: ?string}|null
      */
-    public function searchFlexProduct(string $searchText, bool $exactNameOnly = false): ?string
+    public function searchFlexProductWithStrategies(string $productName): ?array
+    {
+        $matches = $this->collectFlexProductMatches($productName);
+        if ($matches === []) {
+            return null;
+        }
+
+        $best = $matches[0];
+
+        return [
+            'resource_id' => $best['resource_id'],
+            'flex_product_name' => $best['name'],
+        ];
+    }
+
+    /**
+     * Search Flex and return all relevant inventory-model hits for a single search text.
+     *
+     * @return list<array{resource_id: string, name: string}>
+     */
+    public function searchFlexProductHits(string $searchText): array
     {
         $path = config('flex.global_search_path', '/f5/api/search');
         $url = $this->baseUrl . '/' . ltrim($path, '/');
@@ -997,10 +1112,9 @@ class FlexIntegrationService
             'STARTED',
             [
                 'search_text' => $searchText,
-                'exact_name_only' => $exactNameOnly,
                 'params' => $params,
             ],
-            'Match inventory-model by case-insensitive name or create if missing',
+            'Collect inventory-model hits for this search scenario',
         );
 
         try {
@@ -1009,7 +1123,7 @@ class FlexIntegrationService
                 $url,
                 $params,
                 FlexIntegrationLog::ACTION_SEARCH_PRODUCT,
-                'Attach found resource to sales quote (or create inventory model if not found)',
+                'Collect matches or continue next search scenario',
             );
 
             $data = $response->json();
@@ -1031,7 +1145,7 @@ class FlexIntegrationService
                     'http_status' => $response->status(),
                 ]);
 
-                return null;
+                return [];
             }
 
             $items = self::normalizeFlexItemArray($data);
@@ -1060,76 +1174,74 @@ class FlexIntegrationService
                     'PRODUCT_SEARCH',
                     'NOT_FOUND',
                     ['search_text' => $searchText],
-                    'Create inventory model in Flex',
+                    'Continue next search scenario',
                 );
 
-                return null;
+                return [];
             }
 
-            $needle = mb_strtolower(trim($searchText));
-            $matched = null;
+            $hits = [];
+            $seen = [];
             foreach ($items as $item) {
                 if (!is_array($item)) {
                     continue;
                 }
-                $name = mb_strtolower(trim((string) ($item['name'] ?? '')));
-                if ($name !== '' && $name === $needle) {
-                    $matched = $item;
-                    break;
+
+                $id = $item['id'] ?? null;
+                if ($id === null || $id === '') {
+                    continue;
                 }
+
+                $idStr = (string) $id;
+                if (isset($seen[$idStr])) {
+                    continue;
+                }
+
+                $name = trim((string) ($item['name'] ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+
+                if (!$this->isRelevantFlexSearchHit($searchText, $name)) {
+                    continue;
+                }
+
+                $seen[$idStr] = true;
+                $hits[] = [
+                    'resource_id' => $idStr,
+                    'name' => $name,
+                ];
             }
 
-            // Fall back to first hit when Flex search already scoped by full product name
-            if ($matched === null && !$exactNameOnly && is_array($items[0] ?? null)) {
-                $matched = $items[0];
-            }
-
-            if ($matched === null) {
+            if ($hits === []) {
                 $this->logIntegration(
                     FlexIntegrationLog::ACTION_PRODUCT_NOT_FOUND,
                     FlexIntegrationLog::STATUS_FAILED,
                     $url,
                     $params,
                     is_array($data) ? $data : null,
-                    $exactNameOnly ? 'No exact inventory-model name match' : 'No usable inventory-model hit',
+                    'No relevant inventory-model hits for search text',
                 );
 
-                return null;
+                return [];
             }
-
-            $id = is_array($matched) ? ($matched['id'] ?? null) : null;
-            if ($id === null || $id === '') {
-                $this->logIntegration(
-                    FlexIntegrationLog::ACTION_PRODUCT_NOT_FOUND,
-                    FlexIntegrationLog::STATUS_FAILED,
-                    $url,
-                    $params,
-                    is_array($data) ? $data : null,
-                    'Hit missing id',
-                );
-
-                return null;
-            }
-
-            $idStr = (string) $id;
 
             $this->logIntegration(
                 FlexIntegrationLog::ACTION_SEARCH_PRODUCT,
                 FlexIntegrationLog::STATUS_SUCCESS,
                 $url,
                 $params,
-                is_array($matched) ? $matched : null,
+                ['hit_count' => count($hits), 'hits' => $hits],
                 null,
                 null,
-                $idStr,
+                $hits[0]['resource_id'],
             );
 
-            Log::info('Flex Integration: Product Found', [
+            Log::info('Flex Integration: Product search hits collected', [
                 'provider_company_id' => $this->providerCompanyId,
                 'rental_request_id' => $this->rentalRequestId,
-                'flex_resource_id' => $idStr,
                 'search_text' => $searchText,
-                'matched_name' => is_array($matched) ? ($matched['name'] ?? null) : null,
+                'hit_count' => count($hits),
             ]);
 
             FlexIntegrationDebugLog::step(
@@ -1139,13 +1251,13 @@ class FlexIntegrationService
                 'FOUND',
                 [
                     'search_text' => $searchText,
-                    'flex_resource_id' => $idStr,
-                    'matched_name' => is_array($matched) ? ($matched['name'] ?? null) : null,
+                    'hit_count' => count($hits),
+                    'hits' => $hits,
                 ],
-                'Persist flex_resource_id and attach to quote',
+                'Merge into unique match list',
             );
 
-            return $idStr;
+            return $hits;
         } catch (\Throwable $e) {
             $this->logIntegration(
                 FlexIntegrationLog::ACTION_API_ERROR,
@@ -1164,8 +1276,75 @@ class FlexIntegrationService
                 'trace' => $e->getTraceAsString(),
             ]);
 
+            return [];
+        }
+    }
+
+    /**
+     * Decide whether a Flex hit is relevant to the search text.
+     * Accepts exact name, containment, or all significant search tokens present in the name.
+     */
+    protected function isRelevantFlexSearchHit(string $searchText, string $productName): bool
+    {
+        $needle = mb_strtolower(trim($searchText));
+        $name = mb_strtolower(trim($productName));
+        if ($needle === '' || $name === '') {
+            return false;
+        }
+
+        if ($name === $needle || str_contains($name, $needle) || str_contains($needle, $name)) {
+            return true;
+        }
+
+        $tokens = preg_split('/\s+/u', $needle, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $significant = array_values(array_filter($tokens, function (string $token): bool {
+            return !$this->isInsignificantSearchToken($token);
+        }));
+
+        if ($significant === []) {
+            return false;
+        }
+
+        foreach ($significant as $token) {
+            if (!str_contains($name, $token)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Search Flex inventory-model by name and return the best single hit.
+     *
+     * @param  bool  $exactNameOnly  When true, only accept an exact name match
+     * @return array{resource_id: string, flex_product_name: ?string}|null
+     */
+    public function searchFlexProduct(string $searchText, bool $exactNameOnly = false): ?array
+    {
+        $hits = $this->searchFlexProductHits($searchText);
+        if ($hits === []) {
             return null;
         }
+
+        if ($exactNameOnly) {
+            $needle = mb_strtolower(trim($searchText));
+            foreach ($hits as $hit) {
+                if (mb_strtolower(trim($hit['name'])) === $needle) {
+                    return [
+                        'resource_id' => $hit['resource_id'],
+                        'flex_product_name' => $hit['name'],
+                    ];
+                }
+            }
+
+            return null;
+        }
+
+        return [
+            'resource_id' => $hits[0]['resource_id'],
+            'flex_product_name' => $hits[0]['name'],
+        ];
     }
 
     /**
@@ -1225,8 +1404,9 @@ class FlexIntegrationService
         }
 
         // Case 2: multi-strategy search in FLEX inventory by product name
-        $foundId = $this->searchFlexProductWithStrategies($displayName);
-        if ($foundId) {
+        $found = $this->searchFlexProductWithStrategies($displayName);
+        if ($found) {
+            $foundId = $found['resource_id'];
             self::persistFlexResourceOnInventory($this->providerCompanyId, $productId, $foundId);
             $this->logPersistResourceId($productId, $foundId, 'search');
 
@@ -1281,14 +1461,165 @@ class FlexIntegrationService
     }
 
     /**
-     * Fetch (or create) a FLEX Resource ID for a company_inventory row and persist it.
+     * Search FLEX for a marketplace inventory product without updating the database.
+     *
+     * @return array{
+     *   success: bool,
+     *   action: string,
+     *   message?: string,
+     *   products?: list<array{resource_id: string, name: string}>
+     * }
+     *
+     * @throws \InvalidArgumentException When product/name data is missing
+     */
+    public function searchFlexProductForMarketplace(Equipment $equipment): array
+    {
+        $displayName = $this->resolveMarketplaceProductDisplayName($equipment);
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'SEARCH_FLEX_PRODUCT',
+            'STARTED',
+            [
+                'company_inventory_id' => $equipment->id,
+                'company_id' => $equipment->company_id,
+                'product_id' => $equipment->product_id,
+                'name' => $displayName,
+            ],
+            'Multi-strategy FLEX search; collect all unique matches; no database updates',
+        );
+
+        $matches = $this->collectFlexProductMatches($displayName);
+        $products = array_map(static function (array $match): array {
+            return [
+                'resource_id' => $match['resource_id'],
+                'name' => $match['name'],
+            ];
+        }, $matches);
+
+        if ($products === []) {
+            Log::info('Flex Integration: No matching FLEX product found for marketplace search', [
+                'provider_company_id' => $this->providerCompanyId,
+                'company_inventory_id' => $equipment->id,
+                'product_id' => $equipment->product_id,
+                'name' => $displayName,
+            ]);
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'SEARCH_FLEX_PRODUCT',
+                'NO_MATCH',
+                [
+                    'company_inventory_id' => $equipment->id,
+                    'name' => $displayName,
+                ],
+                'Await user confirmation to create in FLEX',
+            );
+
+            return [
+                'success' => true,
+                'action' => 'no_match',
+                'message' => 'No matching product found in FLEX.',
+            ];
+        }
+
+        $action = count($products) === 1 ? 'single_match' : 'multiple_matches';
+        $message = $action === 'single_match'
+            ? 'Matching product found in FLEX.'
+            : 'Multiple matching products found in FLEX. Please select one to synchronize.';
+
+        Log::info('Flex Integration: FLEX marketplace search completed', [
+            'provider_company_id' => $this->providerCompanyId,
+            'company_inventory_id' => $equipment->id,
+            'product_id' => $equipment->product_id,
+            'action' => $action,
+            'match_count' => count($products),
+            'products' => $products,
+            'matched_by' => array_map(static fn (array $m): string => $m['matched_by'], $matches),
+        ]);
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'SEARCH_FLEX_PRODUCT',
+            strtoupper($action),
+            [
+                'company_inventory_id' => $equipment->id,
+                'match_count' => count($products),
+                'products' => $products,
+            ],
+            'Await user confirmation before linking and synchronizing',
+        );
+
+        return [
+            'success' => true,
+            'action' => $action,
+            'products' => $products,
+            'message' => $message,
+        ];
+    }
+
+    /**
+     * Confirm marketplace FLEX sync: link Resource ID and synchronize metadata (or create in FLEX first).
      *
      * @return array{success: bool, action: string, message: string, resource_id: string}
      *
      * @throws \InvalidArgumentException When product/name data is missing
      * @throws \RuntimeException When Flex create fails or other API errors occur
      */
-    public function fetchAndLinkFlexResourceId(Equipment $equipment): array
+    public function confirmFlexMarketplaceSync(Equipment $equipment, ?string $resourceId, bool $createIfMissing): array
+    {
+        $displayName = $this->resolveMarketplaceProductDisplayName($equipment);
+
+        FlexIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'CONFIRM_FLEX_SYNC',
+            'STARTED',
+            [
+                'company_inventory_id' => $equipment->id,
+                'company_id' => $equipment->company_id,
+                'product_id' => $equipment->product_id,
+                'name' => $displayName,
+                'resource_id' => $resourceId,
+                'create_if_missing' => $createIfMissing,
+            ],
+            $createIfMissing ? 'Create inventory model in FLEX then synchronize' : 'Link Resource ID and synchronize from FLEX',
+        );
+
+        if ($createIfMissing) {
+            $createdId = $this->createFlexInventoryModel($displayName);
+
+            Log::info('Flex Integration: New FLEX product created for marketplace confirm sync', [
+                'provider_company_id' => $this->providerCompanyId,
+                'company_inventory_id' => $equipment->id,
+                'product_id' => $equipment->product_id,
+                'flex_resource_id' => $createdId,
+                'name' => $displayName,
+            ]);
+
+            return $this->attemptLinkFlexResourceToEquipment($equipment, $createdId, 'create');
+        }
+
+        $resourceId = trim((string) $resourceId);
+        if ($resourceId === '') {
+            return [
+                'success' => false,
+                'action' => 'error',
+                'resource_id' => '',
+                'message' => 'resource_id is required when create_if_missing is false.',
+            ];
+        }
+
+        return $this->attemptLinkFlexResourceToEquipment($equipment, $resourceId, 'search');
+    }
+
+    /**
+     * @throws \InvalidArgumentException
+     */
+    protected function resolveMarketplaceProductDisplayName(Equipment $equipment): string
     {
         $equipment->loadMissing(['product.brand']);
 
@@ -1302,115 +1633,298 @@ class FlexIntegrationService
             throw new \InvalidArgumentException('Product name is empty; cannot search or create in FLEX.');
         }
 
-        FlexIntegrationDebugLog::step(
-            $this->rentalRequestId ?? 0,
-            $this->providerCompanyId,
-            'FETCH_FLEX_RESOURCE_ID',
-            'STARTED',
-            [
-                'company_inventory_id' => $equipment->id,
-                'company_id' => $equipment->company_id,
-                'product_id' => $equipment->product_id,
-                'name' => $displayName,
-                'cached_flex_resource_id' => $equipment->flex_resource_id,
-            ],
-            'Validate cached ID, multi-strategy search, or create inventory model',
-        );
+        return $displayName;
+    }
 
-        $cachedId = $equipment->flex_resource_id;
-        if ($cachedId !== null && $cachedId !== '') {
-            if ($this->flexInventoryModelExists((string) $cachedId)) {
+    /**
+     * Link a FLEX Resource ID to a company_inventory row with company-scoped duplicate checks.
+     *
+     * @return array{success: bool, action: string, message: string, resource_id: string}
+     */
+    protected function attemptLinkFlexResourceToEquipment(Equipment $equipment, string $flexResourceId, string $source): array
+    {
+        $resourceId = trim($flexResourceId);
+        $companyId = (int) $equipment->company_id;
+
+        if ($resourceId === '') {
+            return [
+                'success' => false,
+                'action' => 'error',
+                'resource_id' => '',
+                'message' => 'FLEX Resource ID is empty; cannot link to company inventory.',
+            ];
+        }
+
+        $isAlreadyLinked = (string) $equipment->flex_resource_id === $resourceId;
+
+        if (!$isAlreadyLinked) {
+            $duplicate = $this->findCompanyInventoryByFlexResourceId($companyId, $resourceId, (int) $equipment->id);
+            if ($duplicate) {
+                $duplicate->loadMissing(['product.brand']);
+                $result = $this->buildDuplicateResourceResponse($resourceId, $duplicate);
+
+                Log::warning('Flex Integration: FLEX Resource ID already linked to another product in company', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'company_inventory_id' => $equipment->id,
+                    'product_id' => $equipment->product_id,
+                    'flex_resource_id' => $resourceId,
+                    'linked_company_inventory_id' => $duplicate->id,
+                    'linked_product_id' => $duplicate->product_id,
+                    'linked_product_name' => $duplicate->product
+                        ? self::productDisplayName($duplicate->product)
+                        : null,
+                ]);
+
                 FlexIntegrationDebugLog::step(
                     $this->rentalRequestId ?? 0,
                     $this->providerCompanyId,
                     'FETCH_FLEX_RESOURCE_ID',
-                    'FROM_CACHED_ID',
+                    'DUPLICATE_RESOURCE',
                     [
                         'company_inventory_id' => $equipment->id,
-                        'flex_resource_id' => $cachedId,
+                        'flex_resource_id' => $resourceId,
+                        'linked_company_inventory_id' => $duplicate->id,
                     ],
-                    'Return linked Resource ID',
+                    'Do not overwrite existing company_inventory.flex_resource_id',
                 );
 
-                return [
-                    'success' => true,
-                    'action' => 'matched',
-                    'message' => 'Product found in FLEX and Resource ID has been linked.',
-                    'resource_id' => (string) $cachedId,
-                ];
+                return $result;
             }
-
-            Log::warning('Flex Integration: Cached FLEX Resource ID invalid; falling back to search', [
-                'provider_company_id' => $this->providerCompanyId,
-                'company_inventory_id' => $equipment->id,
-                'product_id' => $equipment->product_id,
-                'flex_resource_id' => $cachedId,
-            ]);
         }
 
-        $foundId = $this->searchFlexProductWithStrategies($displayName);
-        if ($foundId) {
-            $this->persistFlexResourceOnEquipment($equipment, $foundId, 'search');
-
+        try {
+            $details = $this->fetchFlexResourceDetailsForSync($resourceId);
+        } catch (\RuntimeException $e) {
             return [
-                'success' => true,
-                'action' => 'matched',
-                'message' => 'Product found in FLEX and Resource ID has been linked.',
-                'resource_id' => $foundId,
+                'success' => false,
+                'action' => 'error',
+                'resource_id' => $resourceId,
+                'message' => $e->getMessage(),
             ];
         }
 
-        $createdId = $this->createFlexInventoryModel($displayName);
-        $this->persistFlexResourceOnEquipment($equipment, $createdId, 'create');
+        $action = $isAlreadyLinked
+            ? 'already_linked'
+            : ($source === 'create' ? 'created' : 'matched');
+
+        return $this->finalizeFlexResourceSync(
+            $equipment,
+            $resourceId,
+            $action,
+            $details,
+            assignResourceId: !$isAlreadyLinked,
+            persistSource: $isAlreadyLinked ? null : $source,
+        );
+    }
+
+    /**
+     * Retrieve FLEX resource details for marketplace sync (single GET /inventory-model/{id}).
+     *
+     * @return array<string, mixed>
+     */
+    protected function fetchFlexResourceDetailsForSync(string $resourceId): array
+    {
+        try {
+            $details = FlexService::getInventoryDetails($this->providerCompanyId, $resourceId);
+
+            Log::info('Flex Integration: Resource details retrieved', [
+                'provider_company_id' => $this->providerCompanyId,
+                'flex_resource_id' => $resourceId,
+                'name' => $details['name'] ?? null,
+            ]);
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'FETCH_FLEX_RESOURCE_ID',
+                'DETAILS_RETRIEVED',
+                [
+                    'flex_resource_id' => $resourceId,
+                    'name' => $details['name'] ?? null,
+                ],
+                'Synchronize company_inventory and inventory_master from FLEX',
+            );
+
+            return $details;
+        } catch (\Throwable $e) {
+            Log::error('Flex Integration: Failed to retrieve FLEX resource details', [
+                'provider_company_id' => $this->providerCompanyId,
+                'flex_resource_id' => $resourceId,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \RuntimeException(
+                'Failed to retrieve FLEX resource details: ' . $e->getMessage(),
+                0,
+                $e,
+            );
+        }
+    }
+
+    /**
+     * Persist FLEX Resource ID (when needed) and synchronize metadata within a transaction.
+     *
+     * @param  array<string, mixed>  $details
+     * @return array{success: bool, action: string, message: string, resource_id: string}
+     */
+    protected function finalizeFlexResourceSync(
+        Equipment $equipment,
+        string $resourceId,
+        string $action,
+        array $details,
+        bool $assignResourceId,
+        ?string $persistSource = null,
+    ): array {
+        $companyId = (int) $equipment->company_id;
+
+        try {
+            DB::transaction(function () use ($equipment, $resourceId, $assignResourceId, $details, $companyId) {
+                if ($assignResourceId) {
+                    $locked = Equipment::query()->whereKey($equipment->id)->lockForUpdate()->first();
+                    if (!$locked) {
+                        throw new \RuntimeException('Company inventory record no longer exists.');
+                    }
+
+                    $duplicateInTransaction = Equipment::query()
+                        ->where('company_id', $companyId)
+                        ->where('flex_resource_id', $resourceId)
+                        ->where('id', '!=', $locked->id)
+                        ->lockForUpdate()
+                        ->exists();
+
+                    if ($duplicateInTransaction) {
+                        throw new \RuntimeException('DUPLICATE_RESOURCE');
+                    }
+
+                    $locked->flex_resource_id = $resourceId;
+                    $locked->save();
+
+                    $equipment->flex_resource_id = $resourceId;
+                }
+
+                FlexService::synchronizeMarketplaceInventoryFromFlexDetails($equipment, $resourceId, $details);
+            });
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'DUPLICATE_RESOURCE') {
+                $duplicate = $this->findCompanyInventoryByFlexResourceId($companyId, $resourceId, (int) $equipment->id);
+                if ($duplicate) {
+                    $duplicate->loadMissing(['product.brand']);
+
+                    return $this->buildDuplicateResourceResponse($resourceId, $duplicate);
+                }
+            }
+
+            Log::error('Flex Integration: Failed to synchronize FLEX metadata', [
+                'provider_company_id' => $this->providerCompanyId,
+                'company_inventory_id' => $equipment->id,
+                'product_id' => $equipment->product_id,
+                'flex_resource_id' => $resourceId,
+                'action' => $action,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'action' => 'error',
+                'resource_id' => $resourceId,
+                'message' => 'Failed to synchronize FLEX product metadata.',
+            ];
+        } catch (\Throwable $e) {
+            Log::error('Flex Integration: Failed to synchronize FLEX metadata', [
+                'provider_company_id' => $this->providerCompanyId,
+                'company_inventory_id' => $equipment->id,
+                'product_id' => $equipment->product_id,
+                'flex_resource_id' => $resourceId,
+                'action' => $action,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return [
+                'success' => false,
+                'action' => 'error',
+                'resource_id' => $resourceId,
+                'message' => 'Failed to synchronize FLEX product metadata.',
+            ];
+        }
+
+        if ($persistSource !== null) {
+            $this->logPersistResourceId((int) $equipment->product_id, $resourceId, $persistSource);
+        }
+
+        $message = match ($action) {
+            'already_linked' => "This product is already linked to FLEX with Resource ID '{$resourceId}'.",
+            'created' => 'Product was not found in FLEX. A new resource was created and linked successfully.',
+            default => 'Product found in FLEX and Resource ID has been linked.',
+        };
+
+        $logEvent = match ($action) {
+            'already_linked' => 'Resource ID already linked to current product; metadata synchronized from FLEX',
+            'created' => 'New FLEX product created and metadata synchronized',
+            default => 'FLEX product matched and metadata synchronized',
+        };
+
+        Log::info('Flex Integration: ' . $logEvent, [
+            'provider_company_id' => $this->providerCompanyId,
+            'company_inventory_id' => $equipment->id,
+            'product_id' => $equipment->product_id,
+            'flex_resource_id' => $resourceId,
+            'action' => $action,
+        ]);
 
         FlexIntegrationDebugLog::step(
             $this->rentalRequestId ?? 0,
             $this->providerCompanyId,
             'FETCH_FLEX_RESOURCE_ID',
-            'CREATED',
+            strtoupper($action),
             [
                 'company_inventory_id' => $equipment->id,
                 'product_id' => $equipment->product_id,
-                'flex_resource_id' => $createdId,
-                'name' => $displayName,
+                'flex_resource_id' => $resourceId,
             ],
-            'Return newly created Resource ID',
+            'Return synchronized Resource ID and metadata',
         );
 
         return [
             'success' => true,
-            'action' => 'created',
-            'message' => 'Product was not found in FLEX. A new resource was created and linked successfully.',
-            'resource_id' => $createdId,
+            'action' => $action,
+            'message' => $message,
+            'resource_id' => $resourceId,
         ];
     }
 
+    protected function findCompanyInventoryByFlexResourceId(
+        int $companyId,
+        string $flexResourceId,
+        ?int $excludeInventoryId = null,
+    ): ?Equipment {
+        $query = Equipment::query()
+            ->where('company_id', $companyId)
+            ->where('flex_resource_id', trim($flexResourceId));
+
+        if ($excludeInventoryId !== null) {
+            $query->where('id', '!=', $excludeInventoryId);
+        }
+
+        return $query->first();
+    }
+
     /**
-     * Persist flex_resource_id on a specific company_inventory row inside a transaction.
+     * @return array{success: false, action: 'duplicate_resource', message: string, resource_id: string}
      */
-    protected function persistFlexResourceOnEquipment(Equipment $equipment, string $flexResourceId, string $source): void
+    protected function buildDuplicateResourceResponse(string $resourceId, Equipment $linkedEquipment): array
     {
-        DB::transaction(function () use ($equipment, $flexResourceId) {
-            $locked = Equipment::query()->whereKey($equipment->id)->lockForUpdate()->first();
-            if (!$locked) {
-                throw new \RuntimeException('Company inventory record no longer exists.');
-            }
+        $linkedEquipment->loadMissing(['product.brand']);
+        $linkedProductName = $linkedEquipment->product
+            ? self::productDisplayName($linkedEquipment->product)
+            : 'another product';
 
-            $locked->flex_resource_id = $flexResourceId;
-            $locked->save();
-
-            $equipment->flex_resource_id = $flexResourceId;
-        });
-
-        $this->logPersistResourceId((int) $equipment->product_id, $flexResourceId, $source);
-
-        Log::info('Flex Integration: Database update flex_resource_id (by inventory id)', [
-            'provider_company_id' => $this->providerCompanyId,
-            'company_inventory_id' => $equipment->id,
-            'product_id' => $equipment->product_id,
-            'flex_resource_id' => $flexResourceId,
-            'source' => $source,
-        ]);
+        return [
+            'success' => false,
+            'action' => 'duplicate_resource',
+            'resource_id' => $resourceId,
+            'message' => "The FLEX Resource ID '{$resourceId}' is already linked to the product '{$linkedProductName}'.",
+        ];
     }
 
     /**

@@ -692,6 +692,82 @@ class FlexService
     }
 
     /**
+     * Synchronize marketplace inventory specs from pre-fetched FLEX resource details.
+     * Overwrites company_inventory values from FLEX; fills only empty inventory_master fields.
+     *
+     * @param  array  $details  Output of getInventoryDetails()
+     * @return array{company_inventory_updated: array<string, mixed>, product_updated: array<string, mixed>}
+     */
+    public static function synchronizeMarketplaceInventoryFromFlexDetails(
+        Equipment $equipment,
+        string $flexResourceId,
+        array $details,
+    ): array {
+        $equipment->loadMissing(['product']);
+        $product = $equipment->product;
+        if (!$product) {
+            throw new \InvalidArgumentException('Product not found for company inventory record.');
+        }
+
+        $linearUnitId = InventoryMeasurementUnits::resolveLinearUnitIdFromFlexName($details['linearUnit'] ?? null);
+        $weightUnitId = InventoryMeasurementUnits::resolveWeightUnitIdFromFlexName($details['weightUnit'] ?? null);
+
+        if (!empty($details['linearUnit']) && $linearUnitId === null) {
+            Log::warning('Flex sync: Missing linear unit mapping', [
+                'company_inventory_id' => $equipment->id,
+                'flex_resource_id' => $flexResourceId,
+                'flex_linear_unit' => $details['linearUnit'],
+            ]);
+        }
+
+        if (!empty($details['weightUnit']) && $weightUnitId === null) {
+            Log::warning('Flex sync: Missing weight unit mapping', [
+                'company_inventory_id' => $equipment->id,
+                'flex_resource_id' => $flexResourceId,
+                'flex_weight_unit' => $details['weightUnit'],
+            ]);
+        }
+
+        $companyPatch = CompanyInventorySpecs::syncPatchForCompanyInventoryFromFlex($details, $linearUnitId, $weightUnitId);
+        $companyPatch['flex_resource_id'] = $flexResourceId;
+        $productPatch = CompanyInventorySpecs::syncPatchForProductFromFlexIfEmpty($product, $details, $linearUnitId, $weightUnitId);
+
+        $locked = Equipment::query()->whereKey($equipment->id)->lockForUpdate()->first();
+        if (!$locked) {
+            throw new \RuntimeException('Company inventory record no longer exists.');
+        }
+
+        $locked->fill($companyPatch);
+        $locked->save();
+        $equipment->fill($companyPatch);
+
+        if ($productPatch !== []) {
+            $product->refresh();
+            $product->update($productPatch);
+        }
+
+        Log::info('Flex sync: company_inventory updated from FLEX', [
+            'company_inventory_id' => $equipment->id,
+            'product_id' => $equipment->product_id,
+            'flex_resource_id' => $flexResourceId,
+            'updated_fields' => array_keys($companyPatch),
+        ]);
+
+        if ($productPatch !== []) {
+            Log::info('Flex sync: inventory_master updated from FLEX (empty fields only)', [
+                'product_id' => $product->id,
+                'flex_resource_id' => $flexResourceId,
+                'updated_fields' => array_keys($productPatch),
+            ]);
+        }
+
+        return [
+            'company_inventory_updated' => $companyPatch,
+            'product_updated' => $productPatch,
+        ];
+    }
+
+    /**
      * Minimum length for substring/LIKE matching on normalized_model.
      * Shorter values (e.g. "ss") must not match inside longer Flex names (e.g. "debbiessubaru").
      * Codes that include a digit (e.g. "ae3" from "AE-3") are allowed at 3 chars — they rarely

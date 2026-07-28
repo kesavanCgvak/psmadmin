@@ -59,9 +59,91 @@ final class CompanyInventorySpecs
             'weight' => $details['weight'] ?? null,
             'linear_unit_id' => $linearUnitId,
             'weight_unit_id' => $weightUnitId,
-            'country_of_origin' => null,
+            'country_of_origin' => $details['manufactureCountry'] ?? null,
             'hsn_code' => null,
         ];
+    }
+
+    /**
+     * Build a company_inventory update patch from FLEX details (overwrite when FLEX has a value).
+     *
+     * @return array<string, mixed>
+     */
+    public static function syncPatchForCompanyInventoryFromFlex(
+        array $details,
+        ?int $linearUnitId = null,
+        ?int $weightUnitId = null,
+    ): array {
+        $patch = [];
+        $attrs = self::attributesFromFlexDetails($details, $linearUnitId, $weightUnitId);
+
+        foreach (array_merge(self::FIELDS, ['replacement_price']) as $field) {
+            $value = $attrs[$field] ?? null;
+            if ($value !== null && $value !== '') {
+                $patch[$field] = $value;
+            }
+        }
+
+        $replacementCost = $details['replacementCost'] ?? null;
+        if ($replacementCost !== null && $replacementCost !== '') {
+            $patch['replacement_price'] = (float) $replacementCost;
+        }
+
+        return $patch;
+    }
+
+    /**
+     * Build an inventory_master update patch from FLEX details (fill empty fields only).
+     *
+     * @return array<string, mixed>
+     */
+    public static function syncPatchForProductFromFlexIfEmpty(
+        Product $product,
+        array $details,
+        ?int $linearUnitId = null,
+        ?int $weightUnitId = null,
+    ): array {
+        $productUpdates = [];
+        $mapping = [
+            'height' => 'height',
+            'width' => 'width',
+            'length' => 'modelLength',
+            'weight' => 'weight',
+        ];
+
+        foreach ($mapping as $dbField => $flexKey) {
+            if ($product->{$dbField} !== null && $product->{$dbField} !== '') {
+                continue;
+            }
+            $value = $details[$flexKey] ?? null;
+            if ($value !== null && $value !== '') {
+                $productUpdates[$dbField] = $value;
+            }
+        }
+
+        $replacementCost = $details['replacementCost'] ?? null;
+        if (
+            $product->replacement_price === null
+            && $replacementCost !== null
+            && $replacementCost !== ''
+            && (float) $replacementCost > 0
+        ) {
+            $productUpdates['replacement_price'] = (float) $replacementCost;
+        }
+
+        if ($product->linear_unit_id === null && $linearUnitId !== null) {
+            $productUpdates['linear_unit_id'] = $linearUnitId;
+        }
+        if ($product->weight_unit_id === null && $weightUnitId !== null) {
+            $productUpdates['weight_unit_id'] = $weightUnitId;
+        }
+
+        if (($product->country_of_origin === null || $product->country_of_origin === '')
+            && !empty($details['manufactureCountry'])) {
+            $productUpdates['country_of_origin'] = $details['manufactureCountry'];
+        }
+
+        return $productUpdates;
     }
 
     /**

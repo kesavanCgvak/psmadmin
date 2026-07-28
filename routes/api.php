@@ -238,7 +238,8 @@ Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
 });
 
 Route::middleware(['jwt.verify'])->prefix('company-inventory')->group(function () {
-    Route::post('/fetch-flex-resource-id', [FlexInventoryController::class, 'fetchFlexResourceId']);
+    Route::post('/search-flex-product', [FlexInventoryController::class, 'searchFlexProduct']);
+    Route::post('/confirm-flex-sync', [FlexInventoryController::class, 'confirmFlexSync']);
 });
 
 // Rentman equipment (local cache + import; search is DB-only)
