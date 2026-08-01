@@ -37,6 +37,22 @@ class FlexIntegrationLog extends Model
 
     public const ACTION_FETCH_ELEMENT_FIELDS = 'FETCH_ELEMENT_FIELDS';
 
+    public const ACTION_FETCH_DEFINITION_ID = 'FETCH_DEFINITION_ID';
+
+    public const ACTION_FETCH_INVENTORY_GROUP = 'FETCH_INVENTORY_GROUP';
+
+    public const ACTION_VALIDATE_PRODUCT = 'VALIDATE_PRODUCT';
+
+    public const ACTION_CREATE_PRODUCT = 'CREATE_PRODUCT';
+
+    public const ACTION_UPDATE_CUSTOM_FIELD = 'UPDATE_CUSTOM_FIELD';
+
+    public const ACTION_PERSIST_RESOURCE_ID = 'PERSIST_RESOURCE_ID';
+
+    public const ACTION_SET_QUOTE_ADDRESS = 'SET_QUOTE_ADDRESS';
+
+    public const ACTION_CREATE_QUOTE_NOTE = 'CREATE_QUOTE_NOTE';
+
     public $timestamps = false;
 
     protected $table = 'flex_integration_logs';

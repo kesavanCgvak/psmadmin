@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ConfirmFlexSyncRequest;
+use App\Http\Requests\SearchFlexProductRequest;
 use App\Models\Equipment;
 use App\Support\InventoryImageSyncService;
 use App\Models\LinearUnit;
 use App\Models\Product;
 use App\Models\WeightUnit;
+use App\Services\FlexIntegrationService;
 use App\Services\FlexService;
 use App\Services\InventoryImportService;
 use App\Support\PsmCodeGenerator;
@@ -537,6 +540,125 @@ class FlexInventoryController extends Controller
             ?: WeightUnit::whereRaw('LOWER(name) = ?', [$normalized])->first();
 
         return $unit?->id;
+    }
+
+    /**
+     * Search FLEX for a marketplace inventory product (no database updates).
+     * POST /api/company-inventory/search-flex-product
+     */
+    public function searchFlexProduct(SearchFlexProductRequest $request): JsonResponse
+    {
+        return $this->handleMarketplaceFlexAction(
+            (int) $request->input('company_inventory_id'),
+            fn (FlexIntegrationService $flex, Equipment $equipment) => $flex->searchFlexProductForMarketplace($equipment),
+            'Search FLEX product',
+        );
+    }
+
+    /**
+     * Confirm marketplace FLEX sync: link Resource ID and synchronize metadata.
+     * POST /api/company-inventory/confirm-flex-sync
+     */
+    public function confirmFlexSync(ConfirmFlexSyncRequest $request): JsonResponse
+    {
+        $createIfMissing = (bool) $request->boolean('create_if_missing');
+        $resourceId = $request->input('resource_id');
+
+        return $this->handleMarketplaceFlexAction(
+            (int) $request->input('company_inventory_id'),
+            fn (FlexIntegrationService $flex, Equipment $equipment) => $flex->confirmFlexMarketplaceSync(
+                $equipment,
+                $resourceId !== null ? (string) $resourceId : null,
+                $createIfMissing,
+            ),
+            'Confirm FLEX sync',
+        );
+    }
+
+    /**
+     * @param  callable(FlexIntegrationService, Equipment): array  $action
+     */
+    private function handleMarketplaceFlexAction(
+        int $companyInventoryId,
+        callable $action,
+        string $logContext,
+    ): JsonResponse {
+        $user = $this->getAuthenticatedUser();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $companyId = $user->company_id;
+        if (!$companyId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Company not found for this user.',
+            ], 403);
+        }
+
+        $equipment = Equipment::query()
+            ->with(['product.brand'])
+            ->whereKey($companyInventoryId)
+            ->first();
+
+        if (!$equipment || (int) $equipment->company_id !== (int) $companyId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Company inventory record not found for your company.',
+            ], 404);
+        }
+
+        $flex = FlexIntegrationService::forProviderCompany((int) $companyId);
+        if (!$flex) {
+            return response()->json([
+                'success' => false,
+                'action' => 'error',
+                'message' => 'FLEX integration is not configured for this company. Please add API credentials (base URL and API key) before syncing with FLEX.',
+            ], 422);
+        }
+
+        try {
+            $result = $action($flex, $equipment);
+
+            $status = match ($result['action'] ?? '') {
+                'duplicate_resource' => 409,
+                'error' => 500,
+                default => ($result['success'] ?? false) ? 200 : 422,
+            };
+
+            return response()->json($result, $status);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'action' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\RuntimeException $e) {
+            Log::error($logContext . ' failed', [
+                'company_id' => $companyId,
+                'company_inventory_id' => $equipment->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'action' => 'error',
+                'message' => $e->getMessage(),
+            ], 502);
+        } catch (\Throwable $e) {
+            Log::error($logContext . ' unexpected error', [
+                'company_id' => $companyId,
+                'company_inventory_id' => $equipment->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'action' => 'error',
+                'message' => 'An unexpected error occurred while processing the FLEX sync request.',
+            ], 500);
+        }
     }
 
     protected function getAuthenticatedUser()

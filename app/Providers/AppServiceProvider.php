@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Contracts\SmsProvider;
 use App\Listeners\LogEmailSent;
 use App\Listeners\LogEmailSending;
+use App\Models\Equipment;
+use App\Observers\EquipmentObserver;
 use App\Services\TextMagicService;
 use App\Services\TwilioService;
 use Illuminate\Mail\Events\MessageSent;
@@ -31,6 +33,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Equipment::observe(EquipmentObserver::class);
+
         Event::listen(MessageSending::class, LogEmailSending::class);
         Event::listen(MessageSent::class, LogEmailSent::class);
     }

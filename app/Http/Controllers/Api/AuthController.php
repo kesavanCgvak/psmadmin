@@ -190,35 +190,35 @@ class AuthController extends Controller
             Log::info('Profile created', ['profile' => $user->profile]);
 
             if ($request->account_type === 'provider') {
-                Log::info('Provider registration: resolving default inventory models', [
+                Log::info('Provider registration: resolving default inventory by psm_code', [
                     'company_id' => $company->id,
                     'user_id' => $user->id,
                     'environment' => app()->environment(),
                 ]);
-                $defaultModels = ProviderRegistrationInventory::defaultProductModelNames();
-                Log::info('Provider registration: resolved default inventory models', [
+                $defaultPsmCodes = ProviderRegistrationInventory::defaultProductPsmCodes();
+                Log::info('Provider registration: resolved default inventory psm_codes', [
                     'company_id' => $company->id,
                     'user_id' => $user->id,
-                    'default_models' => $defaultModels,
-                    'default_model_count' => is_array($defaultModels) ? count($defaultModels) : null,
-                    'default_models_type' => gettype($defaultModels),
+                    'default_psm_codes' => $defaultPsmCodes,
+                    'default_psm_code_count' => is_array($defaultPsmCodes) ? count($defaultPsmCodes) : null,
                 ]);
 
-                if (!is_array($defaultModels) || empty($defaultModels)) {
-                    Log::warning('Provider registration: default inventory models are empty or invalid', [
+                if (!is_array($defaultPsmCodes) || empty($defaultPsmCodes)) {
+                    Log::warning('Provider registration: default inventory psm_codes are empty or invalid', [
                         'company_id' => $company->id,
                         'user_id' => $user->id,
-                        'default_models' => $defaultModels,
+                        'default_psm_codes' => $defaultPsmCodes,
                     ]);
                 }
 
-                $products = Product::whereIn('model', $defaultModels)->get(['id', 'model']);
-                foreach ($defaultModels as $modelName) {
-                    $product = $products->firstWhere('model', $modelName);
+                $products = Product::whereIn('psm_code', $defaultPsmCodes)->get(['id', 'model', 'psm_code']);
+                foreach ($defaultPsmCodes as $psmCode) {
+                    $product = $products->firstWhere('psm_code', $psmCode);
                     if (!$product) {
-                        Log::warning('Provider registration: default inventory product missing in inventory_master', [
-                            'model' => $modelName,
+                        Log::error('Provider registration: default inventory product missing in inventory_master', [
+                            'psm_code' => $psmCode,
                             'company_id' => $company->id,
+                            'user_id' => $user->id,
                         ]);
                         continue;
                     }
@@ -231,6 +231,13 @@ class AuthController extends Controller
                         'product_id' => $product->id,
                         'quantity' => 1,
                         'rental_price' => 0,
+                    ]);
+                    Log::info('Provider registration: default inventory product added', [
+                        'company_id' => $company->id,
+                        'user_id' => $user->id,
+                        'product_id' => $product->id,
+                        'psm_code' => $product->psm_code,
+                        'model' => $product->model,
                     ]);
                 }
             }
@@ -385,7 +392,14 @@ class AuthController extends Controller
                 // Don't fail the registration if email fails
             }
 
-            Log::info('User registration committed');
+            Log::info('User registration completed successfully.', [
+                'user_id' => $user->id,
+                'company_id' => $company->id,
+                'email' => $request->email,
+                'account_type' => $request->account_type,
+                'timestamp' => now()->toIso8601String(),
+                'hubspot_note' => 'HubSpot contact creation is deferred until email verification (SyncUserToHubSpot).',
+            ]);
 
             return response()->json([
                 'status' => 'success',
@@ -882,12 +896,24 @@ class AuthController extends Controller
             $user->token = null; // clear token after verification
             $user->save();
 
-            // Dispatch HubSpot sync after successful email verification (non-blocking).
-            SyncUserToHubSpot::dispatch($user->id);
+            $correlationId = (string) Str::uuid();
+            Log::info('HubSpot contact creation initiated after email verification.', [
+                'correlation_id' => $correlationId,
+                'user_id' => $user->id,
+                'company_id' => $user->company_id,
+                'email' => $user->preferred_email ?? $user->email,
+                'account_type' => $user->account_type,
+                'timestamp' => now()->toIso8601String(),
+                'source' => 'verifyAccount_from_bakcend',
+            ]);
+            SyncUserToHubSpot::dispatch($user->id, $correlationId);
 
             Log::info('User account verified successfully.', [
+                'correlation_id' => $correlationId,
                 'user_id' => $user->id,
+                'company_id' => $user->company_id,
                 'email' => $user->email ?? null,
+                'timestamp' => now()->toIso8601String(),
             ]);
 
             return Redirect::to(env('APP_FRONTEND_URL').'/verification?status=success&message=Email%20verified%20successfully');
@@ -910,6 +936,10 @@ class AuthController extends Controller
         $user = User::where('token', $request->token)->first();
 
         if (! $user) {
+            Log::warning('Account verification failed: invalid or expired token.', [
+                'timestamp' => now()->toIso8601String(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid or expired verification link.',
@@ -917,6 +947,13 @@ class AuthController extends Controller
         }
 
         if ($user->email_verified) {
+            Log::info('Account verification skipped: email already verified (HubSpot sync not re-dispatched).', [
+                'user_id' => $user->id,
+                'company_id' => $user->company_id,
+                'email' => $user->preferred_email ?? $user->email,
+                'timestamp' => now()->toIso8601String(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Email already verified.',
@@ -927,9 +964,17 @@ class AuthController extends Controller
         $user->token = null; // clear token
         $user->save();
 
-        // Dispatch HubSpot sync after successful email verification (non-blocking).
-        Log::info('Dispatching HubSpot sync job for user ID: '.$user->id);
-        SyncUserToHubSpot::dispatch($user->id);
+        $correlationId = (string) Str::uuid();
+        Log::info('Registration email verified successfully; HubSpot contact creation initiated.', [
+            'correlation_id' => $correlationId,
+            'user_id' => $user->id,
+            'company_id' => $user->company_id,
+            'email' => $user->preferred_email ?? $user->email,
+            'account_type' => $user->account_type,
+            'timestamp' => now()->toIso8601String(),
+            'source' => 'verifyAccount',
+        ]);
+        SyncUserToHubSpot::dispatch($user->id, $correlationId);
 
         return response()->json([
             'success' => true,

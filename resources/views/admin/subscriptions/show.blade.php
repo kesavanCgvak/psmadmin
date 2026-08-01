@@ -35,6 +35,7 @@
         <div class="col-md-4">
             <div class="card card-primary card-outline">
                 <div class="card-body box-profile">
+                    @if($subscription->user)
                     <div class="text-center">
                         @if($subscription->user->profile?->profile_picture && file_exists(public_path($subscription->user->profile->profile_picture)))
                             <img class="profile-user-img img-fluid img-circle img-bordered-sm"
@@ -86,6 +87,21 @@
                     <a href="{{ route('admin.users.show', $subscription->user->id) }}" class="btn btn-primary btn-block">
                         <i class="fas fa-user"></i> View User Profile
                     </a>
+                    @else
+                    <div class="text-center">
+                        <div class="profile-user-img img-fluid img-circle img-bordered-sm bg-danger d-flex align-items-center justify-content-center text-white mx-auto"
+                             style="width: 100px; height: 100px; font-size: 36px; font-weight: bold;">
+                            ?
+                        </div>
+                    </div>
+                    <h3 class="profile-username text-center text-danger">User deleted</h3>
+                    <p class="text-muted text-center">
+                        Linked user ID: {{ $subscription->user_id ?? '—' }}
+                        @if($subscription->company_id)
+                            <br>Company ID: {{ $subscription->company_id }}
+                        @endif
+                    </p>
+                    @endif
                 </div>
             </div>
         </div>
@@ -322,6 +338,125 @@
                         </div>
                     </div>
 
+                    @if($trialIncentive)
+                        <hr>
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h5 class="mb-0">Trial Incentive Progress</h5>
+                                    <a href="{{ route('admin.trial-incentives.index', ['company_id' => $subscription->company_id]) }}"
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-gift"></i> View All Grants
+                                    </a>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-3 col-6">
+                                        <div class="info-box bg-light mb-0">
+                                            <span class="info-box-icon bg-info"><i class="fas fa-boxes"></i></span>
+                                            <div class="info-box-content">
+                                                <span class="info-box-text">Qualified Products</span>
+                                                <span class="info-box-number">{{ $trialIncentive['qualified_product_count'] }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 col-6">
+                                        <div class="info-box bg-light mb-0">
+                                            <span class="info-box-icon bg-success"><i class="fas fa-gift"></i></span>
+                                            <div class="info-box-content">
+                                                <span class="info-box-text">Bonus Months Earned</span>
+                                                <span class="info-box-number">{{ $trialIncentive['bonus_months_earned'] }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 col-6">
+                                        <div class="info-box bg-light mb-0">
+                                            <span class="info-box-icon bg-primary"><i class="fas fa-calendar-alt"></i></span>
+                                            <div class="info-box-content">
+                                                <span class="info-box-text">Total Free Months</span>
+                                                <span class="info-box-number">
+                                                    {{ $trialIncentive['total_free_months_earned'] }}/{{ $trialIncentive['max_total_free_months'] }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 col-6">
+                                        <div class="info-box bg-light mb-0">
+                                            <span class="info-box-icon bg-warning"><i class="fas fa-flag-checkered"></i></span>
+                                            <div class="info-box-content">
+                                                <span class="info-box-text">Next Milestone</span>
+                                                <span class="info-box-number">
+                                                    @if($trialIncentive['next_milestone'])
+                                                        {{ $trialIncentive['next_milestone']['products_remaining'] }} left
+                                                    @else
+                                                        Max
+                                                    @endif
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered">
+                                        <thead>
+                                            <tr>
+                                                <th>Milestone</th>
+                                                <th>Bonus</th>
+                                                <th>Status</th>
+                                                <th>Remaining</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($trialIncentive['milestones'] as $milestone)
+                                                <tr>
+                                                    <td>{{ $milestone['products'] }} products</td>
+                                                    <td>+{{ $milestone['bonus_months'] }} month(s)</td>
+                                                    <td>
+                                                        @if($milestone['granted'])
+                                                            <span class="badge badge-success">Granted</span>
+                                                        @elseif($milestone['reached'])
+                                                            <span class="badge badge-warning">Reached</span>
+                                                        @else
+                                                            <span class="badge badge-secondary">Pending</span>
+                                                        @endif
+                                                    </td>
+                                                    <td>{{ $milestone['products_remaining'] }}</td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                @if($subscription->trialIncentiveGrants->isNotEmpty())
+                                    <h6 class="mt-3">Grant History</h6>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-striped">
+                                            <thead>
+                                                <tr>
+                                                    <th>Granted At</th>
+                                                    <th>Milestone</th>
+                                                    <th>Bonus Months</th>
+                                                    <th>Products at Grant</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach($subscription->trialIncentiveGrants->sortByDesc('granted_at') as $grant)
+                                                    <tr>
+                                                        <td>{{ $grant->granted_at?->format('M d, Y h:i A') }}</td>
+                                                        <td>{{ $grant->milestone_products }} products</td>
+                                                        <td>+{{ $grant->bonus_months }}</td>
+                                                        <td>{{ $grant->product_count_at_grant }}</td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+                    @endif
+
                     <hr>
 
                     <div class="row">
@@ -340,9 +475,11 @@
                                         <i class="fas fa-sync"></i> Sync with Stripe
                                     </button>
                                 </form>
-                                <a href="{{ route('admin.users.show', $subscription->user->id) }}" class="btn btn-primary">
-                                    <i class="fas fa-user"></i> View User Profile
-                                </a>
+                                @if($subscription->user)
+                                    <a href="{{ route('admin.users.show', $subscription->user->id) }}" class="btn btn-primary">
+                                        <i class="fas fa-user"></i> View User Profile
+                                    </a>
+                                @endif
                             </div>
                         </div>
                     </div>

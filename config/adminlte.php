@@ -578,9 +578,20 @@ return [
         ],
         [
             'text' => 'Subscriptions',
-            'route' => 'admin.subscriptions.index',
             'icon' => 'fas fa-fw fa-receipt',
             'icon_color' => 'primary',
+            'submenu' => [
+                [
+                    'text' => 'All Subscriptions',
+                    'route' => 'admin.subscriptions.index',
+                    'icon' => 'fas fa-fw fa-list',
+                ],
+                [
+                    'text' => 'Trial Incentives',
+                    'route' => 'admin.trial-incentives.index',
+                    'icon' => 'fas fa-fw fa-gift',
+                ],
+            ],
         ],
         ['header' => 'ACCOUNT SETTINGS'],
         [

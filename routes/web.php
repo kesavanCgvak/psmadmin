@@ -31,6 +31,7 @@ use App\Http\Controllers\Admin\SmsLogController;
 use App\Http\Controllers\Admin\StateProvinceController;
 use App\Http\Controllers\Admin\SubCategoryController;
 use App\Http\Controllers\Admin\SubscriptionManagementController;
+use App\Http\Controllers\Admin\TrialIncentiveManagementController;
 use App\Http\Controllers\Admin\SupplyJobController;
 use App\Http\Controllers\Admin\TermsAndConditionsController;
 use App\Http\Controllers\Admin\UserAuthEventController;
@@ -287,6 +288,9 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('subscriptions.show');
     Route::post('/subscriptions/{subscription}/sync', [SubscriptionManagementController::class, 'sync'])
         ->name('subscriptions.sync');
+
+    Route::get('/trial-incentives', [TrialIncentiveManagementController::class, 'index'])
+        ->name('trial-incentives.index');
 
     // AJAX endpoints
     Route::get('/ajax/companies/{company}/users', [EquipmentManagementController::class, 'getUsersByCompany'])

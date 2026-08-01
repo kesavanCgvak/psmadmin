@@ -31,7 +31,8 @@ class SendSupplierSmsJob implements ShouldQueue
         public string $jobBeginDate,
         public int $supplierCompanyId,
         public ?int $dateFormatId,
-        public ?int $rentalJobId = null
+        public ?int $rentalJobId = null,
+        public string $customerName = ''
     ) {}
 
     /**
@@ -62,9 +63,10 @@ class SendSupplierSmsJob implements ShouldQueue
         $formattedDate = Carbon::parse($this->jobBeginDate)->format($phpFormat);
 
         $message = sprintf(
-            'A request from "%s" starting on "%s" has been emailed to you from Pro Subrental Marketplace. Please check your email and respond as soon as possible.',
-            $this->requestName,
-            $formattedDate
+            'A request from "%s" starting on "%s" and is titled "%s" has been emailed to you from Pro Subrental Marketplace. Please check your email and respond as soon as possible.',
+            $this->customerName,
+            $formattedDate,
+            $this->requestName
         );
 
         $company = \App\Models\Company::with('defaultContactProfile')->find($this->supplierCompanyId);

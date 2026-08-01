@@ -4,7 +4,7 @@ namespace App\Services;
 
 use App\Models\Subscription;
 use App\Models\User;
-use App\Models\Company;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Stripe\Stripe;
 use Stripe\Customer;
@@ -200,6 +200,76 @@ class StripeSubscriptionService
         } catch (ApiErrorException $e) {
             Log::error('Failed to cancel subscription', [
                 'stripe_subscription_id' => $stripeSubscriptionId,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Extend an active trial by the given number of months.
+     */
+    public function extendTrialByMonths(Subscription $subscription, int $months): Subscription
+    {
+        if ($months <= 0) {
+            return $subscription;
+        }
+
+        try {
+            $stripeSubscription = StripeSubscription::retrieve($subscription->stripe_subscription_id);
+
+            if ($stripeSubscription->status !== 'trialing') {
+                Log::info('Skipped trial extension because subscription is not trialing', [
+                    'subscription_id' => $subscription->id,
+                    'stripe_status' => $stripeSubscription->status,
+                ]);
+
+                return $subscription;
+            }
+
+            $currentTrialEnd = $stripeSubscription->trial_end
+                ? Carbon::createFromTimestamp($stripeSubscription->trial_end)
+                : now();
+
+            if ($currentTrialEnd->isPast()) {
+                $currentTrialEnd = now();
+            }
+
+            $newTrialEnd = $currentTrialEnd->copy()->addMonths($months)->timestamp;
+
+            $stripeSubscription = StripeSubscription::update($subscription->stripe_subscription_id, [
+                'trial_end' => $newTrialEnd,
+                'proration_behavior' => 'none',
+            ]);
+
+            $subscription->update([
+                'stripe_status' => $stripeSubscription->status,
+                'trial_ends_at' => $stripeSubscription->trial_end
+                    ? now()->setTimestamp($stripeSubscription->trial_end)
+                    : null,
+                'current_period_end' => $stripeSubscription->current_period_end
+                    ? now()->setTimestamp($stripeSubscription->current_period_end)
+                    : null,
+            ]);
+
+            if ($subscription->user) {
+                $subscription->user->update([
+                    'subscription_status' => $stripeSubscription->status,
+                ]);
+            }
+
+            Log::info('Subscription trial extended', [
+                'subscription_id' => $subscription->id,
+                'months_added' => $months,
+                'trial_ends_at' => $subscription->trial_ends_at?->toIso8601String(),
+            ]);
+
+            return $subscription->fresh();
+        } catch (ApiErrorException $e) {
+            Log::error('Failed to extend subscription trial', [
+                'subscription_id' => $subscription->id,
+                'stripe_subscription_id' => $subscription->stripe_subscription_id,
+                'months' => $months,
                 'error' => $e->getMessage(),
             ]);
             throw $e;

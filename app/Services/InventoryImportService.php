@@ -347,7 +347,10 @@ class InventoryImportService
         try {
             $product = Product::find($inventory->product_id);
             if ($product) {
-                self::updateProductSpecsFromFlexIfEmpty($product, $details, $linearUnitId, $weightUnitId);
+                $productPatch = CompanyInventorySpecs::syncPatchForProductFromFlexIfEmpty($product, $details, $linearUnitId, $weightUnitId);
+                if ($productPatch !== []) {
+                    $product->update($productPatch);
+                }
             }
 
             $specPatch = $product
@@ -400,52 +403,6 @@ class InventoryImportService
         } catch (\Exception $e) {
             DB::rollBack();
             throw $e;
-        }
-    }
-
-    private static function updateProductSpecsFromFlexIfEmpty(
-        Product $product,
-        array $details,
-        ?int $linearUnitId,
-        ?int $weightUnitId
-    ): void {
-        $productUpdates = [];
-        $mapping = [
-            'height' => 'height',
-            'width' => 'width',
-            'length' => 'modelLength',
-            'weight' => 'weight',
-        ];
-
-        foreach ($mapping as $dbField => $flexKey) {
-            if ($product->{$dbField} !== null && $product->{$dbField} !== '') {
-                continue;
-            }
-            $value = $details[$flexKey] ?? null;
-            if ($value !== null && $value !== '') {
-                $productUpdates[$dbField] = $value;
-            }
-        }
-
-        $replacementCost = $details['replacementCost'] ?? null;
-        if (
-            $product->replacement_price === null
-            && $replacementCost !== null
-            && $replacementCost !== ''
-            && (float) $replacementCost > 0
-        ) {
-            $productUpdates['replacement_price'] = (float) $replacementCost;
-        }
-
-        if ($product->linear_unit_id === null && $linearUnitId !== null) {
-            $productUpdates['linear_unit_id'] = $linearUnitId;
-        }
-        if ($product->weight_unit_id === null && $weightUnitId !== null) {
-            $productUpdates['weight_unit_id'] = $weightUnitId;
-        }
-
-        if ($productUpdates !== []) {
-            $product->update($productUpdates);
         }
     }
 }

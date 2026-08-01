@@ -42,26 +42,41 @@ class CreateFlexQuoteFromRentalRequestJob
             return;
         }
 
-        FlexIntegrationDebugLog::info($rentalJob->id, null, 'FLEX_QUOTE_JOB', 'STARTED', [
-            'supply_jobs_count' => $rentalJob->supplyJobs->count(),
-            'execution' => 'synchronous',
-        ]);
+        FlexIntegrationDebugLog::step(
+            $rentalJob->id,
+            null,
+            'FLEX_QUOTE_JOB',
+            'STARTED',
+            [
+                'supply_jobs_count' => $rentalJob->supplyJobs->count(),
+                'execution' => 'synchronous',
+            ],
+            'Process each supply job: check Flex integration, create client/quote, attach products',
+        );
 
         foreach ($rentalJob->supplyJobs as $supplyJob) {
-            FlexIntegrationDebugLog::info($rentalJob->id, (int) $supplyJob->provider_id, 'PROVIDER_PROCESSING', 'STARTED', [
-                'supply_job_id' => $supplyJob->id,
-            ]);
-
             $this->processSupplyJob($rentalJob, $supplyJob);
-
-            FlexIntegrationDebugLog::debug($rentalJob->id, (int) $supplyJob->provider_id, 'PROVIDER_PROCESSING', 'FINISHED', [
-                'supply_job_id' => $supplyJob->id,
-            ]);
         }
+
+        FlexIntegrationDebugLog::step(
+            $rentalJob->id,
+            null,
+            'FLEX_QUOTE_JOB',
+            'SUMMARY',
+            [],
+            'Roll up flex_sync_status onto rental_jobs',
+        );
 
         $this->refreshRentalJobFlexSummary($rentalJob->id);
 
-        FlexIntegrationDebugLog::info($rentalJob->id, null, 'FLEX_QUOTE_JOB', 'ALL_PROVIDERS_DONE', []);
+        FlexIntegrationDebugLog::step(
+            $rentalJob->id,
+            null,
+            'FLEX_QUOTE_JOB',
+            'ALL_PROVIDERS_DONE',
+            [],
+            'Done — inspect storage/logs/flex-integration.log and flex_integration_logs table',
+        );
     }
 
     protected function processSupplyJob(RentalJob $rentalJob, SupplyJob $supplyJob): void
@@ -73,6 +88,17 @@ class CreateFlexQuoteFromRentalRequestJob
 
         $providerId = (int) $supplyJob->provider_id;
         $ilog = new FlexIntegrationLogger($rentalJob->id, $providerId);
+
+        FlexIntegrationDebugLog::resetStepCounter($rentalJob->id, $providerId);
+
+        FlexIntegrationDebugLog::step(
+            $rentalJob->id,
+            $providerId,
+            'PROVIDER_PROCESSING',
+            'STARTED',
+            ['supply_job_id' => $supplyJob->id],
+            'Check whether provider uses Flex rental software and has company_integrations row',
+        );
 
         $appendStep('Flex integration started for provider supply job');
 
@@ -93,9 +119,14 @@ class CreateFlexQuoteFromRentalRequestJob
         ]);
 
         if (!FlexIntegrationService::checkCompanyIntegration($providerId)) {
-            FlexIntegrationDebugLog::info($rentalJob->id, $providerId, 'CHECK_INTEGRATION', 'SKIPPED', [
-                'reason' => 'not_flex_provider_or_no_integration_row',
-            ]);
+            FlexIntegrationDebugLog::step(
+                $rentalJob->id,
+                $providerId,
+                'CHECK_INTEGRATION',
+                'SKIPPED',
+                ['reason' => 'not_flex_provider_or_no_integration_row'],
+                'Skip Flex for this provider; process next supply job',
+            );
             $appendStep('Skipped: provider has no Flex integration');
             $ilog->log(
                 FlexIntegrationLog::ACTION_CHECK_INTEGRATION,
@@ -109,6 +140,15 @@ class CreateFlexQuoteFromRentalRequestJob
             return;
         }
 
+        FlexIntegrationDebugLog::step(
+            $rentalJob->id,
+            $providerId,
+            'CHECK_INTEGRATION',
+            'SUCCESS',
+            ['supply_job_id' => $supplyJob->id],
+            'Load Flex credentials from company_integrations and run pre-flight diagnostics',
+        );
+
         $ilog->log(
             FlexIntegrationLog::ACTION_CHECK_INTEGRATION,
             FlexIntegrationLog::STATUS_SUCCESS,
@@ -118,10 +158,17 @@ class CreateFlexQuoteFromRentalRequestJob
         );
 
         if ($supplyJob->flex_sales_quote_id) {
-            FlexIntegrationDebugLog::info($rentalJob->id, $providerId, 'CREATE_QUOTE', 'SKIPPED', [
-                'reason' => 'flex_sales_quote_id_already_set',
-                'existing_flex_quote_id' => $supplyJob->flex_sales_quote_id,
-            ]);
+            FlexIntegrationDebugLog::step(
+                $rentalJob->id,
+                $providerId,
+                'CREATE_QUOTE',
+                'SKIPPED',
+                [
+                    'reason' => 'flex_sales_quote_id_already_set',
+                    'existing_flex_quote_id' => $supplyJob->flex_sales_quote_id,
+                ],
+                'Skip quote creation; process next supply job',
+            );
             $appendStep('Skipped: flex_sales_quote_id already set (duplicate prevention)');
             $ilog->log(
                 FlexIntegrationLog::ACTION_CREATE_QUOTE,
@@ -144,9 +191,14 @@ class CreateFlexQuoteFromRentalRequestJob
 
         $service = FlexIntegrationService::forProviderCompany($providerId);
         if (!$service) {
-            FlexIntegrationDebugLog::info($rentalJob->id, $providerId, 'CHECK_INTEGRATION', 'SKIPPED', [
-                'reason' => 'incomplete_flex_api_credentials',
-            ]);
+            FlexIntegrationDebugLog::step(
+                $rentalJob->id,
+                $providerId,
+                'CHECK_INTEGRATION',
+                'SKIPPED',
+                ['reason' => 'incomplete_flex_api_credentials'],
+                'Skip Flex for this provider; process next supply job',
+            );
             $appendStep('Skipped: Flex credentials incomplete');
             $ilog->log(
                 FlexIntegrationLog::ACTION_CHECK_INTEGRATION,
@@ -161,6 +213,7 @@ class CreateFlexQuoteFromRentalRequestJob
         }
 
         $service->setFlexLogger($ilog);
+        $service->setRentalRequestId($rentalJob->id);
 
         $service->logPreFlightDiagnostics($rentalJob->id);
 
@@ -175,26 +228,62 @@ class CreateFlexQuoteFromRentalRequestJob
         $quoteNumber = null;
 
         try {
-            FlexIntegrationDebugLog::debug($rentalJob->id, $providerId, 'CREATE_CLIENT', 'STARTED', []);
+            FlexIntegrationDebugLog::step(
+                $rentalJob->id,
+                $providerId,
+                'CREATE_CLIENT',
+                'STARTED',
+                [],
+                'Search Flex contact by requester name only, then create sales quote',
+            );
 
             $flexClientId = $service->getOrCreateClient($rentalJob->user);
             $appendStep('Client resolved in Flex');
 
-            FlexIntegrationDebugLog::info($rentalJob->id, $providerId, 'CREATE_CLIENT', 'SUCCESS', [
-                'flex_client_id' => $flexClientId,
-            ]);
+            FlexIntegrationDebugLog::step(
+                $rentalJob->id,
+                $providerId,
+                'CREATE_CLIENT',
+                'SUCCESS',
+                ['flex_client_id' => $flexClientId],
+                'Create Flex sales quote with clientId, dates, and referral source',
+            );
 
-            FlexIntegrationDebugLog::debug($rentalJob->id, $providerId, 'CREATE_QUOTE', 'STARTED', []);
+            FlexIntegrationDebugLog::step(
+                $rentalJob->id,
+                $providerId,
+                'CREATE_QUOTE',
+                'STARTED',
+                ['flex_client_id' => $flexClientId],
+                'POST /f5/api/element/ to create sales quote',
+            );
 
             $quote = $service->createSalesQuote($rentalJob, $flexClientId);
             $quoteId = $quote['id'];
             $quoteNumber = $quote['number'];
             $appendStep('Sales quote created in Flex');
 
-            FlexIntegrationDebugLog::info($rentalJob->id, $providerId, 'CREATE_QUOTE', 'SUCCESS', [
-                'flex_quote_id' => $quoteId,
-                'flex_quote_number' => $quoteNumber,
-            ]);
+            FlexIntegrationDebugLog::step(
+                $rentalJob->id,
+                $providerId,
+                'CREATE_QUOTE',
+                'SUCCESS',
+                [
+                    'flex_quote_id' => $quoteId,
+                    'flex_quote_number' => $quoteNumber,
+                ],
+                'Set quote venue address and optional notes, then attach products',
+            );
+
+            $venueSet = $service->setQuoteVenueAddress($quoteId, $rentalJob);
+            if ($venueSet) {
+                $appendStep('Quote venue address set in Flex');
+            }
+
+            $noteAdded = $service->addQuoteNoteFromRentalMessages($quoteId, $rentalJob, $supplyJob);
+            if ($noteAdded) {
+                $appendStep('Quote note added from rental request messages');
+            }
 
             foreach ($supplyJob->products as $line) {
                 $product = $line->product;
@@ -209,25 +298,31 @@ class CreateFlexQuoteFromRentalRequestJob
 
                 $displayName = FlexIntegrationService::productDisplayName($product);
 
+                FlexIntegrationDebugLog::step(
+                    $rentalJob->id,
+                    $providerId,
+                    'PRODUCT_LINE',
+                    'STARTED',
+                    [
+                        'product_id' => $product->id,
+                        'name' => $displayName,
+                        'quantity' => $qty,
+                    ],
+                    'Resolve flex_resource_id from equipment cache or Flex inventory search',
+                );
+
                 $inventory = Equipment::query()
                     ->where('company_id', $providerId)
                     ->where('product_id', $product->id)
                     ->first();
 
-                $flexResourceId = $inventory?->flex_resource_id;
-                if ($flexResourceId) {
-                    FlexIntegrationDebugLog::debug($rentalJob->id, $providerId, 'PRODUCT_RESOLVED', 'FROM_INVENTORY', [
-                        'product_id' => $product->id,
-                        'flex_resource_id' => $flexResourceId,
-                    ]);
-                }
+                $cachedFlexResourceId = $inventory?->flex_resource_id;
 
-                if (!$flexResourceId) {
-                    $flexResourceId = $service->searchFlexProduct($displayName);
-                    if ($flexResourceId) {
-                        FlexIntegrationService::persistFlexResourceOnInventory($providerId, (int) $product->id, $flexResourceId);
-                    }
-                }
+                $flexResourceId = $service->resolveFlexResourceForProduct(
+                    $displayName,
+                    $cachedFlexResourceId !== null && $cachedFlexResourceId !== '' ? (string) $cachedFlexResourceId : null,
+                    (int) $product->id,
+                );
 
                 if (!$flexResourceId) {
                     $missing[] = $displayName;
@@ -238,32 +333,67 @@ class CreateFlexQuoteFromRentalRequestJob
                         null,
                         ['product_id' => $product->id, 'name' => $displayName, 'quantity' => $qty],
                         null,
-                        'Not found in Flex inventory search',
+                        'Not found or created in Flex inventory',
                     );
-                    FlexIntegrationDebugLog::warning($rentalJob->id, $providerId, 'PRODUCT_NOT_FOUND', 'FAILED', [
-                        'product_id' => $product->id,
-                        'name' => $displayName,
-                        'quantity' => $qty,
-                    ]);
+                    FlexIntegrationDebugLog::step(
+                        $rentalJob->id,
+                        $providerId,
+                        'PRODUCT_NOT_FOUND',
+                        'FAILED',
+                        [
+                            'product_id' => $product->id,
+                            'name' => $displayName,
+                            'quantity' => $qty,
+                        ],
+                        'Skip this product; continue with next supply job product line',
+                    );
                     $appendStep('Product missing in Flex: ' . $displayName);
 
                     continue;
                 }
 
-                try {
-                    FlexIntegrationDebugLog::debug($rentalJob->id, $providerId, 'ADD_PRODUCT_TO_QUOTE', 'STARTED', [
+                FlexIntegrationDebugLog::step(
+                    $rentalJob->id,
+                    $providerId,
+                    'PRODUCT_RESOLVED',
+                    'READY',
+                    [
                         'product_id' => $product->id,
                         'flex_resource_id' => $flexResourceId,
-                        'quantity' => $qty,
-                    ]);
+                        'name' => $displayName,
+                    ],
+                    'POST financial-document-line-item add-resource for this product',
+                );
+
+                try {
+                    FlexIntegrationDebugLog::step(
+                        $rentalJob->id,
+                        $providerId,
+                        'ADD_PRODUCT_TO_QUOTE',
+                        'STARTED',
+                        [
+                            'product_id' => $product->id,
+                            'flex_resource_id' => $flexResourceId,
+                            'quantity' => $qty,
+                            'flex_quote_id' => $quoteId,
+                        ],
+                        'POST add-resource then track fin-doc-quick-line-added',
+                    );
 
                     $attachResult = $service->attachProductToSalesQuote($quoteId, $flexResourceId, $qty);
                     $service->trackFinDocQuickLineAdded();
 
-                    FlexIntegrationDebugLog::info($rentalJob->id, $providerId, 'ADD_PRODUCT_TO_QUOTE', 'SUCCESS', [
-                        'product_id' => $product->id,
-                        'flex_line_item_id' => $attachResult['flex_product_id'],
-                    ]);
+                    FlexIntegrationDebugLog::step(
+                        $rentalJob->id,
+                        $providerId,
+                        'ADD_PRODUCT_TO_QUOTE',
+                        'SUCCESS',
+                        [
+                            'product_id' => $product->id,
+                            'flex_line_item_id' => $attachResult['flex_product_id'],
+                        ],
+                        'Process next product line or finalize sync status',
+                    );
 
                     $attached[] = [
                         'product_id' => $product->id,
@@ -273,10 +403,17 @@ class CreateFlexQuoteFromRentalRequestJob
                         'flex_line_item_id' => $attachResult['flex_product_id'],
                     ];
                 } catch (\Throwable $e) {
-                    FlexIntegrationDebugLog::error($rentalJob->id, $providerId, 'ADD_PRODUCT_TO_QUOTE', 'FAILED', [
-                        'product_id' => $product->id,
-                        'error' => $e->getMessage(),
-                    ]);
+                    FlexIntegrationDebugLog::step(
+                        $rentalJob->id,
+                        $providerId,
+                        'ADD_PRODUCT_TO_QUOTE',
+                        'FAILED',
+                        [
+                            'product_id' => $product->id,
+                            'error' => $e->getMessage(),
+                        ],
+                        'Continue with next product line; mark this product as missing',
+                    );
                     $missing[] = $displayName . ' (attach failed)';
                     $missingForEmail[] = ['name' => $displayName . ' (attach failed)', 'quantity' => $qty];
                     $appendStep('Flex error attaching product: ' . $e->getMessage());
@@ -286,6 +423,14 @@ class CreateFlexQuoteFromRentalRequestJob
             if ($missingForEmail !== []) {
                 $supplyJob->provider?->loadMissing('getDefaultcontact');
                 if ($supplyJob->provider) {
+                    FlexIntegrationDebugLog::step(
+                        $rentalJob->id,
+                        $providerId,
+                        'MISSING_PRODUCTS_EMAIL',
+                        'STARTED',
+                        ['missing_count' => count($missingForEmail)],
+                        'Email provider about products not found in Flex inventory',
+                    );
                     $service->sendMissingProductsEmail($supplyJob->provider, $rentalJob, $missingForEmail);
                 }
             }
@@ -325,11 +470,45 @@ class CreateFlexQuoteFromRentalRequestJob
                 'products_missing' => $missing,
                 'steps' => $steps,
             ]);
-        } catch (\Throwable $e) {
-            FlexIntegrationDebugLog::error($rentalJob->id, $providerId, 'FLEX_QUOTE_FLOW', 'FAILED', [
-                'supply_job_id' => $supplyJob->id,
-                'error' => $e->getMessage(),
+
+            FlexIntegrationDebugLog::step(
+                $rentalJob->id,
+                $providerId,
+                'PROVIDER_PROCESSING',
+                'FINISHED',
+                [
+                    'sync_status' => $syncStatus,
+                    'flex_quote_id' => $quoteId,
+                    'attached_count' => count($attached),
+                    'missing_count' => count($missing),
+                    'rental_request_id' => $rentalJob->id,
+                    'provider_id' => $providerId,
+                ],
+                'Process next supply job or refresh rental job Flex summary',
+            );
+
+            \Illuminate\Support\Facades\Log::info('Flex Integration: Provider sync final success', [
+                'rental_request_id' => $rentalJob->id,
+                'provider_id' => $providerId,
+                'flex_company_base_url' => $service->getBaseUrlForLogging(),
+                'sync_status' => $syncStatus,
+                'flex_quote_id' => $quoteId,
+                'flex_quote_number' => $quoteNumber,
+                'attached_count' => count($attached),
+                'missing_count' => count($missing),
             ]);
+        } catch (\Throwable $e) {
+            FlexIntegrationDebugLog::step(
+                $rentalJob->id,
+                $providerId,
+                'FLEX_QUOTE_FLOW',
+                'FAILED',
+                [
+                    'supply_job_id' => $supplyJob->id,
+                    'error' => $e->getMessage(),
+                ],
+                'Mark supply job FAILED and continue with next provider',
+            );
 
             $appendStep('Flex error: ' . $e->getMessage());
 

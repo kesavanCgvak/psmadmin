@@ -52,6 +52,11 @@ return [
         'FLEX_CUSTOM_FIELD_RESOURCE_VALUES_PATH_PATTERN',
         '/f5/api/custom-field-value/%s/resource-values'
     ),
+    /** sprintf: first %s = resourceId (UUID) — POST to set a custom field value */
+    'custom_field_resource_value_save_path_pattern' => env(
+        'FLEX_CUSTOM_FIELD_RESOURCE_VALUE_SAVE_PATH_PATTERN',
+        '/f5/api/custom-field-value/resource/%s'
+    ),
 
     /*
     |--------------------------------------------------------------------------
@@ -62,11 +67,25 @@ return [
     'contact_search_path' => env('FLEX_CONTACT_SEARCH_PATH', '/f5/api/contact/search'),
     'contact_create_path' => env('FLEX_CONTACT_CREATE_PATH', '/f5/api/contact'),
     'resource_type_path' => env('FLEX_RESOURCE_TYPE_PATH', '/f5/api/resource-type/nodes'),
+    /** Query params for GET resource-type/nodes (Flex Client type lookup). */
+    'resource_type_query' => [
+        'classname' => env('FLEX_RESOURCE_TYPE_CLASSNAME', 'resource-type'),
+        'nodeId' => env('FLEX_RESOURCE_TYPE_NODE_ID', 'root'),
+    ],
     'global_search_path' => env('FLEX_GLOBAL_SEARCH_PATH', '/f5/api/search'),
     'element_create_path' => env('FLEX_ELEMENT_CREATE_PATH', '/f5/api/element'),
 
     /**
-     * sprintf path: first %s = sales quote definitionId (element definition UUID from FLEX_SALES_QUOTE_DEFINITION_ID).
+     * GET list of element definitions; Quote definitionId is resolved by name === "Quote"
+     * (no longer loaded from FLEX_SALES_QUOTE_DEFINITION_ID).
+     */
+    'element_definition_identity_path' => env(
+        'FLEX_ELEMENT_DEFINITION_IDENTITY_PATH',
+        '/f5/api/element-definition/identity'
+    ),
+
+    /**
+     * sprintf path: first %s = sales quote definitionId (resolved from element-definition/identity).
      * Example: /f5/api/element/%s/fields → GET …/element/9bfb850c-b117-11df-b8d5-00e08175e43e/fields?elementId=&parentElementId=
      */
     'element_fields_path_pattern' => env('FLEX_ELEMENT_FIELDS_PATH_PATTERN', '/f5/api/element/%s/fields'),
@@ -74,11 +93,38 @@ return [
     /** Cache TTL (seconds) for element definition fields response */
     'element_fields_cache_ttl' => (int) env('FLEX_ELEMENT_FIELDS_CACHE_TTL', 3600),
 
+    /** Cache TTL for Quote definitionId from element-definition/identity */
+    'element_definition_cache_ttl' => (int) env('FLEX_ELEMENT_DEFINITION_CACHE_TTL', 86400),
+
     /** When false, only env values are used (no fields API). */
     'use_element_fields_api' => ($v = env('FLEX_USE_ELEMENT_FIELDS_API')) === null || filter_var($v, FILTER_VALIDATE_BOOLEAN),
     'financial_line_item_path' => env('FLEX_FINANCIAL_LINE_ITEM_PATH', '/f5/api/financial-document-line-item'),
     'referral_source_path' => env('FLEX_REFERRAL_SOURCE_PATH', '/f5/api/referral-source/identity'),
     'user_event_tracking_path' => env('FLEX_USER_EVENT_TRACKING_PATH', '/f5/api/user-event-tracking'),
+
+    /** GET inventory groups; root group (parentGroupId null) is used when creating inventory models */
+    'inventory_group_list_path' => env('FLEX_INVENTORY_GROUP_LIST_PATH', '/f5/api/inventory-group/list'),
+
+    /** POST create inventory model */
+    'inventory_model_create_path' => env('FLEX_INVENTORY_MODEL_CREATE_PATH', '/f5/api/inventory-model'),
+
+    /** Inventory group name used when creating new inventory models */
+    'inventory_model_group_name' => env('FLEX_INVENTORY_MODEL_GROUP_NAME', 'Non-Serialized Model'),
+
+    /** Cache TTL for inventory group id used for product create */
+    'inventory_group_cache_ttl' => (int) env('FLEX_INVENTORY_GROUP_CACHE_TTL', 86400),
+
+    /**
+     * sprintf path: first %s = financial document / quote id.
+     * POST …/financial-document/{quoteId}/address-data
+     */
+    'financial_document_address_path_pattern' => env(
+        'FLEX_FINANCIAL_DOCUMENT_ADDRESS_PATH_PATTERN',
+        '/f5/api/financial-document/%s/address-data'
+    ),
+
+    /** POST quote / element notes */
+    'element_notification_path' => env('FLEX_ELEMENT_NOTIFICATION_PATH', '/f5/api/element-notification'),
 
     'referral_source_cache_ttl' => (int) env('FLEX_REFERRAL_SOURCE_CACHE_TTL', 86400),
     'client_resource_type_cache_ttl' => (int) env('FLEX_CLIENT_RESOURCE_TYPE_CACHE_TTL', 86400),
@@ -95,7 +141,6 @@ return [
     /** When true, adds currencyId to quote payload (some Flex versions require it). */
     'include_currency_in_quote' => env('FLEX_INCLUDE_CURRENCY_IN_QUOTE', false),
 
-    'sales_quote_definition_id' => env('FLEX_SALES_QUOTE_DEFINITION_ID'),
     'sales_quote_status_id' => env('FLEX_SALES_QUOTE_STATUS_ID'),
     'sales_quote_person_responsible_id' => env('FLEX_SALES_QUOTE_PERSON_RESPONSIBLE_ID'),
     'sales_quote_location_id' => env('FLEX_SALES_QUOTE_LOCATION_ID'),

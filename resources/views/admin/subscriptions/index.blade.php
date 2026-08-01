@@ -210,10 +210,18 @@
                                 <td>{{ $subscription->id }}</td>
                                 <td>
                                     <div>
-                                        <strong>{{ $subscription->user->username }}</strong><br>
-                                        <small class="text-muted">{{ $subscription->user->profile->full_name ?? $subscription->user->email }}</small><br>
-                                        @if($subscription->user->company)
-                                            <small class="text-info">{{ $subscription->user->company->name }}</small>
+                                        @if($subscription->user)
+                                            <strong>{{ $subscription->user->username }}</strong><br>
+                                            <small class="text-muted">{{ $subscription->user->profile->full_name ?? $subscription->user->email }}</small><br>
+                                            @if($subscription->user->company)
+                                                <small class="text-info">{{ $subscription->user->company->name }}</small>
+                                            @endif
+                                        @else
+                                            <strong class="text-danger">User deleted</strong><br>
+                                            <small class="text-muted">User ID: {{ $subscription->user_id ?? '—' }}</small>
+                                            @if($subscription->company_id)
+                                                <br><small class="text-info">Company ID: {{ $subscription->company_id }}</small>
+                                            @endif
                                         @endif
                                     </div>
                                 </td>

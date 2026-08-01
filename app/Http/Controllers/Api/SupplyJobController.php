@@ -358,6 +358,8 @@ class SupplyJobController extends Controller
                 'delivery_address' => $supplyJob->rentalJob->delivery_address,
                 'shipping_method' => $supplyJob->rentalJob->shipping_method,
                 'shipping_method_label' => \App\Support\RentalShippingMethods::label($supplyJob->rentalJob->shipping_method),
+                'global_message' => $rentalJob->global_message ?? null,
+                'offer_requirements' => $rentalJob->offer_requirements ?? null,
                 'status' => $effectiveStatus,
                 'company' => [
                     'id' => $company->id,

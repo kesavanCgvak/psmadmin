@@ -237,6 +237,11 @@ Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
     Route::post('/link-inventory', [FlexInventoryController::class, 'linkInventory']);
 });
 
+Route::middleware(['jwt.verify'])->prefix('company-inventory')->group(function () {
+    Route::post('/search-flex-product', [FlexInventoryController::class, 'searchFlexProduct']);
+    Route::post('/confirm-flex-sync', [FlexInventoryController::class, 'confirmFlexSync']);
+});
+
 // Rentman equipment (local cache + import; search is DB-only)
 Route::middleware(['jwt.verify'])->prefix('rentman/equipment')->group(function () {
     Route::post('/sync', [RentmanEquipmentController::class, 'sync']);
@@ -363,6 +368,7 @@ Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handleWebhook'
 // ------------------------------
 Route::middleware('jwt.verify')->group(function () {
     Route::get('/subscriptions/current', [SubscriptionController::class, 'getCurrent']);
+    Route::get('/subscriptions/trial-incentive', [SubscriptionController::class, 'trialIncentive']);
     Route::post('/subscriptions/cancel', [SubscriptionController::class, 'cancel']);
     Route::post('/subscriptions/update-payment', [SubscriptionController::class, 'updatePaymentMethod']);
     Route::get('/subscription/payment-method', [SubscriptionController::class, 'getPaymentMethod']);
