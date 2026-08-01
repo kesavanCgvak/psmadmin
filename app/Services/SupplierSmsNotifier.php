@@ -136,13 +136,19 @@ class SupplierSmsNotifier
                 'days_until_job' => $daysUntilJob,
             ]);
 
+            $customerName = $user->company?->name
+                ?? $user->profile?->full_name
+                ?? $user->username
+                ?? 'Unknown';
+
             SendSupplierSmsJob::dispatch(
                 $supplyJob->id,
                 $rentalJob->name,
                 $rentalJob->from_date?->format('Y-m-d') ?? (string) $rentalJob->from_date,
                 $supplyJob->provider_id,
                 $dateFormatId,
-                $rentalJob->id
+                $rentalJob->id,
+                $customerName
             );
         } catch (\Throwable $e) {
             Log::error('SupplierSmsNotifier: failed to dispatch SMS job.', [

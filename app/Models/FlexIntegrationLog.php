@@ -45,6 +45,8 @@ class FlexIntegrationLog extends Model
 
     public const ACTION_CREATE_PRODUCT = 'CREATE_PRODUCT';
 
+    public const ACTION_UPDATE_CUSTOM_FIELD = 'UPDATE_CUSTOM_FIELD';
+
     public const ACTION_PERSIST_RESOURCE_ID = 'PERSIST_RESOURCE_ID';
 
     public const ACTION_SET_QUOTE_ADDRESS = 'SET_QUOTE_ADDRESS';

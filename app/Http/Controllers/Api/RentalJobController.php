@@ -261,6 +261,8 @@ class RentalJobController extends Controller
                 'shipping_method' => $job->shipping_method ?? RentalShippingMethods::default(),
                 'shipping_method_label' => RentalShippingMethods::label($job->shipping_method),
                 'status' => $job->status,
+                'global_message' => $job->global_message,
+                'offer_requirements' => $job->offer_requirements,
                 'suppliers' => $suppliers,
             ];
 

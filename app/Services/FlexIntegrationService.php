@@ -1415,7 +1415,11 @@ class FlexIntegrationService
 
         // Case 3: create inventory model in FLEX
         try {
-            $createdId = $this->createFlexInventoryModel($displayName);
+            $psmCode = Product::query()->whereKey($productId)->value('psm_code');
+            $createdId = $this->createFlexInventoryModel(
+                $displayName,
+                $psmCode !== null && $psmCode !== '' ? (string) $psmCode : null,
+            );
             self::persistFlexResourceOnInventory($this->providerCompanyId, $productId, $createdId);
             $this->logPersistResourceId($productId, $createdId, 'create');
 
@@ -1590,7 +1594,11 @@ class FlexIntegrationService
         );
 
         if ($createIfMissing) {
-            $createdId = $this->createFlexInventoryModel($displayName);
+            $psmCode = $equipment->product?->psm_code;
+            $createdId = $this->createFlexInventoryModel(
+                $displayName,
+                $psmCode !== null && $psmCode !== '' ? (string) $psmCode : null,
+            );
 
             Log::info('Flex Integration: New FLEX product created for marketplace confirm sync', [
                 'provider_company_id' => $this->providerCompanyId,
@@ -2131,8 +2139,9 @@ class FlexIntegrationService
 
     /**
      * POST /inventory-model — create a new FLEX inventory model under "Non-Serialized Model".
+     * After a successful create, best-effort populate Pro Subrental Marketplace custom fields.
      */
-    public function createFlexInventoryModel(string $productName): string
+    public function createFlexInventoryModel(string $productName, ?string $psmCode = null): string
     {
         $groupId = $this->getNonSerializedModelInventoryGroupId();
         $path = config('flex.inventory_model_create_path', '/f5/api/inventory-model');
@@ -2150,6 +2159,7 @@ class FlexIntegrationService
             [
                 'name' => $productName,
                 'groupId' => $groupId,
+                'psm_code' => $psmCode,
             ],
             'POST /f5/api/inventory-model then persist flex_resource_id',
         );
@@ -2233,10 +2243,392 @@ class FlexIntegrationService
                 'groupId' => $groupId,
                 'flex_resource_id' => $idStr,
             ],
-            'Persist flex_resource_id on company_inventory',
+            'Populate Pro Subrental Marketplace custom fields then persist flex_resource_id',
         );
 
+        $this->populateProSubrentalMarketplaceCustomFieldsAfterCreate($idStr, $psmCode);
+
         return $idStr;
+    }
+
+    /**
+     * After creating a FLEX inventory model, set PSM Code and Publish to PSM custom fields.
+     * Soft-fails: logs errors and never throws (product create remains successful).
+     */
+    public function populateProSubrentalMarketplaceCustomFieldsAfterCreate(
+        string $resourceId,
+        ?string $psmCode = null,
+    ): void {
+        try {
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'CUSTOM_FIELDS',
+                'STARTED',
+                [
+                    'flex_resource_id' => $resourceId,
+                    'psm_code' => $psmCode,
+                ],
+                'Resolve Pro Subrental Marketplace group and fieldDefIds',
+            );
+
+            $customFieldGroupId = $this->resolveProSubrentalMarketplaceCustomFieldGroupId($resourceId);
+            if ($customFieldGroupId === null) {
+                Log::warning('Flex Integration: Pro Subrental Marketplace custom field group not found after product create', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $this->rentalRequestId,
+                    'flex_resource_id' => $resourceId,
+                ]);
+
+                return;
+            }
+
+            $fieldDefs = $this->resolveProSubrentalMarketplaceFieldDefIds($customFieldGroupId, $resourceId);
+            $psmCodeFieldDefId = $fieldDefs['psm_code_field_def_id'] ?? null;
+            $publishToPsmFieldDefId = $fieldDefs['publish_to_psm_field_def_id'] ?? null;
+
+            if ($psmCodeFieldDefId === null && $publishToPsmFieldDefId === null) {
+                Log::warning('Flex Integration: Required Pro Subrental custom fields not found after product create', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rental_request_id' => $this->rentalRequestId,
+                    'flex_resource_id' => $resourceId,
+                    'custom_field_group_id' => $customFieldGroupId,
+                ]);
+
+                return;
+            }
+
+            $trimmedPsmCode = trim((string) ($psmCode ?? ''));
+            if ($psmCodeFieldDefId !== null) {
+                if ($trimmedPsmCode !== '') {
+                    $this->saveFlexCustomFieldValue($resourceId, $psmCodeFieldDefId, $trimmedPsmCode, 'PSM Code');
+                } else {
+                    Log::warning('Flex Integration: Skipping PSM Code custom field update — empty psm_code', [
+                        'provider_company_id' => $this->providerCompanyId,
+                        'rental_request_id' => $this->rentalRequestId,
+                        'flex_resource_id' => $resourceId,
+                        'field_def_id' => $psmCodeFieldDefId,
+                    ]);
+                }
+            } else {
+                Log::warning('Flex Integration: PSM Code fieldDefId not found in custom field group', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'flex_resource_id' => $resourceId,
+                    'custom_field_group_id' => $customFieldGroupId,
+                ]);
+            }
+
+            if ($publishToPsmFieldDefId !== null) {
+                $this->saveFlexCustomFieldValue($resourceId, $publishToPsmFieldDefId, 'true', 'Publish to PSM');
+            } else {
+                Log::warning('Flex Integration: Publish to PSM fieldDefId not found in custom field group', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'flex_resource_id' => $resourceId,
+                    'custom_field_group_id' => $customFieldGroupId,
+                ]);
+            }
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'CUSTOM_FIELDS',
+                'FINISHED',
+                [
+                    'flex_resource_id' => $resourceId,
+                    'custom_field_group_id' => $customFieldGroupId,
+                    'psm_code_updated' => $psmCodeFieldDefId !== null && $trimmedPsmCode !== '',
+                    'publish_to_psm_updated' => $publishToPsmFieldDefId !== null,
+                ],
+                'Continue with persist flex_resource_id / attach to quote',
+            );
+        } catch (\Throwable $e) {
+            Log::error('Flex Integration: Custom field population failed after product create (non-blocking)', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rental_request_id' => $this->rentalRequestId,
+                'flex_resource_id' => $resourceId,
+                'psm_code' => $psmCode,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            FlexIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'CUSTOM_FIELDS',
+                'FAILED',
+                [
+                    'flex_resource_id' => $resourceId,
+                    'error' => $e->getMessage(),
+                ],
+                'Continue — product create remains successful',
+            );
+        }
+    }
+
+    /**
+     * GET /custom-field-group/inventory-model/groups?resourceId= — find "Pro Subrental Marketplace" group id.
+     */
+    protected function resolveProSubrentalMarketplaceCustomFieldGroupId(string $resourceId): ?string
+    {
+        $path = config(
+            'flex.custom_field_inventory_model_groups_path',
+            '/f5/api/custom-field-group/inventory-model/groups'
+        );
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+        $params = ['resourceId' => $resourceId];
+
+        Log::info('Flex Integration: Looking up Pro Subrental Marketplace custom field group', [
+            'provider_company_id' => $this->providerCompanyId,
+            'flex_resource_id' => $resourceId,
+            'url' => $url,
+        ]);
+
+        try {
+            $response = $this->flexHttp(
+                'GET',
+                $url,
+                $params,
+                FlexIntegrationLog::ACTION_UPDATE_CUSTOM_FIELD,
+                'Resolve PSM Code and Publish to PSM fieldDefIds',
+                null,
+                $resourceId,
+            );
+
+            $data = $response->json();
+            if (!$response->successful()) {
+                Log::error('Flex Integration: Custom field group lookup failed', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'flex_resource_id' => $resourceId,
+                    'http_status' => $response->status(),
+                    'body' => self::truncateHttpBody($response->body(), 500),
+                ]);
+
+                return null;
+            }
+
+            $groups = self::normalizeFlexItemArray($data);
+            foreach ($groups as $group) {
+                if (!is_array($group)) {
+                    continue;
+                }
+                $name = isset($group['name']) ? trim((string) $group['name']) : '';
+                if (strcasecmp($name, 'Pro Subrental Marketplace') === 0) {
+                    $id = $group['id'] ?? null;
+                    if ($id !== null && $id !== '') {
+                        Log::info('Flex Integration: Custom field group resolved', [
+                            'provider_company_id' => $this->providerCompanyId,
+                            'flex_resource_id' => $resourceId,
+                            'custom_field_group_id' => (string) $id,
+                        ]);
+
+                        return (string) $id;
+                    }
+                }
+            }
+
+            Log::warning('Flex Integration: Custom field group "Pro Subrental Marketplace" missing in response', [
+                'provider_company_id' => $this->providerCompanyId,
+                'flex_resource_id' => $resourceId,
+            ]);
+
+            return null;
+        } catch (\Throwable $e) {
+            Log::error('Flex Integration: Custom field group lookup exception', [
+                'provider_company_id' => $this->providerCompanyId,
+                'flex_resource_id' => $resourceId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * GET /custom-field-value/{groupId}/resource-values?resourceId= — resolve fieldDefIds by caption.
+     *
+     * @return array{psm_code_field_def_id: ?string, publish_to_psm_field_def_id: ?string}
+     */
+    protected function resolveProSubrentalMarketplaceFieldDefIds(string $customFieldGroupId, string $resourceId): array
+    {
+        $result = [
+            'psm_code_field_def_id' => null,
+            'publish_to_psm_field_def_id' => null,
+        ];
+
+        $pattern = config(
+            'flex.custom_field_resource_values_path_pattern',
+            '/f5/api/custom-field-value/%s/resource-values'
+        );
+        $path = sprintf($pattern, $customFieldGroupId);
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+        $params = ['resourceId' => $resourceId];
+
+        Log::info('Flex Integration: Looking up Pro Subrental Marketplace custom fields', [
+            'provider_company_id' => $this->providerCompanyId,
+            'flex_resource_id' => $resourceId,
+            'custom_field_group_id' => $customFieldGroupId,
+            'url' => $url,
+        ]);
+
+        try {
+            $response = $this->flexHttp(
+                'GET',
+                $url,
+                $params,
+                FlexIntegrationLog::ACTION_UPDATE_CUSTOM_FIELD,
+                'POST PSM Code and Publish to PSM custom field values',
+                null,
+                $resourceId,
+            );
+
+            $data = $response->json();
+            if (!$response->successful()) {
+                Log::error('Flex Integration: Custom field lookup failed', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'flex_resource_id' => $resourceId,
+                    'custom_field_group_id' => $customFieldGroupId,
+                    'http_status' => $response->status(),
+                    'body' => self::truncateHttpBody($response->body(), 500),
+                ]);
+
+                return $result;
+            }
+
+            $rows = self::normalizeFlexItemArray($data);
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $caption = isset($row['caption']) ? trim((string) $row['caption']) : '';
+                $fieldDefId = $row['fieldDefId'] ?? null;
+                if ($fieldDefId === null || $fieldDefId === '') {
+                    continue;
+                }
+                if (strcasecmp($caption, 'PSM Code') === 0) {
+                    $result['psm_code_field_def_id'] = (string) $fieldDefId;
+                }
+                if (strcasecmp($caption, 'Publish to PSM') === 0) {
+                    $result['publish_to_psm_field_def_id'] = (string) $fieldDefId;
+                }
+            }
+
+            Log::info('Flex Integration: Custom fields resolved by caption', [
+                'provider_company_id' => $this->providerCompanyId,
+                'flex_resource_id' => $resourceId,
+                'custom_field_group_id' => $customFieldGroupId,
+                'psm_code_field_def_id' => $result['psm_code_field_def_id'],
+                'publish_to_psm_field_def_id' => $result['publish_to_psm_field_def_id'],
+            ]);
+
+            return $result;
+        } catch (\Throwable $e) {
+            Log::error('Flex Integration: Custom field lookup exception', [
+                'provider_company_id' => $this->providerCompanyId,
+                'flex_resource_id' => $resourceId,
+                'custom_field_group_id' => $customFieldGroupId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $result;
+        }
+    }
+
+    /**
+     * POST /custom-field-value/resource/{resourceId} — set a single custom field value.
+     */
+    protected function saveFlexCustomFieldValue(
+        string $resourceId,
+        string $fieldDefId,
+        string $value,
+        string $fieldCaption,
+    ): bool {
+        $pattern = config(
+            'flex.custom_field_resource_value_save_path_pattern',
+            '/f5/api/custom-field-value/resource/%s'
+        );
+        $path = sprintf($pattern, $resourceId);
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+        $payload = [
+            'fieldDefId' => $fieldDefId,
+            'value' => $value,
+        ];
+
+        Log::info('Flex Integration: Updating custom field', [
+            'provider_company_id' => $this->providerCompanyId,
+            'rental_request_id' => $this->rentalRequestId,
+            'flex_resource_id' => $resourceId,
+            'field_caption' => $fieldCaption,
+            'field_def_id' => $fieldDefId,
+            'value' => $value,
+        ]);
+
+        try {
+            $response = $this->flexHttp(
+                'POST',
+                $url,
+                $payload,
+                FlexIntegrationLog::ACTION_UPDATE_CUSTOM_FIELD,
+                'Continue remaining custom field updates or finish',
+                null,
+                $resourceId,
+                'query',
+            );
+
+            $data = $response->json();
+            if (!$response->successful()) {
+                $this->logIntegration(
+                    FlexIntegrationLog::ACTION_UPDATE_CUSTOM_FIELD,
+                    FlexIntegrationLog::STATUS_FAILED,
+                    $url,
+                    $payload,
+                    is_array($data) ? $data : ['raw' => self::truncateHttpBody($response->body())],
+                    'HTTP ' . $response->status() . ' updating ' . $fieldCaption,
+                    null,
+                    $resourceId,
+                );
+
+                Log::error('Flex Integration: Custom field update failed', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'flex_resource_id' => $resourceId,
+                    'field_caption' => $fieldCaption,
+                    'field_def_id' => $fieldDefId,
+                    'http_status' => $response->status(),
+                    'body' => self::truncateHttpBody($response->body(), 500),
+                ]);
+
+                return false;
+            }
+
+            $this->logIntegration(
+                FlexIntegrationLog::ACTION_UPDATE_CUSTOM_FIELD,
+                FlexIntegrationLog::STATUS_SUCCESS,
+                $url,
+                $payload,
+                is_array($data) ? $data : ['raw' => self::truncateHttpBody($response->body())],
+                null,
+                null,
+                $resourceId,
+            );
+
+            Log::info('Flex Integration: Custom field updated successfully', [
+                'provider_company_id' => $this->providerCompanyId,
+                'flex_resource_id' => $resourceId,
+                'field_caption' => $fieldCaption,
+                'field_def_id' => $fieldDefId,
+            ]);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::error('Flex Integration: Custom field update exception', [
+                'provider_company_id' => $this->providerCompanyId,
+                'flex_resource_id' => $resourceId,
+                'field_caption' => $fieldCaption,
+                'field_def_id' => $fieldDefId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 
     /**
@@ -2631,7 +3023,7 @@ class FlexIntegrationService
                 'SKIPPED',
                 [
                     'flex_quote_id' => $quoteId,
-                    'reason' => 'no_public_or_private_message',
+                    'reason' => 'no_global_private_or_offer_requirements_message',
                 ],
                 'Continue with product attach',
             );
@@ -2769,11 +3161,13 @@ class FlexIntegrationService
     }
 
     /**
-     * Combine public (global_message) and provider private message into one note body.
+     * Combine Global Message, Private Message, and Offer Requirements into one note body.
+     * Empty/null sections are omitted.
      */
     public static function buildCombinedQuoteNote(RentalJob $rentalJob, SupplyJob $supplyJob): ?string
     {
-        $publicMessage = trim((string) ($rentalJob->global_message ?? ''));
+        $globalMessage = trim((string) ($rentalJob->global_message ?? ''));
+        $offerRequirements = trim((string) ($rentalJob->offer_requirements ?? ''));
 
         $privateMessage = trim((string) (
             RentalJobComment::query()
@@ -2784,11 +3178,14 @@ class FlexIntegrationService
         ));
 
         $sections = [];
-        if ($publicMessage !== '') {
-            $sections[] = "Public Message:\n" . $publicMessage;
+        if ($globalMessage !== '') {
+            $sections[] = "Global Message:\n" . $globalMessage;
         }
         if ($privateMessage !== '') {
             $sections[] = "Private Message:\n" . $privateMessage;
+        }
+        if ($offerRequirements !== '') {
+            $sections[] = "Offer Requirements:\n" . $offerRequirements;
         }
 
         if ($sections === []) {

@@ -52,6 +52,11 @@ return [
         'FLEX_CUSTOM_FIELD_RESOURCE_VALUES_PATH_PATTERN',
         '/f5/api/custom-field-value/%s/resource-values'
     ),
+    /** sprintf: first %s = resourceId (UUID) — POST to set a custom field value */
+    'custom_field_resource_value_save_path_pattern' => env(
+        'FLEX_CUSTOM_FIELD_RESOURCE_VALUE_SAVE_PATH_PATTERN',
+        '/f5/api/custom-field-value/resource/%s'
+    ),
 
     /*
     |--------------------------------------------------------------------------
