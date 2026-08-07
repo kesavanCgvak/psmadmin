@@ -13,7 +13,9 @@ use App\Models\RentalJobComment;
 use App\Models\JobOffer;
 use App\Models\Equipment;
 use App\Jobs\CreateFlexQuoteFromRentalRequestJob;
+use App\Jobs\CreateRentmanProjectRequestFromRentalRequestJob;
 use App\Support\FlexIntegrationDebugLog;
+use App\Support\RentmanIntegrationDebugLog;
 use App\Support\RentalShippingMethods;
 use App\Services\SupplierSmsNotifier;
 use Illuminate\Support\Facades\Mail;
@@ -296,6 +298,17 @@ class RentalRequestController extends Controller
                         CreateFlexQuoteFromRentalRequestJob::dispatch($rentalJob->id);
                     } catch (\Throwable $e) {
                         FlexIntegrationDebugLog::error($rentalJob->id, null, 'FLEX_QUOTE_JOB', 'AFTER_COMMIT_FAILED', [
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+
+                    try {
+                        RentmanIntegrationDebugLog::info($rentalJob->id, null, 'RENTMAN_PROJECT_REQUEST_JOB', 'AFTER_COMMIT_RUN', [
+                            'note' => 'Runs synchronously (not queued)',
+                        ]);
+                        CreateRentmanProjectRequestFromRentalRequestJob::dispatch($rentalJob->id);
+                    } catch (\Throwable $e) {
+                        RentmanIntegrationDebugLog::error($rentalJob->id, null, 'RENTMAN_PROJECT_REQUEST_JOB', 'AFTER_COMMIT_FAILED', [
                             'error' => $e->getMessage(),
                         ]);
                     }

@@ -28,6 +28,9 @@ class RentalJob extends Model
         'flex_sales_quote_id',
         'flex_sales_quote_number',
         'flex_sync_status',
+        'rentman_project_request_id',
+        'rentman_project_request_displayname',
+        'rentman_sync_status',
         'cancelled_by',
         'notes',
     ];

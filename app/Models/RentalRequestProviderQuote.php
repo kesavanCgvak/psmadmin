@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Maps a rental request (rental_jobs) to a Flex quote per provider company.
+ * Maps a rental request (rental_jobs) to a Flex quote and/or Rentman project request per provider.
  */
 class RentalRequestProviderQuote extends Model
 {
@@ -18,6 +18,8 @@ class RentalRequestProviderQuote extends Model
         'supply_job_id',
         'flex_quote_id',
         'flex_quote_number',
+        'rentman_project_request_id',
+        'rentman_project_request_displayname',
         'status',
     ];
 

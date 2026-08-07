@@ -1,7 +1,7 @@
 # Rentman Integration — Create Rental Request Technical Document
 
 **Scope:** Proposed backend flow when a rental request is created and one or more providers use **Rentman** as their rental software.  
-**Status:** **Planning / not implemented** — PSM currently integrates Rentman for equipment catalog sync and import only (`RentmanService`, `RentmanEquipmentController`).  
+**Status:** **Implemented** — Project Request push runs synchronously after rental create for Rentman providers (`CreateRentmanProjectRequestFromRentalRequestJob` + `RentmanIntegrationService`). Equipment catalog sync/import remains available via `RentmanService` / `RentmanEquipmentController`.  
 **Parallel reference:** [`FLEX_CREATE_RENTAL_REQUEST_INTEGRATION.md`](./FLEX_CREATE_RENTAL_REQUEST_INTEGRATION.md)  
 **Rentman API version:** 1.15.0 (OpenAPI spec, deployed 2026-07-22)  
 **Last reviewed:** July 2026
@@ -525,22 +525,23 @@ CreateRentmanProjectRequestFromRentalRequestJob::handle
        ├─ RentmanIntegrationService::checkCompanyIntegration
        ├─ RentmanIntegrationService::forProviderCompany
        ├─ setRentalRequestId / logPreFlightDiagnostics
-       ├─ resolveContact (inline OR getOrCreateContact)
-       │    ├─ searchContact          // Option B only
-       │    └─ createContact          // Option B only
-       ├─ createProjectRequest
-       │    ├─ mapPlanPeriodDates
-       │    ├─ mapLocationFromDeliveryAddress
-       │    └─ buildRemarkFromMessages
-       ├─ foreach product line:
+       ├─ getOrCreateContact
+       │    ├─ searchContact (list + match)
+       │    └─ createContact
+       ├─ foreach product line (BEFORE project request):
        │    ├─ productDisplayName
        │    ├─ resolveRentmanEquipmentForProduct
        │    │    ├─ rentmanEquipmentExists     // if cached
+       │    │    ├─ local rentman_equipments
+       │    │    ├─ syncAllEquipmentFromApi
        │    │    ├─ searchRentmanEquipment
-       │    │    ├─ createRentmanEquipment      // optional v2
+       │    │    ├─ createRentmanEquipment
        │    │    └─ persistRentmanEquipmentOnInventory
+       ├─ createProjectRequest (full payload: linked_contact, contact_*, location_*, periods, remark)
+       ├─ foreach resolved line:
        │    └─ attachEquipmentToProjectRequest
-       ├─ sendMissingProductsEmail            // if any missing
+       ├─ addProjectRequestNoteFromRentalMessages  // soft-fail confirm
+       ├─ sendMissingProductsEmail                // if attach failures
        └─ persist supply_job + provider quote + sync log
   └─ refreshRentalJobRentmanSummary
 ```
@@ -569,19 +570,19 @@ CreateRentmanProjectRequestFromRentalRequestJob::handle
 ## 12. Implementation Checklist
 
 ### Database migrations
-- [ ] `supply_jobs`: `rentman_project_request_id`, `rentman_project_request_displayname`, `rentman_sync_status`
-- [ ] `rental_jobs`: `rentman_sync_status` (and optional header-level request id)
-- [ ] `rentman_project_request_sync_logs` table
-- [ ] `rentman_integration_logs` table
-- [ ] Extend `rental_request_provider_quotes` or add Rentman-specific mapping table
+- [x] `supply_jobs`: `rentman_project_request_id`, `rentman_project_request_displayname`, `rentman_sync_status`
+- [x] `rental_jobs`: `rentman_sync_status` (and optional header-level request id)
+- [x] `rentman_project_request_sync_logs` table
+- [x] `rentman_integration_logs` table
+- [x] Extend `rental_request_provider_quotes` or add Rentman-specific mapping table
 
 ### Application code
-- [ ] `RentmanIntegrationService` (quote-push concerns; delegate catalog to `RentmanService`)
-- [ ] `CreateRentmanProjectRequestFromRentalRequestJob`
-- [ ] `RentmanIntegrationLogger` + `RentmanIntegrationDebugLog`
-- [ ] `config/rentman.php`
-- [ ] Dispatch from `RentalRequestController::store` `afterCommit` (alongside Flex job)
-- [ ] Provider detection: `rentalSoftware.name` contains `rentman`
+- [x] `RentmanIntegrationService` (quote-push concerns; delegate catalog to `RentmanService`)
+- [x] `CreateRentmanProjectRequestFromRentalRequestJob`
+- [x] `RentmanIntegrationLogger` + `RentmanIntegrationDebugLog`
+- [x] `config/rentman.php`
+- [x] Dispatch from `RentalRequestController::store` `afterCommit` (alongside Flex job)
+- [x] Provider detection: `rentalSoftware.name` contains `rentman`
 
 ### Operational
 - [ ] Provider Rentman API token in `company_integrations`
