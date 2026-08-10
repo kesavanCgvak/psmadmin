@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ConfirmRentmanSyncRequest;
+use App\Http\Requests\SearchRentmanProductRequest;
 use App\Jobs\SyncRentmanEquipmentJob;
 use App\Models\CompanyIntegration;
 use App\Models\Equipment;
 use App\Models\Product;
 use App\Models\RentmanEquipment;
 use App\Services\FlexService;
+use App\Services\RentmanIntegrationService;
 use App\Services\RentmanInventoryImportService;
 use App\Services\RentmanService;
 use App\Support\InventoryMeasurementUnits;
@@ -537,6 +540,125 @@ class RentmanEquipmentController extends Controller
                 return response()->json(['status' => 'already_in_inventory'], 409);
             }
             throw $e;
+        }
+    }
+
+    /**
+     * Search Rentman local cache for a marketplace inventory product (triggers catalog sync if needed).
+     * POST /api/company-inventory/search-rentman-product
+     */
+    public function searchRentmanProduct(SearchRentmanProductRequest $request): JsonResponse
+    {
+        return $this->handleMarketplaceRentmanAction(
+            (int) $request->input('company_inventory_id'),
+            fn (RentmanIntegrationService $rentman, Equipment $equipment) => $rentman->searchRentmanProductForMarketplace($equipment),
+            'Search Rentman product',
+        );
+    }
+
+    /**
+     * Confirm marketplace Rentman sync: link Equipment ID or create in Rentman when missing.
+     * POST /api/company-inventory/confirm-rentman-sync
+     */
+    public function confirmRentmanSync(ConfirmRentmanSyncRequest $request): JsonResponse
+    {
+        $createIfMissing = (bool) $request->boolean('create_if_missing');
+        $resourceId = $request->input('resource_id');
+
+        return $this->handleMarketplaceRentmanAction(
+            (int) $request->input('company_inventory_id'),
+            fn (RentmanIntegrationService $rentman, Equipment $equipment) => $rentman->confirmRentmanMarketplaceSync(
+                $equipment,
+                $resourceId !== null ? (string) $resourceId : null,
+                $createIfMissing,
+            ),
+            'Confirm Rentman sync',
+        );
+    }
+
+    /**
+     * @param  callable(RentmanIntegrationService, Equipment): array  $action
+     */
+    private function handleMarketplaceRentmanAction(
+        int $companyInventoryId,
+        callable $action,
+        string $logContext,
+    ): JsonResponse {
+        $user = $this->getAuthenticatedUser();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $companyId = $user->company_id;
+        if (!$companyId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Company not found for this user.',
+            ], 403);
+        }
+
+        $equipment = Equipment::query()
+            ->with(['product.brand'])
+            ->whereKey($companyInventoryId)
+            ->first();
+
+        if (!$equipment || (int) $equipment->company_id !== (int) $companyId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Company inventory record not found for your company.',
+            ], 404);
+        }
+
+        $rentman = RentmanIntegrationService::forProviderCompany((int) $companyId);
+        if (!$rentman) {
+            return response()->json([
+                'success' => false,
+                'action' => 'error',
+                'message' => 'Rentman integration is not configured for this company. Please add API credentials before syncing with Rentman.',
+            ], 422);
+        }
+
+        try {
+            $result = $action($rentman, $equipment);
+
+            $status = match ($result['action'] ?? '') {
+                'duplicate_resource' => 409,
+                'error' => 500,
+                default => ($result['success'] ?? false) ? 200 : 422,
+            };
+
+            return response()->json($result, $status);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'action' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\RuntimeException $e) {
+            Log::error($logContext . ' failed', [
+                'company_id' => $companyId,
+                'company_inventory_id' => $equipment->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'action' => 'error',
+                'message' => $e->getMessage(),
+            ], 502);
+        } catch (\Throwable $e) {
+            Log::error($logContext . ' unexpected error', [
+                'company_id' => $companyId,
+                'company_inventory_id' => $equipment->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'action' => 'error',
+                'message' => 'An unexpected error occurred while processing the Rentman sync request.',
+            ], 500);
         }
     }
 

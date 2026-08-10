@@ -240,6 +240,8 @@ Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
 Route::middleware(['jwt.verify'])->prefix('company-inventory')->group(function () {
     Route::post('/search-flex-product', [FlexInventoryController::class, 'searchFlexProduct']);
     Route::post('/confirm-flex-sync', [FlexInventoryController::class, 'confirmFlexSync']);
+    Route::post('/search-rentman-product', [RentmanEquipmentController::class, 'searchRentmanProduct']);
+    Route::post('/confirm-rentman-sync', [RentmanEquipmentController::class, 'confirmRentmanSync']);
 });
 
 // Rentman equipment (local cache + import; search is DB-only)

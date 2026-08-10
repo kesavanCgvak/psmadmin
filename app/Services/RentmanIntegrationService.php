@@ -677,46 +677,7 @@ class RentmanIntegrationService
             return $local;
         }
 
-        RentmanIntegrationDebugLog::step(
-            $rentalRequestId,
-            $this->providerCompanyId,
-            RentmanIntegrationLog::ACTION_SYNC_EQUIPMENT,
-            'STARTED',
-            ['name' => $displayName],
-            'Run Rentman equipment catalog sync then re-search local cache',
-        );
-
-        try {
-            (new RentmanService($this->providerCompanyId))->syncAllEquipmentFromApi();
-            CompanyIntegration::query()
-                ->where('company_id', $this->providerCompanyId)
-                ->where('integration_type', 'rentman')
-                ->update([
-                    'last_fetched_at' => now(),
-                    'last_synced_at' => now(),
-                ]);
-
-            $this->logIntegration(
-                RentmanIntegrationLog::ACTION_SYNC_EQUIPMENT,
-                RentmanIntegrationLog::STATUS_SUCCESS,
-                null,
-                ['name' => $displayName],
-                ['synced' => true],
-            );
-        } catch (\Throwable $e) {
-            $this->logIntegration(
-                RentmanIntegrationLog::ACTION_SYNC_EQUIPMENT,
-                RentmanIntegrationLog::STATUS_FAILED,
-                null,
-                ['name' => $displayName],
-                null,
-                $e->getMessage(),
-            );
-            Log::warning('Rentman Integration: Equipment sync failed during resolve', [
-                'provider_company_id' => $this->providerCompanyId,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        $this->triggerEquipmentCatalogSync($displayName);
 
         $localAfterSync = $this->findLocalRentmanEquipmentByName($displayName);
         if ($localAfterSync !== null) {
@@ -934,9 +895,551 @@ class RentmanIntegrationService
         }
     }
 
+    /**
+     * Marketplace Inventory → Rentman search (local cache → sync → re-search; no DB updates).
+     *
+     * @return array{
+     *   success: bool,
+     *   action: string,
+     *   message?: string,
+     *   products?: list<array{resource_id: string, name: string}>
+     * }
+     *
+     * @throws \InvalidArgumentException When product/name data is missing
+     */
+    public function searchRentmanProductForMarketplace(Equipment $equipment): array
+    {
+        $displayName = $this->resolveMarketplaceProductDisplayName($equipment);
+
+        RentmanIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'SEARCH_RENTMAN_PRODUCT',
+            'STARTED',
+            [
+                'company_inventory_id' => $equipment->id,
+                'company_id' => $equipment->company_id,
+                'product_id' => $equipment->product_id,
+                'name' => $displayName,
+            ],
+            'Search local rentman_equipments; sync catalog if empty; re-search; no database updates',
+        );
+
+        $matches = $this->collectLocalRentmanEquipmentMatches($displayName);
+
+        if ($matches === []) {
+            $this->triggerEquipmentCatalogSync($displayName);
+            $matches = $this->collectLocalRentmanEquipmentMatches($displayName);
+        }
+
+        $products = array_map(static function (array $match): array {
+            return [
+                'resource_id' => $match['resource_id'],
+                'name' => $match['name'],
+            ];
+        }, $matches);
+
+        if ($products === []) {
+            Log::info('Rentman Integration: No matching Rentman product found for marketplace search', [
+                'provider_company_id' => $this->providerCompanyId,
+                'company_inventory_id' => $equipment->id,
+                'product_id' => $equipment->product_id,
+                'name' => $displayName,
+            ]);
+
+            RentmanIntegrationDebugLog::step(
+                $this->rentalRequestId ?? 0,
+                $this->providerCompanyId,
+                'SEARCH_RENTMAN_PRODUCT',
+                'NO_MATCH',
+                [
+                    'company_inventory_id' => $equipment->id,
+                    'name' => $displayName,
+                ],
+                'Await user confirmation to create equipment in Rentman',
+            );
+
+            return [
+                'success' => true,
+                'action' => 'no_match',
+                'message' => 'No matching product found in Rentman.',
+            ];
+        }
+
+        $action = count($products) === 1 ? 'single_match' : 'multiple_matches';
+        $message = $action === 'single_match'
+            ? 'Matching product found in Rentman.'
+            : 'Multiple matching products found in Rentman. Please select one to synchronize.';
+
+        Log::info('Rentman Integration: Rentman marketplace search completed', [
+            'provider_company_id' => $this->providerCompanyId,
+            'company_inventory_id' => $equipment->id,
+            'product_id' => $equipment->product_id,
+            'action' => $action,
+            'match_count' => count($products),
+            'products' => $products,
+        ]);
+
+        RentmanIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'SEARCH_RENTMAN_PRODUCT',
+            strtoupper($action),
+            [
+                'company_inventory_id' => $equipment->id,
+                'match_count' => count($products),
+                'products' => $products,
+            ],
+            'Await user confirmation before linking Rentman equipment',
+        );
+
+        return [
+            'success' => true,
+            'action' => $action,
+            'products' => $products,
+            'message' => $message,
+        ];
+    }
+
+    /**
+     * Confirm marketplace Rentman sync: link equipment ID or create in Rentman from inventory data.
+     *
+     * @return array{success: bool, action: string, message: string, resource_id: string}
+     *
+     * @throws \InvalidArgumentException When product/name data is missing
+     * @throws \RuntimeException When Rentman create fails or other API errors occur
+     */
+    public function confirmRentmanMarketplaceSync(
+        Equipment $equipment,
+        ?string $resourceId,
+        bool $createIfMissing,
+    ): array {
+        $displayName = $this->resolveMarketplaceProductDisplayName($equipment);
+
+        RentmanIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'CONFIRM_RENTMAN_SYNC',
+            'STARTED',
+            [
+                'company_inventory_id' => $equipment->id,
+                'company_id' => $equipment->company_id,
+                'product_id' => $equipment->product_id,
+                'name' => $displayName,
+                'resource_id' => $resourceId,
+                'create_if_missing' => $createIfMissing,
+            ],
+            $createIfMissing
+                ? 'Create equipment in Rentman then link to company_inventory'
+                : 'Link Rentman equipment ID to company_inventory',
+        );
+
+        if ($createIfMissing) {
+            // Re-check local cache (and sync once more) before creating, matching the required workflow.
+            $existing = $this->findLocalRentmanEquipmentByName($displayName);
+            if ($existing === null) {
+                $this->triggerEquipmentCatalogSync($displayName);
+                $existing = $this->findLocalRentmanEquipmentByName($displayName);
+            }
+
+            if ($existing !== null) {
+                Log::info('Rentman Integration: Marketplace create skipped; match found after re-search', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'company_inventory_id' => $equipment->id,
+                    'product_id' => $equipment->product_id,
+                    'rentman_equipment_id' => $existing,
+                    'name' => $displayName,
+                ]);
+
+                return $this->attemptLinkRentmanEquipmentToEquipment($equipment, $existing, 'search');
+            }
+
+            $createdId = $this->createRentmanEquipment($displayName, $equipment);
+            $this->upsertLocalEquipmentCache($createdId, $displayName, $equipment);
+
+            Log::info('Rentman Integration: New Rentman equipment created for marketplace confirm sync', [
+                'provider_company_id' => $this->providerCompanyId,
+                'company_inventory_id' => $equipment->id,
+                'product_id' => $equipment->product_id,
+                'rentman_equipment_id' => $createdId,
+                'name' => $displayName,
+            ]);
+
+            return $this->attemptLinkRentmanEquipmentToEquipment($equipment, $createdId, 'create');
+        }
+
+        $resourceId = trim((string) $resourceId);
+        if ($resourceId === '') {
+            return [
+                'success' => false,
+                'action' => 'error',
+                'resource_id' => '',
+                'message' => 'resource_id is required when create_if_missing is false.',
+            ];
+        }
+
+        return $this->attemptLinkRentmanEquipmentToEquipment($equipment, $resourceId, 'search');
+    }
+
     // -------------------------------------------------------------------------
     // Protected helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * @throws \InvalidArgumentException
+     */
+    protected function resolveMarketplaceProductDisplayName(Equipment $equipment): string
+    {
+        $equipment->loadMissing(['product.brand']);
+
+        $product = $equipment->product;
+        if (!$product) {
+            throw new \InvalidArgumentException('Product not found for this company inventory record.');
+        }
+
+        $displayName = FlexIntegrationService::productDisplayName($product);
+        if (trim($displayName) === '') {
+            throw new \InvalidArgumentException('Product name is empty; cannot search or create in Rentman.');
+        }
+
+        return $displayName;
+    }
+
+    /**
+     * Collect unique local rentman_equipments matches for a marketplace product name.
+     *
+     * @return list<array{resource_id: string, name: string}>
+     */
+    protected function collectLocalRentmanEquipmentMatches(string $displayName): array
+    {
+        $trimmed = trim($displayName);
+        if ($trimmed === '') {
+            return [];
+        }
+
+        $escaped = RentmanEquipment::escapeLike($trimmed);
+        $rows = RentmanEquipment::query()
+            ->where('company_id', $this->providerCompanyId)
+            ->where(function ($q) use ($escaped, $trimmed) {
+                $q->whereRaw('LOWER(name) = ?', [strtolower($trimmed)])
+                    ->orWhereRaw('LOWER(displayname) = ?', [strtolower($trimmed)])
+                    ->orWhere('name', 'LIKE', '%' . $escaped . '%')
+                    ->orWhere('displayname', 'LIKE', '%' . $escaped . '%');
+            })
+            ->orderByRaw(
+                '(CASE WHEN LOWER(COALESCE(name, \'\')) = ? OR LOWER(COALESCE(displayname, \'\')) = ? THEN 0 ELSE 1 END)',
+                [strtolower($trimmed), strtolower($trimmed)]
+            )
+            ->limit(20)
+            ->get();
+
+        $products = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            $id = trim((string) ($row->rentman_id ?? ''));
+            if ($id === '' || isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+            $products[] = [
+                'resource_id' => $id,
+                'name' => RentmanService::primaryLabel($row) ?: $trimmed,
+            ];
+        }
+
+        return $products;
+    }
+
+    /**
+     * Run existing Rentman equipment catalog sync into local rentman_equipments cache.
+     */
+    protected function triggerEquipmentCatalogSync(string $displayName): void
+    {
+        RentmanIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            RentmanIntegrationLog::ACTION_SYNC_EQUIPMENT,
+            'STARTED',
+            ['name' => $displayName],
+            'Run Rentman equipment catalog sync then re-search local cache',
+        );
+
+        try {
+            (new RentmanService($this->providerCompanyId))->syncAllEquipmentFromApi();
+            CompanyIntegration::query()
+                ->where('company_id', $this->providerCompanyId)
+                ->where('integration_type', 'rentman')
+                ->update([
+                    'last_fetched_at' => now(),
+                    'last_synced_at' => now(),
+                ]);
+
+            $this->logIntegration(
+                RentmanIntegrationLog::ACTION_SYNC_EQUIPMENT,
+                RentmanIntegrationLog::STATUS_SUCCESS,
+                null,
+                ['name' => $displayName],
+                ['synced' => true],
+            );
+        } catch (\Throwable $e) {
+            $this->logIntegration(
+                RentmanIntegrationLog::ACTION_SYNC_EQUIPMENT,
+                RentmanIntegrationLog::STATUS_FAILED,
+                null,
+                ['name' => $displayName],
+                null,
+                $e->getMessage(),
+            );
+            Log::warning('Rentman Integration: Equipment sync failed during resolve/search', [
+                'provider_company_id' => $this->providerCompanyId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Link a Rentman equipment ID to a company_inventory row with company-scoped duplicate checks.
+     *
+     * @return array{success: bool, action: string, message: string, resource_id: string}
+     */
+    protected function attemptLinkRentmanEquipmentToEquipment(
+        Equipment $equipment,
+        string $rentmanEquipmentId,
+        string $source,
+    ): array {
+        $resourceId = trim($rentmanEquipmentId);
+        $companyId = (int) $equipment->company_id;
+
+        if ($resourceId === '') {
+            return [
+                'success' => false,
+                'action' => 'error',
+                'resource_id' => '',
+                'message' => 'Rentman Equipment ID is empty; cannot link to company inventory.',
+            ];
+        }
+
+        $isAlreadyLinked = (string) $equipment->rentman_equipment_id === $resourceId;
+
+        if (!$isAlreadyLinked) {
+            $duplicate = $this->findCompanyInventoryByRentmanEquipmentId(
+                $companyId,
+                $resourceId,
+                (int) $equipment->id,
+            );
+            if ($duplicate) {
+                $duplicate->loadMissing(['product.brand']);
+                $result = $this->buildDuplicateRentmanEquipmentResponse($resourceId, $duplicate);
+
+                Log::warning('Rentman Integration: Rentman Equipment ID already linked to another product in company', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'company_inventory_id' => $equipment->id,
+                    'product_id' => $equipment->product_id,
+                    'rentman_equipment_id' => $resourceId,
+                    'linked_company_inventory_id' => $duplicate->id,
+                    'linked_product_id' => $duplicate->product_id,
+                ]);
+
+                RentmanIntegrationDebugLog::step(
+                    $this->rentalRequestId ?? 0,
+                    $this->providerCompanyId,
+                    'CONFIRM_RENTMAN_SYNC',
+                    'DUPLICATE_RESOURCE',
+                    [
+                        'company_inventory_id' => $equipment->id,
+                        'rentman_equipment_id' => $resourceId,
+                        'linked_company_inventory_id' => $duplicate->id,
+                    ],
+                    'Do not overwrite existing company_inventory.rentman_equipment_id',
+                );
+
+                return $result;
+            }
+        }
+
+        $action = $isAlreadyLinked
+            ? 'already_linked'
+            : ($source === 'create' ? 'created' : 'matched');
+
+        return $this->finalizeRentmanEquipmentSync(
+            $equipment,
+            $resourceId,
+            $action,
+            assignResourceId: !$isAlreadyLinked,
+            persistSource: $isAlreadyLinked ? null : $source,
+        );
+    }
+
+    /**
+     * Persist rentman_equipment_id on company_inventory and refresh local cache row.
+     *
+     * @return array{success: bool, action: string, message: string, resource_id: string}
+     */
+    protected function finalizeRentmanEquipmentSync(
+        Equipment $equipment,
+        string $resourceId,
+        string $action,
+        bool $assignResourceId,
+        ?string $persistSource = null,
+    ): array {
+        $companyId = (int) $equipment->company_id;
+        $displayName = $this->resolveMarketplaceProductDisplayName($equipment);
+
+        try {
+            DB::transaction(function () use (
+                $equipment,
+                $resourceId,
+                $assignResourceId,
+                $companyId,
+                $displayName,
+            ) {
+                if ($assignResourceId) {
+                    $locked = Equipment::query()->whereKey($equipment->id)->lockForUpdate()->first();
+                    if (!$locked) {
+                        throw new \RuntimeException('Company inventory record no longer exists.');
+                    }
+
+                    $duplicateInTransaction = Equipment::query()
+                        ->where('company_id', $companyId)
+                        ->where('rentman_equipment_id', $resourceId)
+                        ->where('id', '!=', $locked->id)
+                        ->lockForUpdate()
+                        ->exists();
+
+                    if ($duplicateInTransaction) {
+                        throw new \RuntimeException('DUPLICATE_RESOURCE');
+                    }
+
+                    $locked->rentman_equipment_id = $resourceId;
+                    $locked->save();
+
+                    $equipment->rentman_equipment_id = $resourceId;
+                }
+
+                $this->upsertLocalEquipmentCache($resourceId, $displayName, $equipment);
+            });
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'DUPLICATE_RESOURCE') {
+                $duplicate = $this->findCompanyInventoryByRentmanEquipmentId(
+                    $companyId,
+                    $resourceId,
+                    (int) $equipment->id,
+                );
+                if ($duplicate) {
+                    $duplicate->loadMissing(['product.brand']);
+
+                    return $this->buildDuplicateRentmanEquipmentResponse($resourceId, $duplicate);
+                }
+            }
+
+            Log::error('Rentman Integration: Failed to synchronize Rentman equipment link', [
+                'provider_company_id' => $this->providerCompanyId,
+                'company_inventory_id' => $equipment->id,
+                'product_id' => $equipment->product_id,
+                'rentman_equipment_id' => $resourceId,
+                'action' => $action,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'action' => 'error',
+                'resource_id' => $resourceId,
+                'message' => 'Failed to synchronize Rentman equipment.',
+            ];
+        } catch (\Throwable $e) {
+            Log::error('Rentman Integration: Failed to synchronize Rentman equipment link', [
+                'provider_company_id' => $this->providerCompanyId,
+                'company_inventory_id' => $equipment->id,
+                'product_id' => $equipment->product_id,
+                'rentman_equipment_id' => $resourceId,
+                'action' => $action,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return [
+                'success' => false,
+                'action' => 'error',
+                'resource_id' => $resourceId,
+                'message' => 'Failed to synchronize Rentman equipment.',
+            ];
+        }
+
+        if ($persistSource !== null) {
+            $this->logPersistEquipmentId((int) $equipment->product_id, $resourceId, $persistSource);
+        }
+
+        $message = match ($action) {
+            'already_linked' => "This product is already linked to Rentman with Equipment ID '{$resourceId}'.",
+            'created' => 'Product was not found in Rentman. A new equipment was created and linked successfully.',
+            default => 'Product found in Rentman and Equipment ID has been linked.',
+        };
+
+        Log::info('Rentman Integration: Marketplace sync completed', [
+            'provider_company_id' => $this->providerCompanyId,
+            'company_inventory_id' => $equipment->id,
+            'product_id' => $equipment->product_id,
+            'rentman_equipment_id' => $resourceId,
+            'action' => $action,
+        ]);
+
+        RentmanIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            'CONFIRM_RENTMAN_SYNC',
+            strtoupper($action),
+            [
+                'company_inventory_id' => $equipment->id,
+                'product_id' => $equipment->product_id,
+                'rentman_equipment_id' => $resourceId,
+            ],
+            'Return synchronized Rentman Equipment ID',
+        );
+
+        return [
+            'success' => true,
+            'action' => $action,
+            'message' => $message,
+            'resource_id' => $resourceId,
+        ];
+    }
+
+    protected function findCompanyInventoryByRentmanEquipmentId(
+        int $companyId,
+        string $rentmanEquipmentId,
+        ?int $excludeInventoryId = null,
+    ): ?Equipment {
+        $query = Equipment::query()
+            ->where('company_id', $companyId)
+            ->where('rentman_equipment_id', trim($rentmanEquipmentId));
+
+        if ($excludeInventoryId !== null) {
+            $query->where('id', '!=', $excludeInventoryId);
+        }
+
+        return $query->first();
+    }
+
+    /**
+     * @return array{success: false, action: 'duplicate_resource', message: string, resource_id: string}
+     */
+    protected function buildDuplicateRentmanEquipmentResponse(
+        string $resourceId,
+        Equipment $linkedEquipment,
+    ): array {
+        $linkedEquipment->loadMissing(['product.brand']);
+        $linkedProductName = $linkedEquipment->product
+            ? FlexIntegrationService::productDisplayName($linkedEquipment->product)
+            : 'another product';
+
+        return [
+            'success' => false,
+            'action' => 'duplicate_resource',
+            'resource_id' => $resourceId,
+            'message' => "The Rentman Equipment ID '{$resourceId}' is already linked to the product '{$linkedProductName}'.",
+        ];
+    }
 
     protected function rentmanHttp(
         string $method,

@@ -500,19 +500,28 @@ flowchart TB
 
 ---
 
-## 9. Related but Separate: Marketplace Inventory → Rentman Import
+## 9. Related but Separate: Marketplace Inventory → Rentman Sync
 
-**Existing today** (`RentmanEquipmentController`, `RentmanInventoryImportService`):
+Marketplace Inventory **Sync with Rentman** mirrors FLEX (`search-flex-product` / `confirm-flex-sync`):
 
-| Aspect | Create Rental Request (proposed) | Marketplace Import (existing) |
-|--------|----------------------------------|------------------------------|
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/company-inventory/search-rentman-product` | Search local `rentman_equipments`; if empty, run existing catalog sync and search again. No DB writes. |
+| `POST /api/company-inventory/confirm-rentman-sync` | Link selected Equipment ID, or auto-create via `POST /equipment` when `create_if_missing=true`. |
+
+**Search workflow:** local cache → (if miss) `RentmanService::syncAllEquipmentFromApi` → local cache again → `no_match` / `single_match` / `multiple_matches`.
+
+**Confirm create workflow:** re-check local (+ sync) → if still missing, create equipment from marketplace inventory payload → upsert `rentman_equipments` → set `company_inventory.rentman_equipment_id` → return FLEX-shaped response (`success`, `action`, `message`, `resource_id`).
+
+| Aspect | Create Rental Request | Marketplace Sync |
+|--------|----------------------|------------------|
 | Trigger | After rental create | Manual provider action |
-| Rentman endpoints | `/projectrequests`, `/projectrequestequipment` | `/equipment`, `/equipment/{id}`, `/equipment/{id}/files` |
+| Rentman endpoints | `/projectrequests`, `/projectrequestequipment` | `/equipment` (+ catalog sync) |
 | Creates project request | Yes | No |
-| User selects product match | Auto first match | User confirms import-check |
+| Product selection | Auto first match | User selects among matches (or create) |
 | Persists `rentman_equipment_id` | Yes (on resolve) | Yes (on confirm) |
 
-Reuse `RentmanService` HTTP helpers, auth, pagination, and `rentman_equipment_id` persistence patterns.
+Reuse `RentmanIntegrationService` resolve/create helpers, `RentmanService` catalog sync, auth, logging, and `rentman_equipment_id` persistence patterns.
 
 ---
 
