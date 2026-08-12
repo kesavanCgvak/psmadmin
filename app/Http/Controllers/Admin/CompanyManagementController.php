@@ -184,7 +184,18 @@ class CompanyManagementController extends Controller
      */
     public function show(Company $company)
     {
-        $company->load(['region', 'country', 'state', 'city', 'currency', 'rentalSoftware', 'users', 'defaultContact']);
+        $company->load([
+            'region',
+            'country',
+            'state',
+            'city',
+            'currency',
+            'rentalSoftware',
+            'users',
+            'defaultContact',
+            'referralReceived.referrerCompany',
+            'referralsMade.referredCompany',
+        ]);
         $company->loadCount('equipments');
 
         // Keep rating logic consistent with the companies index:
@@ -710,6 +721,31 @@ class CompanyManagementController extends Controller
                 'message' => 'Could not remove inventory: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * JSON list of companies referred by the given company (admin Companies View).
+     */
+    public function referrals(Company $company)
+    {
+        $referrals = $company->referralsMade()
+            ->with(['referredCompany:id,name'])
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function ($referral) {
+                return [
+                    'id' => (int) $referral->referred_company_id,
+                    'name' => (string) ($referral->referredCompany?->name ?? 'Unknown'),
+                    'status' => (string) $referral->status,
+                    'created_at' => optional($referral->created_at)->toDateString(),
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $referrals,
+        ]);
     }
 
     /**

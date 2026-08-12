@@ -13,6 +13,7 @@ use App\Models\Setting;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Services\AuthEventLogger;
+use App\Services\ReferralService;
 use App\Services\StripeSubscriptionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -53,6 +54,8 @@ class AuthController extends Controller
             'password' => 'required|string|min:8|confirmed',
             'mobile' => 'required|string|max:20',
             'terms_accepted' => 'accepted',
+            'referral_code' => 'nullable|string|max:32',
+            'referred_by_company_id' => 'nullable|integer|exists:companies,id',
         ];
 
         $customMessages = [
@@ -60,6 +63,7 @@ class AuthController extends Controller
             'company_name.unique' => 'This company name is already registered.',
             'username.unique' => 'This username is already taken.',
             'terms_accepted.accepted' => 'You must accept the terms to register.',
+            'referred_by_company_id.exists' => 'The selected referring company is invalid.',
         ];
 
         // Add payment validation only if payment is enabled
@@ -100,6 +104,47 @@ class AuthController extends Controller
                 'message' => 'Validation failed',
                 'errors' => $validator->errors(),
             ], 422);
+        }
+
+        $referralService = app(ReferralService::class);
+        $referralCode = $request->filled('referral_code') ? trim((string) $request->referral_code) : null;
+        $referredByCompanyId = $request->filled('referred_by_company_id')
+            ? (int) $request->input('referred_by_company_id')
+            : null;
+
+        if ($referralCode !== null && $referralCode !== '') {
+            $referralValidation = $referralService->validateReferralCode($referralCode);
+            if (!$referralValidation['valid']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Validation failed',
+                    'errors' => [
+                        'referral_code' => [$referralValidation['message'] ?? 'Invalid or inactive referral code.'],
+                    ],
+                ], 422);
+            }
+        } else {
+            $referralCode = null;
+        }
+
+        if ($referralCode !== null) {
+            // Referral link takes precedence over manual company selection.
+            $referredByCompanyId = null;
+        } elseif ($referredByCompanyId !== null) {
+            $referrerCompany = Company::query()
+                ->whereKey($referredByCompanyId)
+                ->whereNull('blocked_by_admin_at')
+                ->first();
+
+            if (!$referrerCompany) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Validation failed',
+                    'errors' => [
+                        'referred_by_company_id' => ['The selected referring company is invalid.'],
+                    ],
+                ], 422);
+            }
         }
 
         try {
@@ -149,6 +194,12 @@ class AuthController extends Controller
             if ($company->users()->count() === 1) {
                 $company->default_contact_id = $user->id;
                 $company->save();
+            }
+
+            if ($referralCode !== null) {
+                $referralService->createReferralForRegistration($referralCode, $company);
+            } elseif ($referredByCompanyId !== null) {
+                $referralService->createReferralForCompanyId($referredByCompanyId, $company);
             }
 
             // For provider companies, create an initial 5-star company rating
@@ -411,6 +462,18 @@ class AuthController extends Controller
                 ] : null,
             ], 201);
 
+        } catch (\InvalidArgumentException $e) {
+            DB::rollBack();
+
+            $errorField = $request->filled('referral_code') ? 'referral_code' : 'referred_by_company_id';
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => [
+                    $errorField => [$e->getMessage()],
+                ],
+            ], 422);
         } catch (\Exception $e) {
             DB::rollBack();
 

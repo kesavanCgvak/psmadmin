@@ -212,6 +212,38 @@ class Company extends Model
     }
 
     /**
+     * Reusable referral links owned by this company.
+     */
+    public function referralLinks()
+    {
+        return $this->hasMany(ReferralLink::class);
+    }
+
+    /**
+     * Active reusable referral link for this company (at most one in normal use).
+     */
+    public function activeReferralLink()
+    {
+        return $this->hasOne(ReferralLink::class)->where('status', ReferralLink::STATUS_ACTIVE);
+    }
+
+    /**
+     * Referral relationship where this company was referred by another company.
+     */
+    public function referralReceived()
+    {
+        return $this->hasOne(CompanyReferral::class, 'referred_company_id');
+    }
+
+    /**
+     * Referrals this company has made (companies that registered via its link).
+     */
+    public function referralsMade()
+    {
+        return $this->hasMany(CompanyReferral::class, 'referrer_company_id');
+    }
+
+    /**
      * Get all subscriptions for this company (for reporting/analytics)
      */
     public function subscriptions()
