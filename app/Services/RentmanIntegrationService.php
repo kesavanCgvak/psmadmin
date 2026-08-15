@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Company;
 use App\Models\CompanyIntegration;
+use App\Models\Country;
 use App\Models\Equipment;
 use App\Models\RentalJob;
 use App\Models\RentmanEquipment;
@@ -215,7 +216,7 @@ class RentmanIntegrationService
             $url,
             $payload,
             RentmanIntegrationLog::ACTION_CREATE_CONTACT,
-            'Link contact to project request',
+            'Create contact person, then set default/admin person',
         );
 
         $body = $response->json();
@@ -262,9 +263,13 @@ class RentmanIntegrationService
             null,
         );
 
+        $contactPersonId = $this->createContactPerson($idStr, $requester, $profile);
+        $this->updateContactDefaultPersons($idStr, $contactPersonId);
+
         Log::info('Rentman Integration: Contact Created', [
             'provider_company_id' => $this->providerCompanyId,
             'contact_id' => $idStr,
+            'contact_person_id' => $contactPersonId,
         ]);
 
         RentmanIntegrationDebugLog::step(
@@ -272,11 +277,142 @@ class RentmanIntegrationService
             $this->providerCompanyId,
             RentmanIntegrationLog::ACTION_CREATE_CONTACT,
             'SUCCESS',
-            ['rentman_contact_id' => $idStr, 'matched_by' => 'created'],
+            [
+                'rentman_contact_id' => $idStr,
+                'rentman_contact_person_id' => $contactPersonId,
+                'matched_by' => 'created',
+            ],
             'Resolve equipment, then create project request with linked_contact',
         );
 
         return $idStr;
+    }
+
+    /**
+     * POST /contacts/{id}/contactpersons — attach requester as contact person.
+     */
+    protected function createContactPerson(
+        string $contactId,
+        User $requester,
+        ?UserProfile $profile,
+    ): string {
+        $payload = self::buildRentmanContactPersonCreatePayload($requester, $profile);
+        $pattern = config('rentman.contact_person_path_pattern', '/contacts/%s/contactpersons');
+        $path = sprintf($pattern, $contactId);
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+
+        RentmanIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            RentmanIntegrationLog::ACTION_CREATE_CONTACT_PERSON,
+            'STARTED',
+            ['contact_id' => $contactId, 'firstname' => $payload['firstname'] ?? null],
+            'Set default_person and admin_contactperson on contact',
+        );
+
+        $response = $this->rentmanHttp(
+            'POST',
+            $url,
+            $payload,
+            RentmanIntegrationLog::ACTION_CREATE_CONTACT_PERSON,
+            'Update contact default/admin person',
+        );
+
+        $body = $response->json();
+        $data = self::extractDataObject($body);
+
+        if (!$response->successful()) {
+            $this->logIntegration(
+                RentmanIntegrationLog::ACTION_CREATE_CONTACT_PERSON,
+                RentmanIntegrationLog::STATUS_FAILED,
+                $url,
+                $payload,
+                is_array($body) ? $body : ['raw' => self::truncateHttpBody($response->body())],
+                'HTTP ' . $response->status(),
+            );
+
+            throw new \RuntimeException(
+                'Rentman contact person create failed: HTTP ' . $response->status() . ' — '
+                . self::truncateHttpBody($response->body(), 500)
+            );
+        }
+
+        $personId = $data['id'] ?? null;
+        if ($personId === null || $personId === '') {
+            throw new \RuntimeException('Rentman contact person create: missing id in response.');
+        }
+
+        $personIdStr = (string) $personId;
+
+        $this->logIntegration(
+            RentmanIntegrationLog::ACTION_CREATE_CONTACT_PERSON,
+            RentmanIntegrationLog::STATUS_SUCCESS,
+            $url,
+            $payload,
+            is_array($body) ? $body : null,
+            null,
+        );
+
+        return $personIdStr;
+    }
+
+    /**
+     * PUT /contacts/{id} — set default_person and admin_contactperson.
+     */
+    protected function updateContactDefaultPersons(string $contactId, string $contactPersonId): void
+    {
+        $personPath = '/contactpersons/' . ltrim($contactPersonId, '/');
+        $payload = [
+            'default_person' => $personPath,
+            'admin_contactperson' => $personPath,
+        ];
+
+        $path = config('rentman.contact_create_path', '/contacts') . '/' . $contactId;
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+
+        RentmanIntegrationDebugLog::step(
+            $this->rentalRequestId ?? 0,
+            $this->providerCompanyId,
+            RentmanIntegrationLog::ACTION_UPDATE_CONTACT,
+            'STARTED',
+            ['contact_id' => $contactId, 'contact_person_id' => $contactPersonId],
+            'Continue with equipment resolve / project request',
+        );
+
+        $response = $this->rentmanHttp(
+            'PUT',
+            $url,
+            $payload,
+            RentmanIntegrationLog::ACTION_UPDATE_CONTACT,
+            'Continue with equipment resolve / project request',
+        );
+
+        $body = $response->json();
+
+        if (!$response->successful()) {
+            $this->logIntegration(
+                RentmanIntegrationLog::ACTION_UPDATE_CONTACT,
+                RentmanIntegrationLog::STATUS_FAILED,
+                $url,
+                $payload,
+                is_array($body) ? $body : ['raw' => self::truncateHttpBody($response->body())],
+                'HTTP ' . $response->status(),
+            );
+
+            throw new \RuntimeException(
+                'Rentman contact update (default/admin person) failed: HTTP ' . $response->status() . ' — '
+                . self::truncateHttpBody($response->body(), 500)
+            );
+        }
+
+        $this->logIntegration(
+            RentmanIntegrationLog::ACTION_UPDATE_CONTACT,
+            RentmanIntegrationLog::STATUS_SUCCESS,
+            $url,
+            $payload,
+            is_array($body) ? $body : null,
+            null,
+        );
     }
 
     /**
@@ -1271,7 +1407,7 @@ class RentmanIntegrationService
     }
 
     /**
-     * Persist rentman_equipment_id on company_inventory and refresh local cache row.
+     * Persist rentman_equipment_id on company_inventory and sync code/dimensions from Rentman (like FLEX).
      *
      * @return array{success: bool, action: string, message: string, resource_id: string}
      */
@@ -1285,13 +1421,34 @@ class RentmanIntegrationService
         $companyId = (int) $equipment->company_id;
         $displayName = $this->resolveMarketplaceProductDisplayName($equipment);
 
+        // Ensure local cache stub exists, then refresh details from Rentman API (code + dimensions).
+        $this->upsertLocalEquipmentCache($resourceId, $displayName, $equipment);
+
+        try {
+            $row = RentmanService::fetchAndStoreEquipmentDetails($companyId, $resourceId);
+        } catch (\Throwable $e) {
+            Log::error('Rentman Integration: Failed to retrieve Rentman equipment details for marketplace sync', [
+                'provider_company_id' => $this->providerCompanyId,
+                'company_inventory_id' => $equipment->id,
+                'rentman_equipment_id' => $resourceId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'action' => 'error',
+                'resource_id' => $resourceId,
+                'message' => 'Failed to retrieve Rentman equipment details: ' . $e->getMessage(),
+            ];
+        }
+
         try {
             DB::transaction(function () use (
                 $equipment,
                 $resourceId,
                 $assignResourceId,
                 $companyId,
-                $displayName,
+                $row,
             ) {
                 if ($assignResourceId) {
                     $locked = Equipment::query()->whereKey($equipment->id)->lockForUpdate()->first();
@@ -1316,7 +1473,11 @@ class RentmanIntegrationService
                     $equipment->rentman_equipment_id = $resourceId;
                 }
 
-                $this->upsertLocalEquipmentCache($resourceId, $displayName, $equipment);
+                RentmanService::synchronizeMarketplaceInventoryFromRentmanRow(
+                    $equipment,
+                    $resourceId,
+                    $row,
+                );
             });
         } catch (\RuntimeException $e) {
             if ($e->getMessage() === 'DUPLICATE_RESOURCE') {
@@ -1381,6 +1542,7 @@ class RentmanIntegrationService
             'company_inventory_id' => $equipment->id,
             'product_id' => $equipment->product_id,
             'rentman_equipment_id' => $resourceId,
+            'software_code' => $equipment->software_code,
             'action' => $action,
         ]);
 
@@ -1393,6 +1555,7 @@ class RentmanIntegrationService
                 'company_inventory_id' => $equipment->id,
                 'product_id' => $equipment->product_id,
                 'rentman_equipment_id' => $resourceId,
+                'software_code' => $equipment->software_code,
             ],
             'Return synchronized Rentman Equipment ID',
         );
@@ -1903,9 +2066,19 @@ class RentmanIntegrationService
             'type' => 'item',
             'rental_sales' => 'Rental',
             'is_physical' => 'Physical equipment',
+            // Mirrors FLEX "PSM Code" + "Publish to PSM" custom fields on inventory create.
+            'custom' => [
+                'custom_4' => true,
+            ],
         ];
 
         if ($inventory !== null) {
+            $inventory->loadMissing('product');
+            $psmCode = trim((string) ($inventory->product?->psm_code ?? ''));
+            if ($psmCode !== '') {
+                $payload['custom']['custom_3'] = $psmCode;
+            }
+
             $qty = (int) ($inventory->quantity ?? 0);
             if ($qty > 0) {
                 $payload['unit'] = (string) $qty;
@@ -1921,8 +2094,8 @@ class RentmanIntegrationService
                     $payload[$dim] = (float) $inventory->{$dim};
                 }
             }
-            $coo = strtolower(trim((string) ($inventory->country_of_origin ?? '')));
-            if ($coo !== '') {
+            $coo = self::resolveRentmanCountryOfOriginCode($inventory->country_of_origin ?? null);
+            if ($coo !== null) {
                 $payload['country_of_origin'] = $coo;
             }
         }
@@ -2060,29 +2233,33 @@ class RentmanIntegrationService
     }
 
     /**
+     * POST /contacts — company contact payload (person is added via contactpersons next).
+     *
      * @return array<string, mixed>
      */
     protected static function buildRentmanContactCreatePayload(User $requester, ?UserProfile $profile): array
     {
-        $firstName = trim((string) ($profile->first_name ?? ''));
-        $lastName = trim((string) ($profile->last_name ?? ''));
         $email = trim((string) ($profile->email ?? $requester->email ?? ''));
         $mobile = trim((string) ($profile->mobile ?? ''));
-        $fullName = self::resolveRequesterDisplayName($requester, $profile);
 
         $company = $requester->company;
         if ($company !== null) {
             $company->loadMissing(['country', 'state', 'city']);
         }
 
+        $companyName = trim((string) ($company?->name ?? ''));
+        if ($companyName === '') {
+            $companyName = self::resolveRequesterDisplayName($requester, $profile);
+        }
+        if ($companyName === '') {
+            $companyName = 'Customer';
+        }
+
         $payload = [
+            'type' => config('rentman.contact_type', 'company'),
             'folder' => config('rentman.contact_folder', '/folders/0'),
-            'type' => config('rentman.contact_type', 'private'),
-            'firstname' => $firstName !== '' ? $firstName : ($requester->username ?? 'Customer'),
-            'surname' => $lastName !== '' ? $lastName : '—',
-            'name' => $fullName !== '' ? $fullName : trim(($firstName ?: 'Customer') . ' ' . ($lastName ?: '')),
-            'default_person' => '/contactpersons/0',
-            'admin_contactperson' => '/contactpersons/0',
+            'name' => $companyName,
+            'visit_district' => '',
         ];
 
         if ($email !== '') {
@@ -2093,17 +2270,21 @@ class RentmanIntegrationService
         }
 
         if ($company !== null) {
-            $line1 = trim((string) ($company->address_line_1 ?? ''));
-            $line2 = trim((string) ($company->address_line_2 ?? ''));
-            $street = trim($line1 . ($line2 !== '' ? ' ' . $line2 : ''));
+            $street = trim((string) ($company->address_line_1 ?? ''));
             if ($street !== '') {
                 $payload['visit_street'] = $street;
+            }
+            $number = trim((string) ($company->address_line_2 ?? ''));
+            if ($number !== '') {
+                $payload['visit_number'] = $number;
             }
             $city = trim((string) ($company->city?->name ?? ''));
             if ($city !== '') {
                 $payload['visit_city'] = $city;
             }
-            $state = trim((string) ($company->state?->name ?? ''));
+            $stateCode = trim((string) ($company->state?->code ?? ''));
+            $stateName = trim((string) ($company->state?->name ?? ''));
+            $state = $stateCode !== '' ? $stateCode : $stateName;
             if ($state !== '') {
                 $payload['visit_state'] = $state;
             }
@@ -2124,6 +2305,117 @@ class RentmanIntegrationService
         }
 
         return $payload;
+    }
+
+    /**
+     * POST /contacts/{id}/contactpersons — requester person details.
+     *
+     * @return array<string, mixed>
+     */
+    protected static function buildRentmanContactPersonCreatePayload(
+        User $requester,
+        ?UserProfile $profile,
+    ): array {
+        $firstName = trim((string) ($profile->first_name ?? ''));
+        $lastName = trim((string) ($profile->last_name ?? ''));
+        $email = trim((string) ($profile->email ?? $requester->email ?? ''));
+        $mobile = trim((string) ($profile->mobile ?? ''));
+
+        $company = $requester->company;
+        if ($company !== null) {
+            $company->loadMissing(['country', 'state', 'city']);
+        }
+
+        $payload = [
+            'firstname' => $firstName !== '' ? $firstName : ($requester->username ?? 'Customer'),
+            'lastname' => $lastName !== '' ? $lastName : '—',
+        ];
+
+        if ($mobile !== '') {
+            $payload['mobile'] = $mobile;
+        }
+        if ($email !== '') {
+            $payload['email'] = $email;
+        }
+
+        if ($company !== null) {
+            $street = trim((string) ($company->address_line_1 ?? ''));
+            if ($street !== '') {
+                $payload['street'] = $street;
+            }
+            $number = trim((string) ($company->address_line_2 ?? ''));
+            if ($number !== '') {
+                $payload['number'] = $number;
+            }
+            $postal = trim((string) ($company->postal_code ?? ''));
+            if ($postal !== '') {
+                $payload['postalcode'] = $postal;
+            }
+            $city = trim((string) ($company->city?->name ?? ''));
+            if ($city !== '') {
+                $payload['city'] = $city;
+            }
+            $stateCode = trim((string) ($company->state?->code ?? ''));
+            $stateName = trim((string) ($company->state?->name ?? ''));
+            $state = $stateCode !== '' ? $stateCode : $stateName;
+            if ($state !== '') {
+                $payload['state'] = $state;
+            }
+            $countryCode = strtolower(trim((string) ($company->country?->iso_code ?? '')));
+            if ($countryCode !== '') {
+                $payload['country'] = $countryCode;
+            }
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Rentman country_of_origin must be ISO 3166-1 alpha-2 lowercase (e.g. usa → us).
+     */
+    protected static function resolveRentmanCountryOfOriginCode(mixed $value): ?string
+    {
+        $raw = strtolower(trim((string) ($value ?? '')));
+        if ($raw === '') {
+            return null;
+        }
+
+        if (strlen($raw) === 2 && ctype_alpha($raw)) {
+            return $raw;
+        }
+
+        $aliases = [
+            'usa' => 'us',
+            'u.s.a.' => 'us',
+            'u.s.' => 'us',
+            'united states' => 'us',
+            'united states of america' => 'us',
+            'uk' => 'gb',
+            'great britain' => 'gb',
+            'united kingdom' => 'gb',
+        ];
+        if (isset($aliases[$raw])) {
+            return $aliases[$raw];
+        }
+
+        $country = Country::query()
+            ->where(function ($q) use ($raw) {
+                $q->whereRaw('LOWER(iso_code) = ?', [$raw])
+                    ->orWhereRaw('LOWER(name) = ?', [$raw])
+                    ->orWhereRaw('LOWER(normalized_name) = ?', [$raw]);
+            })
+            ->first();
+
+        $iso = strtolower(trim((string) ($country?->iso_code ?? '')));
+        if (strlen($iso) === 2 && ctype_alpha($iso)) {
+            return $iso;
+        }
+
+        Log::warning('Rentman Integration: Could not map country_of_origin to 2-letter code; omitting field', [
+            'country_of_origin' => $raw,
+        ]);
+
+        return null;
     }
 
     protected static function resolveRequesterDisplayName(User $requester, ?UserProfile $profile): string

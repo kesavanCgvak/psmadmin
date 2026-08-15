@@ -17,6 +17,10 @@ return [
     ),
     'contact_list_path' => env('RENTMAN_CONTACT_LIST_PATH', '/contacts'),
     'contact_create_path' => env('RENTMAN_CONTACT_CREATE_PATH', '/contacts'),
+    'contact_person_path_pattern' => env(
+        'RENTMAN_CONTACT_PERSON_PATH_PATTERN',
+        '/contacts/%s/contactpersons'
+    ),
     'equipment_path' => env('RENTMAN_EQUIPMENT_PATH', '/equipment'),
     'equipment_search_fields' => env('RENTMAN_EQUIPMENT_SEARCH_FIELDS', 'id,name,displayname,code,updateHash'),
 
@@ -32,8 +36,8 @@ return [
     /** Default folder path for new contacts. */
     'contact_folder' => env('RENTMAN_CONTACT_FOLDER', '/folders/0'),
 
-    /** Default contact type (private|company). */
-    'contact_type' => env('RENTMAN_CONTACT_TYPE', 'private'),
+    /** Default contact type (company|private). New create flow uses company contacts. */
+    'contact_type' => env('RENTMAN_CONTACT_TYPE', 'company'),
 
     /** Default language code on new project requests. */
     'default_language' => env('RENTMAN_DEFAULT_LANGUAGE', 'en'),

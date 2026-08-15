@@ -241,6 +241,80 @@ class RentmanService
         return $equipment;
     }
 
+    /**
+     * Synchronize marketplace inventory specs from a Rentman equipment cache row.
+     * Overwrites company_inventory values when Rentman has them (code, dimensions, units);
+     * fills only empty inventory_master fields.
+     *
+     * @return array{company_inventory_updated: array<string, mixed>, product_updated: array<string, mixed>}
+     */
+    public static function synchronizeMarketplaceInventoryFromRentmanRow(
+        Equipment $equipment,
+        string $rentmanEquipmentId,
+        RentmanEquipment $row,
+    ): array {
+        $equipment->loadMissing(['product']);
+        $product = $equipment->product;
+        if (!$product) {
+            throw new \InvalidArgumentException('Product not found for company inventory record.');
+        }
+
+        $linearUnitId = InventoryMeasurementUnits::resolveRentmanLinearUnitId();
+        $weightUnitId = InventoryMeasurementUnits::resolveRentmanWeightUnitId();
+
+        $companyPatch = CompanyInventorySpecs::syncPatchForCompanyInventoryFromRentman(
+            $row,
+            $linearUnitId,
+            $weightUnitId,
+        );
+        $companyPatch['rentman_equipment_id'] = $rentmanEquipmentId;
+        $productPatch = CompanyInventorySpecs::syncPatchForProductFromRentmanIfEmpty(
+            $product,
+            $row,
+            $linearUnitId,
+            $weightUnitId,
+        );
+
+        $locked = Equipment::query()->whereKey($equipment->id)->lockForUpdate()->first();
+        if (!$locked) {
+            throw new \RuntimeException('Company inventory record no longer exists.');
+        }
+
+        $locked->fill($companyPatch);
+        $locked->save();
+        $equipment->fill($companyPatch);
+
+        if ($productPatch !== []) {
+            $product->refresh();
+            $product->update($productPatch);
+        }
+
+        Log::info('Rentman sync: company_inventory updated from Rentman', [
+            'company_inventory_id' => $equipment->id,
+            'product_id' => $equipment->product_id,
+            'rentman_equipment_id' => $rentmanEquipmentId,
+            'updated_fields' => array_keys($companyPatch),
+            'software_code' => $companyPatch['software_code'] ?? null,
+            'rental_price' => $companyPatch['rental_price'] ?? null,
+            'country_of_origin' => $companyPatch['country_of_origin'] ?? null,
+            'linear_unit_id' => $companyPatch['linear_unit_id'] ?? null,
+            'weight_unit_id' => $companyPatch['weight_unit_id'] ?? null,
+        ]);
+
+        if ($productPatch !== []) {
+            Log::info('Rentman sync: inventory_master updated from Rentman (empty fields only)', [
+                'product_id' => $product->id,
+                'rentman_equipment_id' => $rentmanEquipmentId,
+                'updated_fields' => array_keys($productPatch),
+            ]);
+        }
+
+        return [
+            'company_inventory_updated' => $companyPatch,
+            'product_updated' => $productPatch,
+        ];
+    }
+
     protected function buildEquipmentUrl(array $queryParams): string
     {
         return $this->baseUrl . '/equipment?' . http_build_query($queryParams);

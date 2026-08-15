@@ -493,7 +493,9 @@ class RentmanEquipmentController extends Controller
                 'linear_unit_id' => $linearUnitId,
                 'weight_unit_id' => $weightUnitId,
                 'replacement_price' => null,
-                'country_of_origin' => $row->country_of_origin,
+                'country_of_origin' => $row->country_of_origin !== null && trim((string) $row->country_of_origin) !== ''
+                    ? strtoupper(trim((string) $row->country_of_origin))
+                    : null,
                 'source' => 'rentman',
             ]);
 
@@ -563,13 +565,15 @@ class RentmanEquipmentController extends Controller
     public function confirmRentmanSync(ConfirmRentmanSyncRequest $request): JsonResponse
     {
         $createIfMissing = (bool) $request->boolean('create_if_missing');
-        $resourceId = $request->input('resource_id');
+        $rentmanEquipmentId = $request->input('rentman_equipment_id');
 
         return $this->handleMarketplaceRentmanAction(
             (int) $request->input('company_inventory_id'),
             fn (RentmanIntegrationService $rentman, Equipment $equipment) => $rentman->confirmRentmanMarketplaceSync(
                 $equipment,
-                $resourceId !== null ? (string) $resourceId : null,
+                $rentmanEquipmentId !== null && $rentmanEquipmentId !== ''
+                    ? (string) $rentmanEquipmentId
+                    : null,
                 $createIfMissing,
             ),
             'Confirm Rentman sync',

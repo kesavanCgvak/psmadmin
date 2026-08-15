@@ -19,6 +19,10 @@ class RentmanIntegrationLog extends Model
 
     public const ACTION_CREATE_CONTACT = 'CREATE_CONTACT';
 
+    public const ACTION_CREATE_CONTACT_PERSON = 'CREATE_CONTACT_PERSON';
+
+    public const ACTION_UPDATE_CONTACT = 'UPDATE_CONTACT';
+
     public const ACTION_SEARCH_CONTACT = 'SEARCH_CONTACT';
 
     public const ACTION_CREATE_PROJECT_REQUEST = 'CREATE_PROJECT_REQUEST';
