@@ -170,39 +170,48 @@ class RentmanIntegrationService
 
     /**
      * Resolve or create a Rentman contact for the rental requester.
+     * Search by requester company name; if not found, create company contact + person + default/admin.
      */
     public function getOrCreateContact(User $requester): string
     {
         $profile = $requester->profile ?? UserProfile::where('user_id', $requester->id)->first();
-        $requesterName = self::resolveRequesterDisplayName($requester, $profile);
-        $email = strtolower(trim((string) ($profile->email ?? $requester->email ?? '')));
+        $requester->loadMissing(['company']);
+        $companyName = trim((string) ($requester->company?->name ?? ''));
 
         RentmanIntegrationDebugLog::step(
             $this->rentalRequestId ?? 0,
             $this->providerCompanyId,
             RentmanIntegrationLog::ACTION_CREATE_CONTACT,
             'STARTED',
-            ['name' => $requesterName !== '' ? $requesterName : null, 'email' => $email !== '' ? $email : null],
-            'Retrieve Rentman contacts and match by email/name; create if not found',
+            ['company_name' => $companyName !== '' ? $companyName : null],
+            'Search Rentman contacts by company name; create company contact if not found',
         );
 
-        $found = $this->findContactAmongAll($requesterName, $email);
-        if ($found !== null) {
-            Log::info('Rentman Integration: Contact Found', [
-                'provider_company_id' => $this->providerCompanyId,
-                'contact_id' => $found,
-            ]);
+        if ($companyName !== '') {
+            $found = $this->findContactByCompanyName($companyName);
+            if ($found !== null) {
+                Log::info('Rentman Integration: Contact Found', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'contact_id' => $found,
+                    'matched_by' => 'company_name',
+                    'company_name' => $companyName,
+                ]);
 
-            RentmanIntegrationDebugLog::step(
-                $this->rentalRequestId ?? 0,
-                $this->providerCompanyId,
-                RentmanIntegrationLog::ACTION_CREATE_CONTACT,
-                'SUCCESS',
-                ['rentman_contact_id' => $found, 'matched_by' => 'search'],
-                'Resolve equipment, then create project request with linked_contact',
-            );
+                RentmanIntegrationDebugLog::step(
+                    $this->rentalRequestId ?? 0,
+                    $this->providerCompanyId,
+                    RentmanIntegrationLog::ACTION_CREATE_CONTACT,
+                    'SUCCESS',
+                    [
+                        'rentman_contact_id' => $found,
+                        'matched_by' => 'company_name',
+                        'company_name' => $companyName,
+                    ],
+                    'Resolve equipment, then create project request with linked_contact',
+                );
 
-            return $found;
+                return $found;
+            }
         }
 
         $requester->loadMissing(['company.country', 'company.state', 'company.city']);
@@ -1797,14 +1806,21 @@ class RentmanIntegrationService
         }
     }
 
-    protected function findContactAmongAll(string $name, string $email): ?string
+    /**
+     * Search Rentman contacts by requester company name (exact, case-insensitive).
+     */
+    protected function findContactByCompanyName(string $companyName): ?string
     {
         $path = config('rentman.contact_list_path', '/contacts');
         $url = $this->baseUrl . '/' . ltrim($path, '/');
         $limit = (int) config('rentman.contact_list_limit', 100);
         $maxPages = (int) config('rentman.contact_list_max_pages', 50);
         $offset = 0;
-        $nameLower = strtolower(trim($name));
+        $companyNameLower = strtolower(trim($companyName));
+
+        if ($companyNameLower === '') {
+            return null;
+        }
 
         for ($page = 0; $page < $maxPages; $page++) {
             $params = [
@@ -1818,7 +1834,7 @@ class RentmanIntegrationService
                     $url,
                     $params,
                     RentmanIntegrationLog::ACTION_SEARCH_CONTACT,
-                    'Match contact by email/name or create contact',
+                    'Match contact by company name or create contact',
                 );
             } catch (\Throwable $e) {
                 Log::warning('Rentman Integration: Contact list failed', [
@@ -1852,13 +1868,13 @@ class RentmanIntegrationService
                 if (!is_array($item)) {
                     continue;
                 }
-                $matched = $this->contactMatches($item, $nameLower, $email);
+                $matched = $this->contactMatchesCompanyName($item, $companyNameLower);
                 if ($matched !== null) {
                     $this->logIntegration(
                         RentmanIntegrationLog::ACTION_SEARCH_CONTACT,
                         RentmanIntegrationLog::STATUS_SUCCESS,
                         $url,
-                        ['matched_id' => $matched, 'name' => $name, 'email' => $email],
+                        ['matched_id' => $matched, 'company_name' => $companyName],
                         ['id' => $matched],
                     );
 
@@ -1876,7 +1892,7 @@ class RentmanIntegrationService
             RentmanIntegrationLog::ACTION_SEARCH_CONTACT,
             RentmanIntegrationLog::STATUS_SUCCESS,
             $url,
-            ['name' => $name, 'email' => $email],
+            ['company_name' => $companyName],
             ['matched' => false],
         );
 
@@ -1886,52 +1902,20 @@ class RentmanIntegrationService
     /**
      * @param  array<string, mixed>  $item
      */
-    protected function contactMatches(array $item, string $nameLower, string $email): ?string
+    protected function contactMatchesCompanyName(array $item, string $companyNameLower): ?string
     {
         $id = $item['id'] ?? null;
         if ($id === null || $id === '') {
             return null;
         }
 
-        $contactEmails = [];
-        foreach (['email_1', 'email', 'email1'] as $key) {
-            $v = strtolower(trim((string) ($item[$key] ?? '')));
-            if ($v !== '') {
-                $contactEmails[] = $v;
-            }
-        }
-
-        $persons = $item['contactpersons'] ?? $item['contact_persons'] ?? null;
-        if (is_array($persons)) {
-            foreach ($persons as $person) {
-                if (!is_array($person)) {
-                    continue;
-                }
-                foreach (['email_1', 'email', 'email1'] as $key) {
-                    $v = strtolower(trim((string) ($person[$key] ?? '')));
-                    if ($v !== '') {
-                        $contactEmails[] = $v;
-                    }
-                }
-            }
-        }
-
-        if ($email !== '' && in_array($email, $contactEmails, true)) {
-            return (string) $id;
-        }
-
-        if ($nameLower === '') {
-            return null;
-        }
-
         $candidates = [
             strtolower(trim((string) ($item['name'] ?? ''))),
-            trim(strtolower(trim((string) ($item['firstname'] ?? '')) . ' ' . strtolower(trim((string) ($item['surname'] ?? ''))))),
-            trim(strtolower(trim((string) ($item['firstname'] ?? '')) . ' ' . strtolower(trim((string) ($item['lastname'] ?? ''))))),
+            strtolower(trim((string) ($item['displayname'] ?? ''))),
         ];
 
         foreach ($candidates as $candidate) {
-            if ($candidate !== '' && $candidate === $nameLower) {
+            if ($candidate !== '' && $candidate === $companyNameLower) {
                 return (string) $id;
             }
         }
@@ -2332,7 +2316,7 @@ class RentmanIntegrationService
         ];
 
         if ($mobile !== '') {
-            $payload['mobile'] = $mobile;
+            $payload['mobilephone'] = $mobile;
         }
         if ($email !== '') {
             $payload['email'] = $email;
