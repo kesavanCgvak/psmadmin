@@ -254,7 +254,7 @@ class CreateRentmanProjectRequestFromRentalRequestJob
             );
 
             // --- Step 2: Resolve ALL equipment BEFORE project request ---
-            /** @var list<array{product_id: int, name: string, quantity: int, rentman_equipment_id: string, unit_price: ?float, inventory: ?Equipment}> $resolvedLines */
+            /** @var list<array{product_id: int, name: string, quantity: int, rentman_equipment_id: ?string, unit_price: ?float, inventory: ?Equipment}> $resolvedLines */
             $resolvedLines = [];
 
             foreach ($supplyJob->products as $line) {
@@ -280,7 +280,7 @@ class CreateRentmanProjectRequestFromRentalRequestJob
                         'name' => $displayName,
                         'quantity' => $qty,
                     ],
-                    'Resolve rentman_equipment_id from cache, sync, or create (before project request)',
+                    'Resolve rentman_equipment_id from cache or search (before project request)',
                 );
 
                 $inventory = Equipment::query()
@@ -298,29 +298,36 @@ class CreateRentmanProjectRequestFromRentalRequestJob
                 );
 
                 if (!$rentmanEquipmentId) {
-                    $missing[] = $displayName;
-                    $missingForEmail[] = ['name' => $displayName, 'quantity' => $qty];
                     $ilog->log(
                         RentmanIntegrationLog::ACTION_PRODUCT_NOT_FOUND,
-                        RentmanIntegrationLog::STATUS_FAILED,
+                        RentmanIntegrationLog::STATUS_SKIPPED,
                         null,
                         ['product_id' => $product->id, 'name' => $displayName, 'quantity' => $qty],
                         null,
-                        'Not found or created in Rentman equipment catalog (pre-create)',
+                        'Not found in Rentman equipment catalog; will add to project request by name',
                     );
                     RentmanIntegrationDebugLog::step(
                         $rentalJob->id,
                         $providerId,
                         'PRODUCT_NOT_FOUND',
-                        'FAILED',
+                        'SKIPPED',
                         [
                             'product_id' => $product->id,
                             'name' => $displayName,
                             'quantity' => $qty,
                         ],
-                        'Abort project request create until all equipment is resolved',
+                        'Create project request, then POST projectrequestequipment with name only',
                     );
-                    $appendStep('Product missing in Rentman: ' . $displayName);
+                    $appendStep('Product not found in Rentman; will add by name: ' . $displayName);
+
+                    $resolvedLines[] = [
+                        'product_id' => (int) $product->id,
+                        'name' => $displayName,
+                        'quantity' => $qty,
+                        'rentman_equipment_id' => null,
+                        'unit_price' => $inventory?->rental_price !== null ? (float) $inventory->rental_price : null,
+                        'inventory' => $inventory,
+                    ];
 
                     continue;
                 }
@@ -349,18 +356,10 @@ class CreateRentmanProjectRequestFromRentalRequestJob
                 $appendStep('Equipment resolved: ' . $displayName);
             }
 
-            // Do not create a Project Request unless every requested line resolved
-            if ($resolvedLines === [] || $missing !== []) {
-                if ($missingForEmail !== []) {
-                    $supplyJob->provider?->loadMissing('getDefaultcontact');
-                    if ($supplyJob->provider) {
-                        $service->sendMissingProductsEmail($supplyJob->provider, $rentalJob, $missingForEmail);
-                    }
-                }
-
+            // Create a Project Request when there is at least one product line to attach
+            if ($resolvedLines === []) {
                 throw new \RuntimeException(
-                    'Rentman project request not created: equipment must be resolved first. Missing: '
-                    . ($missing !== [] ? implode(', ', $missing) : 'no resolvable product lines')
+                    'Rentman project request not created: no resolvable product lines'
                 );
             }
 
@@ -418,14 +417,20 @@ class CreateRentmanProjectRequestFromRentalRequestJob
                         'POST projectrequestequipment',
                     );
 
-                    $attachResult = $service->attachEquipmentToProjectRequest(
-                        $projectRequestId,
-                        $resolved['rentman_equipment_id'],
-                        $resolved['name'],
-                        $resolved['quantity'],
-                        $resolved['unit_price'],
-                        $externalRemark,
-                    );
+                    $equipmentId = $resolved['rentman_equipment_id'];
+                    $attachResult = $equipmentId
+                        ? $service->attachEquipmentToProjectRequest(
+                            $projectRequestId,
+                            $equipmentId,
+                            $resolved['name'],
+                            $resolved['quantity'],
+                            $resolved['unit_price'],
+                            $externalRemark,
+                        )
+                        : $service->attachUnlinkedProductNameToProjectRequest(
+                            $projectRequestId,
+                            $resolved['name'],
+                        );
 
                     RentmanIntegrationDebugLog::step(
                         $rentalJob->id,

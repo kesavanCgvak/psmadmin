@@ -41,6 +41,8 @@ class RentmanIntegrationLog extends Model
 
     public const ACTION_CREATE_EQUIPMENT = 'CREATE_EQUIPMENT';
 
+    public const ACTION_UPDATE_EQUIPMENT = 'UPDATE_EQUIPMENT';
+
     public const ACTION_VALIDATE_EQUIPMENT = 'VALIDATE_EQUIPMENT';
 
     public const ACTION_ADD_EQUIPMENT_TO_REQUEST = 'ADD_EQUIPMENT_TO_REQUEST';

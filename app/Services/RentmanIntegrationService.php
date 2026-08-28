@@ -767,7 +767,13 @@ class RentmanIntegrationService
     }
 
     /**
-     * Resolve Rentman equipment id: inventory cache → local rentman_equipments → sync → create.
+     * Resolve Rentman equipment id for a rental-request line.
+     *
+     * Already-linked inventory reuses rentman_equipment_id (no search/create).
+     * Unlinked products use marketplace search matching, then:
+     * - 1 match: link that equipment and push latest PSM details
+     * - multiple matches: create a new Rentman equipment (do not pick one)
+     * - 0 matches: return null (caller adds a name-only project-request line)
      */
     public function resolveRentmanEquipmentForProduct(
         string $displayName,
@@ -814,80 +820,75 @@ class RentmanIntegrationService
             ]);
         }
 
-        $local = $this->findLocalRentmanEquipmentByName($displayName);
-        if ($local !== null) {
-            self::persistRentmanEquipmentOnInventory($this->providerCompanyId, $productId, $local);
-            $this->logPersistEquipmentId($productId, $local, 'local_cache');
+        $matches = $this->collectRentmanMatchesForRentalRequest($displayName, $inventory);
+        $matchCount = count($matches);
 
-            return $local;
-        }
-
-        $this->triggerEquipmentCatalogSync($displayName);
-
-        $localAfterSync = $this->findLocalRentmanEquipmentByName($displayName);
-        if ($localAfterSync !== null) {
-            self::persistRentmanEquipmentOnInventory($this->providerCompanyId, $productId, $localAfterSync);
-            $this->logPersistEquipmentId($productId, $localAfterSync, 'after_sync');
-
-            return $localAfterSync;
-        }
-
-        $apiMatch = $this->searchRentmanEquipmentByName($displayName);
-        if ($apiMatch !== null) {
-            self::persistRentmanEquipmentOnInventory($this->providerCompanyId, $productId, $apiMatch);
-            $this->upsertLocalEquipmentCache($apiMatch, $displayName);
-            $this->logPersistEquipmentId($productId, $apiMatch, 'api_search');
-
-            return $apiMatch;
-        }
-
-        if (!config('rentman.create_equipment_if_missing', true)) {
-            return null;
-        }
-
-        try {
-            $createdId = $this->createRentmanEquipment($displayName, $inventory);
-            self::persistRentmanEquipmentOnInventory($this->providerCompanyId, $productId, $createdId);
-            $this->upsertLocalEquipmentCache($createdId, $displayName, $inventory);
-            $this->logPersistEquipmentId($productId, $createdId, 'create');
-
-            RentmanIntegrationDebugLog::step(
-                $rentalRequestId,
-                $this->providerCompanyId,
-                'EQUIPMENT_RESOLVE',
-                'CREATED',
-                [
-                    'product_id' => $productId,
-                    'rentman_equipment_id' => $createdId,
-                    'name' => $displayName,
-                ],
-                'Attach newly created equipment to project request',
-            );
-
-            return $createdId;
-        } catch (\Throwable $e) {
-            Log::error('Rentman Integration: Equipment create failed', [
-                'provider_company_id' => $this->providerCompanyId,
+        RentmanIntegrationDebugLog::step(
+            $rentalRequestId,
+            $this->providerCompanyId,
+            'EQUIPMENT_RESOLVE',
+            'SEARCH_RESULT',
+            [
                 'product_id' => $productId,
                 'name' => $displayName,
-                'error' => $e->getMessage(),
-            ]);
+                'match_count' => $matchCount,
+            ],
+            $matchCount === 1
+                ? 'Sync PSM details onto the matched Rentman equipment'
+                : ($matchCount > 1
+                    ? 'Create a new Rentman equipment because matches are ambiguous'
+                    : 'Add product to the project request by name (do not create equipment)'),
+        );
+
+        if ($matchCount === 1) {
+            $matchedId = (string) ($matches[0]['resource_id'] ?? '');
+            if ($matchedId === '') {
+                return null;
+            }
+
+            $this->syncPsmInventoryDetailsToRentmanEquipment($matchedId, $displayName, $inventory);
+            self::persistRentmanEquipmentOnInventory($this->providerCompanyId, $productId, $matchedId);
+            $this->upsertLocalEquipmentCache($matchedId, $displayName, $inventory);
+            $this->logPersistEquipmentId($productId, $matchedId, 'single_match');
 
             RentmanIntegrationDebugLog::step(
                 $rentalRequestId,
                 $this->providerCompanyId,
                 'EQUIPMENT_RESOLVE',
-                'CREATE_FAILED',
+                'SINGLE_MATCH',
                 [
                     'product_id' => $productId,
+                    'rentman_equipment_id' => $matchedId,
                     'name' => $displayName,
-                    'error' => $e->getMessage(),
                 ],
-                'Mark product missing; continue with next line',
+                'Attach matched equipment to project request',
             );
 
-            return null;
+            return $matchedId;
         }
+
+        if ($matchCount > 1) {
+            return $this->createAndLinkRentmanEquipmentForResolve(
+                $displayName,
+                $productId,
+                $inventory,
+                'multiple_matches',
+            );
+        }
+
+        RentmanIntegrationDebugLog::step(
+            $rentalRequestId,
+            $this->providerCompanyId,
+            'EQUIPMENT_RESOLVE',
+            'NO_MATCH',
+            [
+                'product_id' => $productId,
+                'name' => $displayName,
+            ],
+            'Attach product to the Rentman project request by name after it is created',
+        );
+
+        return null;
     }
 
     /**
@@ -967,6 +968,73 @@ class RentmanIntegrationService
             null,
             $projectRequestId,
             $equipmentId,
+        );
+
+        return ['rentman_line_id' => $lineId, 'response' => $body];
+    }
+
+    /**
+     * Add a product to a Rentman project request by name only (no linked equipment).
+     * Used when the product was not found in the Rentman catalog.
+     *
+     * @return array{rentman_line_id: ?string, response: mixed}
+     */
+    public function attachUnlinkedProductNameToProjectRequest(
+        string $projectRequestId,
+        string $displayName,
+    ): array {
+        $displayName = trim($displayName);
+        if ($projectRequestId === '' || $displayName === '') {
+            throw new \InvalidArgumentException('Project request id and product name are required.');
+        }
+
+        $pattern = config('rentman.project_request_equipment_path_pattern', '/projectrequests/%s/projectrequestequipment');
+        $path = sprintf($pattern, $projectRequestId);
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+
+        $payload = [
+            'name' => $displayName,
+        ];
+
+        $response = $this->rentmanHttp(
+            'POST',
+            $url,
+            $payload,
+            RentmanIntegrationLog::ACTION_ADD_EQUIPMENT_TO_REQUEST,
+            'Continue with next product line or finalize sync',
+            $projectRequestId,
+        );
+
+        $body = $response->json();
+        $data = self::extractDataObject($body);
+
+        if (!$response->successful()) {
+            $this->logIntegration(
+                RentmanIntegrationLog::ACTION_ADD_EQUIPMENT_TO_REQUEST,
+                RentmanIntegrationLog::STATUS_FAILED,
+                $url,
+                $payload,
+                is_array($body) ? $body : ['raw' => self::truncateHttpBody($response->body())],
+                'HTTP ' . $response->status(),
+                $projectRequestId,
+            );
+
+            throw new \RuntimeException(
+                'Rentman attach equipment by name failed: HTTP ' . $response->status() . ' — '
+                . self::truncateHttpBody($response->body(), 500)
+            );
+        }
+
+        $lineId = isset($data['id']) ? (string) $data['id'] : null;
+
+        $this->logIntegration(
+            RentmanIntegrationLog::ACTION_ADD_EQUIPMENT_TO_REQUEST,
+            RentmanIntegrationLog::STATUS_SUCCESS,
+            $url,
+            $payload,
+            is_array($body) ? $body : null,
+            null,
+            $projectRequestId,
         );
 
         return ['rentman_line_id' => $lineId, 'response' => $body];
@@ -1251,7 +1319,39 @@ class RentmanIntegrationService
     }
 
     /**
+     * Rental-request search: reuse marketplace matching (local cache → catalog sync → re-search).
+     *
+     * @return list<array{resource_id: string, name: string}>
+     */
+    protected function collectRentmanMatchesForRentalRequest(string $displayName, ?Equipment $inventory): array
+    {
+        if ($inventory !== null) {
+            try {
+                $result = $this->searchRentmanProductForMarketplace($inventory);
+
+                return $result['products'] ?? [];
+            } catch (\InvalidArgumentException) {
+                // Fall through to display-name search when inventory product data is incomplete.
+            }
+        }
+
+        $matches = $this->collectLocalRentmanEquipmentMatches($displayName);
+        if ($matches === []) {
+            $this->triggerEquipmentCatalogSync($displayName);
+            $matches = $this->collectLocalRentmanEquipmentMatches($displayName);
+        }
+
+        return $matches;
+    }
+
+    /**
      * Collect unique local rentman_equipments matches for a marketplace product name.
+     *
+     * Matching order:
+     * 1) exact name/displayname (case-insensitive)
+     * 2) LIKE %name% on name/displayname
+     * 3) alphanumeric-normalized containment (handles "L-Acoustics" vs "L Acoustics")
+     * 4) all significant tokens present in name/displayname
      *
      * @return list<array{resource_id: string, name: string}>
      */
@@ -1263,17 +1363,43 @@ class RentmanIntegrationService
         }
 
         $escaped = RentmanEquipment::escapeLike($trimmed);
+        $needleLower = strtolower($trimmed);
+        $normalizedNeedle = self::normalizeEquipmentSearchKey($trimmed);
+        $tokens = self::equipmentSearchTokens($trimmed);
+
         $rows = RentmanEquipment::query()
             ->where('company_id', $this->providerCompanyId)
-            ->where(function ($q) use ($escaped, $trimmed) {
-                $q->whereRaw('LOWER(name) = ?', [strtolower($trimmed)])
-                    ->orWhereRaw('LOWER(displayname) = ?', [strtolower($trimmed)])
+            ->where(function ($q) use ($escaped, $needleLower, $normalizedNeedle, $tokens) {
+                $q->whereRaw('LOWER(name) = ?', [$needleLower])
+                    ->orWhereRaw('LOWER(displayname) = ?', [$needleLower])
                     ->orWhere('name', 'LIKE', '%' . $escaped . '%')
                     ->orWhere('displayname', 'LIKE', '%' . $escaped . '%');
+
+                if ($normalizedNeedle !== '') {
+                    $q->orWhereRaw(
+                        "LOWER(REPLACE(REPLACE(REPLACE(COALESCE(name, ''), '-', ''), ' ', ''), '_', '')) LIKE ?",
+                        ['%' . $normalizedNeedle . '%']
+                    )->orWhereRaw(
+                        "LOWER(REPLACE(REPLACE(REPLACE(COALESCE(displayname, ''), '-', ''), ' ', ''), '_', '')) LIKE ?",
+                        ['%' . $normalizedNeedle . '%']
+                    );
+                }
+
+                if ($tokens !== []) {
+                    $q->orWhere(function ($tokenQuery) use ($tokens) {
+                        foreach ($tokens as $token) {
+                            $tokenEscaped = RentmanEquipment::escapeLike($token);
+                            $tokenQuery->where(function ($fieldQuery) use ($tokenEscaped) {
+                                $fieldQuery->where('name', 'LIKE', '%' . $tokenEscaped . '%')
+                                    ->orWhere('displayname', 'LIKE', '%' . $tokenEscaped . '%');
+                            });
+                        }
+                    });
+                }
             })
             ->orderByRaw(
                 '(CASE WHEN LOWER(COALESCE(name, \'\')) = ? OR LOWER(COALESCE(displayname, \'\')) = ? THEN 0 ELSE 1 END)',
-                [strtolower($trimmed), strtolower($trimmed)]
+                [$needleLower, $needleLower]
             )
             ->limit(20)
             ->get();
@@ -1293,6 +1419,37 @@ class RentmanIntegrationService
         }
 
         return $products;
+    }
+
+    /**
+     * Normalize equipment names for tolerant matching (lowercase, strip separators).
+     */
+    protected static function normalizeEquipmentSearchKey(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        $normalized = preg_replace('/[^a-z0-9]+/', '', $normalized) ?? '';
+
+        return $normalized;
+    }
+
+    /**
+     * Significant tokens for AND matching (keeps model codes like SB28).
+     *
+     * @return list<string>
+     */
+    protected static function equipmentSearchTokens(string $value): array
+    {
+        $parts = preg_split('/[^a-zA-Z0-9]+/', strtolower(trim($value))) ?: [];
+        $tokens = [];
+        foreach ($parts as $part) {
+            $part = trim((string) $part);
+            if ($part === '' || strlen($part) < 2) {
+                continue;
+            }
+            $tokens[] = $part;
+        }
+
+        return array_values(array_unique($tokens));
     }
 
     /**
@@ -1536,6 +1693,9 @@ class RentmanIntegrationService
             ];
         }
 
+        // Soft-fail: keep PSM sync success even if Rentman custom field update fails.
+        $this->ensurePsmCustomFieldsOnRentmanEquipment($resourceId, $equipment);
+
         if ($persistSource !== null) {
             $this->logPersistEquipmentId((int) $equipment->product_id, $resourceId, $persistSource);
         }
@@ -1575,6 +1735,121 @@ class RentmanIntegrationService
             'message' => $message,
             'resource_id' => $resourceId,
         ];
+    }
+
+    /**
+     * After successful PSM↔Rentman sync: ensure custom_3 (PSM Code) and custom_4 (published)=true.
+     * Does not overwrite an existing non-empty custom_3. Soft-fails on API errors.
+     */
+    protected function ensurePsmCustomFieldsOnRentmanEquipment(
+        string $equipmentId,
+        Equipment $equipment,
+    ): void {
+        $equipment->loadMissing('product');
+        $psmCode = trim((string) ($equipment->product?->psm_code ?? ''));
+
+        $path = config('rentman.equipment_path', '/equipment') . '/' . ltrim($equipmentId, '/');
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+
+        try {
+            $getResponse = $this->rentmanHttp(
+                'GET',
+                $url,
+                null,
+                RentmanIntegrationLog::ACTION_VALIDATE_EQUIPMENT,
+                'Check custom_3/custom_4 then update if needed',
+                null,
+                $equipmentId,
+            );
+
+            if (!$getResponse->successful()) {
+                Log::warning('Rentman Integration: Could not fetch equipment for custom field sync', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rentman_equipment_id' => $equipmentId,
+                    'http_status' => $getResponse->status(),
+                ]);
+
+                return;
+            }
+
+            $data = self::extractDataObject($getResponse->json());
+            $custom = isset($data['custom']) && is_array($data['custom']) ? $data['custom'] : [];
+            $existingCustom3 = trim((string) ($custom['custom_3'] ?? ''));
+            if (strtolower($existingCustom3) === 'null') {
+                $existingCustom3 = '';
+            }
+
+            $needsCustom3 = $existingCustom3 === '' && $psmCode !== '';
+            $custom4Truthy = filter_var($custom['custom_4'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $needsCustom4 = !$custom4Truthy;
+
+            if (!$needsCustom3 && !$needsCustom4) {
+                // Still force custom_4 true when already true — no PUT needed.
+                return;
+            }
+
+            if ($needsCustom3) {
+                $custom['custom_3'] = $psmCode;
+            }
+            $custom['custom_4'] = true;
+
+            $payload = ['custom' => $custom];
+
+            $putResponse = $this->rentmanHttp(
+                'PUT',
+                $url,
+                $payload,
+                RentmanIntegrationLog::ACTION_UPDATE_EQUIPMENT,
+                'Continue after PSM custom field sync',
+                null,
+                $equipmentId,
+            );
+
+            $body = $putResponse->json();
+            if (!$putResponse->successful()) {
+                $this->logIntegration(
+                    RentmanIntegrationLog::ACTION_UPDATE_EQUIPMENT,
+                    RentmanIntegrationLog::STATUS_FAILED,
+                    $url,
+                    $payload,
+                    is_array($body) ? $body : ['raw' => self::truncateHttpBody($putResponse->body())],
+                    'HTTP ' . $putResponse->status(),
+                    null,
+                    $equipmentId,
+                );
+                Log::warning('Rentman Integration: Failed to update PSM custom fields on equipment', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rentman_equipment_id' => $equipmentId,
+                    'http_status' => $putResponse->status(),
+                ]);
+
+                return;
+            }
+
+            $this->logIntegration(
+                RentmanIntegrationLog::ACTION_UPDATE_EQUIPMENT,
+                RentmanIntegrationLog::STATUS_SUCCESS,
+                $url,
+                $payload,
+                is_array($body) ? $body : null,
+                null,
+                null,
+                $equipmentId,
+            );
+
+            Log::info('Rentman Integration: PSM custom fields updated on equipment', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rentman_equipment_id' => $equipmentId,
+                'custom_3_set' => $needsCustom3,
+                'custom_4' => true,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Rentman Integration: Soft-fail ensuring PSM custom fields on equipment', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rentman_equipment_id' => $equipmentId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     protected function findCompanyInventoryByRentmanEquipmentId(
@@ -1930,23 +2205,9 @@ class RentmanIntegrationService
             return null;
         }
 
-        $escaped = RentmanEquipment::escapeLike($trimmed);
+        $matches = $this->collectLocalRentmanEquipmentMatches($trimmed);
 
-        $row = RentmanEquipment::query()
-            ->where('company_id', $this->providerCompanyId)
-            ->where(function ($q) use ($escaped, $trimmed) {
-                $q->whereRaw('LOWER(name) = ?', [strtolower($trimmed)])
-                    ->orWhereRaw('LOWER(displayname) = ?', [strtolower($trimmed)])
-                    ->orWhere('name', 'LIKE', $escaped)
-                    ->orWhere('displayname', 'LIKE', $escaped);
-            })
-            ->orderByRaw(
-                '(CASE WHEN LOWER(COALESCE(name, \'\')) = ? OR LOWER(COALESCE(displayname, \'\')) = ? THEN 0 ELSE 1 END)',
-                [strtolower($trimmed), strtolower($trimmed)]
-            )
-            ->first();
-
-        return $row?->rentman_id !== null && $row->rentman_id !== '' ? (string) $row->rentman_id : null;
+        return $matches[0]['resource_id'] ?? null;
     }
 
     protected function searchRentmanEquipmentByName(string $displayName): ?string
@@ -2040,11 +2301,163 @@ class RentmanIntegrationService
         }
     }
 
-    protected function createRentmanEquipment(string $displayName, ?Equipment $inventory): string
-    {
-        $path = config('rentman.equipment_path', '/equipment');
-        $url = $this->baseUrl . '/' . ltrim($path, '/');
+    /**
+     * Create Rentman equipment and persist the mapping (rental-request resolve path).
+     */
+    protected function createAndLinkRentmanEquipmentForResolve(
+        string $displayName,
+        int $productId,
+        ?Equipment $inventory,
+        string $source = 'create',
+    ): ?string {
+        $rentalRequestId = $this->rentalRequestId ?? 0;
 
+        try {
+            $createdId = $this->createRentmanEquipment($displayName, $inventory);
+            self::persistRentmanEquipmentOnInventory($this->providerCompanyId, $productId, $createdId);
+            $this->upsertLocalEquipmentCache($createdId, $displayName, $inventory);
+            $this->logPersistEquipmentId($productId, $createdId, $source);
+
+            RentmanIntegrationDebugLog::step(
+                $rentalRequestId,
+                $this->providerCompanyId,
+                'EQUIPMENT_RESOLVE',
+                'CREATED',
+                [
+                    'product_id' => $productId,
+                    'rentman_equipment_id' => $createdId,
+                    'name' => $displayName,
+                    'source' => $source,
+                ],
+                'Attach newly created equipment to project request',
+            );
+
+            return $createdId;
+        } catch (\Throwable $e) {
+            Log::error('Rentman Integration: Equipment create failed', [
+                'provider_company_id' => $this->providerCompanyId,
+                'product_id' => $productId,
+                'name' => $displayName,
+                'source' => $source,
+                'error' => $e->getMessage(),
+            ]);
+
+            RentmanIntegrationDebugLog::step(
+                $rentalRequestId,
+                $this->providerCompanyId,
+                'EQUIPMENT_RESOLVE',
+                'CREATE_FAILED',
+                [
+                    'product_id' => $productId,
+                    'name' => $displayName,
+                    'source' => $source,
+                    'error' => $e->getMessage(),
+                ],
+                'Mark product missing; continue with next line',
+            );
+
+            return null;
+        }
+    }
+
+    /**
+     * Push latest PSM inventory values onto an existing Rentman equipment (rental-request single match).
+     * Reuses the same field mapping as equipment create. Soft-fails so the request can still attach.
+     */
+    protected function syncPsmInventoryDetailsToRentmanEquipment(
+        string $equipmentId,
+        string $displayName,
+        ?Equipment $inventory,
+    ): void {
+        if ($inventory === null) {
+            return;
+        }
+
+        $path = config('rentman.equipment_path', '/equipment') . '/' . ltrim($equipmentId, '/');
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+        $payload = $this->buildRentmanEquipmentPayloadFromInventory($displayName, $inventory);
+        unset($payload['type'], $payload['rental_sales'], $payload['is_physical']);
+
+        try {
+            $getResponse = $this->rentmanHttp(
+                'GET',
+                $url,
+                null,
+                RentmanIntegrationLog::ACTION_VALIDATE_EQUIPMENT,
+                'Merge existing custom fields then PUT PSM inventory details',
+                null,
+                $equipmentId,
+            );
+
+            if ($getResponse->successful()) {
+                $data = self::extractDataObject($getResponse->json());
+                $existingCustom = isset($data['custom']) && is_array($data['custom']) ? $data['custom'] : [];
+                $payload['custom'] = array_merge($existingCustom, $payload['custom'] ?? []);
+            }
+
+            $putResponse = $this->rentmanHttp(
+                'PUT',
+                $url,
+                $payload,
+                RentmanIntegrationLog::ACTION_UPDATE_EQUIPMENT,
+                'Use synced Rentman equipment on the project request',
+                null,
+                $equipmentId,
+            );
+
+            $body = $putResponse->json();
+            if (!$putResponse->successful()) {
+                $this->logIntegration(
+                    RentmanIntegrationLog::ACTION_UPDATE_EQUIPMENT,
+                    RentmanIntegrationLog::STATUS_FAILED,
+                    $url,
+                    $payload,
+                    is_array($body) ? $body : ['raw' => self::truncateHttpBody($putResponse->body())],
+                    'HTTP ' . $putResponse->status(),
+                    null,
+                    $equipmentId,
+                );
+                Log::warning('Rentman Integration: Failed to sync PSM details onto matched Rentman equipment', [
+                    'provider_company_id' => $this->providerCompanyId,
+                    'rentman_equipment_id' => $equipmentId,
+                    'http_status' => $putResponse->status(),
+                ]);
+
+                return;
+            }
+
+            $this->logIntegration(
+                RentmanIntegrationLog::ACTION_UPDATE_EQUIPMENT,
+                RentmanIntegrationLog::STATUS_SUCCESS,
+                $url,
+                $payload,
+                is_array($body) ? $body : null,
+                null,
+                null,
+                $equipmentId,
+            );
+
+            Log::info('Rentman Integration: PSM inventory details synced onto matched Rentman equipment', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rentman_equipment_id' => $equipmentId,
+                'company_inventory_id' => $inventory->id,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Rentman Integration: Soft-fail syncing PSM details onto matched Rentman equipment', [
+                'provider_company_id' => $this->providerCompanyId,
+                'rentman_equipment_id' => $equipmentId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * PSM → Rentman equipment fields already supported by create/sync.
+     *
+     * @return array<string, mixed>
+     */
+    protected function buildRentmanEquipmentPayloadFromInventory(string $displayName, ?Equipment $inventory): array
+    {
         $payload = [
             'name' => $displayName,
             'type' => 'item',
@@ -2056,33 +2469,48 @@ class RentmanIntegrationService
             ],
         ];
 
-        if ($inventory !== null) {
-            $inventory->loadMissing('product');
-            $psmCode = trim((string) ($inventory->product?->psm_code ?? ''));
-            if ($psmCode !== '') {
-                $payload['custom']['custom_3'] = $psmCode;
-            }
+        if ($inventory === null) {
+            return $payload;
+        }
 
-            $qty = (int) ($inventory->quantity ?? 0);
-            if ($qty > 0) {
-                $payload['unit'] = (string) $qty;
-            }
-            if ($inventory->rental_price !== null) {
-                $payload['price'] = (float) $inventory->rental_price;
-            }
-            if ($inventory->replacement_price !== null) {
-                $payload['subrental_costs'] = (float) $inventory->replacement_price;
-            }
-            foreach (['height', 'width', 'length', 'weight'] as $dim) {
-                if ($inventory->{$dim} !== null) {
-                    $payload[$dim] = (float) $inventory->{$dim};
-                }
-            }
-            $coo = self::resolveRentmanCountryOfOriginCode($inventory->country_of_origin ?? null);
-            if ($coo !== null) {
-                $payload['country_of_origin'] = $coo;
+        $inventory->loadMissing('product');
+        $psmCode = trim((string) ($inventory->product?->psm_code ?? ''));
+        if ($psmCode !== '') {
+            $payload['custom']['custom_3'] = $psmCode;
+        }
+
+        $softwareCode = trim((string) ($inventory->software_code ?? ''));
+        if ($softwareCode !== '') {
+            $payload['code'] = $softwareCode;
+        }
+
+        $qty = (int) ($inventory->quantity ?? 0);
+        if ($qty > 0) {
+            $payload['unit'] = (string) $qty;
+        }
+        if ($inventory->rental_price !== null) {
+            $payload['price'] = (float) $inventory->rental_price;
+            $payload['subrental_costs'] = (float) $inventory->rental_price;
+        }
+        foreach (['height', 'width', 'length', 'weight'] as $dim) {
+            if ($inventory->{$dim} !== null) {
+                $payload[$dim] = (float) $inventory->{$dim};
             }
         }
+        $coo = self::resolveRentmanCountryOfOriginCode($inventory->country_of_origin ?? null);
+        if ($coo !== null) {
+            $payload['country_of_origin'] = $coo;
+        }
+
+        return $payload;
+    }
+
+    protected function createRentmanEquipment(string $displayName, ?Equipment $inventory): string
+    {
+        $path = config('rentman.equipment_path', '/equipment');
+        $url = $this->baseUrl . '/' . ltrim($path, '/');
+
+        $payload = $this->buildRentmanEquipmentPayloadFromInventory($displayName, $inventory);
 
         $response = $this->rentmanHttp(
             'POST',
@@ -2254,13 +2682,16 @@ class RentmanIntegrationService
         }
 
         if ($company !== null) {
-            $street = trim((string) ($company->address_line_1 ?? ''));
-            if ($street !== '') {
-                $payload['visit_street'] = $street;
+            $line1 = trim((string) ($company->address_line_1 ?? ''));
+            $line2 = trim((string) ($company->address_line_2 ?? ''));
+            $parsed = self::splitStreetAndHouseNumber($line1);
+
+            if ($parsed['street'] !== '') {
+                $payload['visit_street'] = $parsed['street'];
             }
-            $number = trim((string) ($company->address_line_2 ?? ''));
-            if ($number !== '') {
-                $payload['visit_number'] = $number;
+            $visitNumber = $parsed['number'] !== '' ? $parsed['number'] : $line2;
+            if ($visitNumber !== '') {
+                $payload['visit_number'] = $visitNumber;
             }
             $city = trim((string) ($company->city?->name ?? ''));
             if ($city !== '') {
@@ -2289,6 +2720,38 @@ class RentmanIntegrationService
         }
 
         return $payload;
+    }
+
+    /**
+     * Split a single address line into street + house number.
+     * Supports "123 Main Street" and "Main Street 123".
+     *
+     * @return array{street: string, number: string}
+     */
+    protected static function splitStreetAndHouseNumber(string $addressLine): array
+    {
+        $line = trim(preg_replace('/\s+/', ' ', $addressLine) ?? '');
+        if ($line === '') {
+            return ['street' => '', 'number' => ''];
+        }
+
+        // Leading house number: "123 Main Street", "123A Main Street"
+        if (preg_match('/^(\d+[a-zA-Z]?)\s+(.+)$/u', $line, $m)) {
+            return [
+                'number' => trim($m[1]),
+                'street' => trim($m[2]),
+            ];
+        }
+
+        // Trailing house number: "Main Street 123", "Main Street, 123"
+        if (preg_match('/^(.+?)[,\s]+(\d+[a-zA-Z]?)$/u', $line, $m)) {
+            return [
+                'number' => trim($m[2]),
+                'street' => trim($m[1], " \t,"),
+            ];
+        }
+
+        return ['street' => $line, 'number' => ''];
     }
 
     /**
@@ -2323,11 +2786,14 @@ class RentmanIntegrationService
         }
 
         if ($company !== null) {
-            $street = trim((string) ($company->address_line_1 ?? ''));
-            if ($street !== '') {
-                $payload['street'] = $street;
+            $line1 = trim((string) ($company->address_line_1 ?? ''));
+            $line2 = trim((string) ($company->address_line_2 ?? ''));
+            $parsed = self::splitStreetAndHouseNumber($line1);
+
+            if ($parsed['street'] !== '') {
+                $payload['street'] = $parsed['street'];
             }
-            $number = trim((string) ($company->address_line_2 ?? ''));
+            $number = $parsed['number'] !== '' ? $parsed['number'] : $line2;
             if ($number !== '') {
                 $payload['number'] = $number;
             }
