@@ -7,6 +7,7 @@ use App\Models\CompanyIntegration;
 use App\Models\Country;
 use App\Models\Equipment;
 use App\Models\RentalJob;
+use App\Models\RentalJobComment;
 use App\Models\RentmanEquipment;
 use App\Models\RentmanIntegrationLog;
 use App\Models\SupplyJob;
@@ -573,7 +574,7 @@ class RentmanIntegrationService
             $payload['in'] = $end;
         }
 
-        $remark = FlexIntegrationService::buildCombinedQuoteNote($rentalJob, $supplyJob);
+        $remark = self::buildProjectRequestRemark($rentalJob, $supplyJob);
         if ($remark !== null && $remark !== '') {
             $payload['remark'] = $remark;
         }
@@ -737,14 +738,13 @@ class RentmanIntegrationService
 
     /**
      * Add marketplace messages as project request remark (soft-fail).
-     * Reuses FlexIntegrationService::buildCombinedQuoteNote for message formatting.
      */
     public function addProjectRequestNoteFromRentalMessages(
         string $projectRequestId,
         RentalJob $rentalJob,
         SupplyJob $supplyJob,
     ): bool {
-        $remark = FlexIntegrationService::buildCombinedQuoteNote($rentalJob, $supplyJob);
+        $remark = self::buildProjectRequestRemark($rentalJob, $supplyJob);
         if ($remark === null || $remark === '') {
             RentmanIntegrationDebugLog::step(
                 $this->rentalRequestId ?? 0,
@@ -764,6 +764,41 @@ class RentmanIntegrationService
             RentmanIntegrationLog::ACTION_CREATE_NOTE,
             'Complete provider sync',
         );
+    }
+
+    /**
+     * Combine Global Message, Offer Requirements, and Private Message for Rentman remark.
+     * Empty/null sections are omitted; remaining values are joined with " | ".
+     */
+    public static function buildProjectRequestRemark(RentalJob $rentalJob, SupplyJob $supplyJob): ?string
+    {
+        $globalMessage = trim((string) ($rentalJob->global_message ?? ''));
+        $offerRequirements = trim((string) ($rentalJob->offer_requirements ?? ''));
+
+        $privateMessage = trim((string) (
+            RentalJobComment::query()
+                ->where('supply_job_id', $supplyJob->id)
+                ->where('is_private', true)
+                ->orderBy('id')
+                ->value('message') ?? ''
+        ));
+
+        $parts = [];
+        if ($globalMessage !== '') {
+            $parts[] = $globalMessage;
+        }
+        if ($offerRequirements !== '') {
+            $parts[] = $offerRequirements;
+        }
+        if ($privateMessage !== '') {
+            $parts[] = $privateMessage;
+        }
+
+        if ($parts === []) {
+            return null;
+        }
+
+        return implode(' | ', $parts);
     }
 
     /**
