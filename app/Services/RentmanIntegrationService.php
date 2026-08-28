@@ -767,8 +767,8 @@ class RentmanIntegrationService
     }
 
     /**
-     * Combine Global Message, Offer Requirements, and Private Message for Rentman remark.
-     * Empty/null sections are omitted; remaining values are joined with " | ".
+     * Combine Global Message, Private Message, and Offer Requirements for Rentman remark.
+     * Empty/null sections are omitted; remaining labeled values are joined with " | ".
      */
     public static function buildProjectRequestRemark(RentalJob $rentalJob, SupplyJob $supplyJob): ?string
     {
@@ -785,13 +785,13 @@ class RentmanIntegrationService
 
         $parts = [];
         if ($globalMessage !== '') {
-            $parts[] = $globalMessage;
-        }
-        if ($offerRequirements !== '') {
-            $parts[] = $offerRequirements;
+            $parts[] = 'Global Message : ' . $globalMessage;
         }
         if ($privateMessage !== '') {
-            $parts[] = $privateMessage;
+            $parts[] = 'Private Message : ' . $privateMessage;
+        }
+        if ($offerRequirements !== '') {
+            $parts[] = 'Offer Requirements : ' . $offerRequirements;
         }
 
         if ($parts === []) {
