@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Support\CompanyInventorySpecs;
+use App\Support\InventoryProductSearch;
 use App\Support\ProductNormalizer;
 use App\Support\ProductNameNormalizer;
 use App\Traits\NormalizesName;
@@ -42,126 +43,41 @@ class ProductController extends Controller
 
         $searchTerm = trim($request->query('search'));
 
-        // Extract and normalize model code
-        $modelCode = ProductNormalizer::extractModelCode($searchTerm);
-        $normalizedCode = $modelCode ? ProductNormalizer::normalizeCode($modelCode) : null;
+        $query = Product::query()
+            ->with([
+                'brand:id,name',
+                'category:id,name',
+                'subCategory:id,name',
+            ]);
 
-        // Normalize full search term (removes spaces, so "Bose 802" = "bose802")
-        $normalizedFull = ProductNormalizer::normalizeFullName(null, $searchTerm);
+        // HireTrack-style search: split on whitespace; every word must match description or PSM code.
+        InventoryProductSearch::applyDescriptionAndSearchToProductQuery($query, $searchTerm);
+        InventoryProductSearch::applyDescriptionSearchRelevanceOrderToProductQuery($query, $searchTerm);
 
-        // Also create a word-order independent normalized version for better matching
-        // This handles "Bose 802" and "802 Bose" by sorting words before normalizing
-        $normalizedFullOrderIndependent = null;
-        $searchWords = array_filter(explode(' ', strtolower($searchTerm)));
-        if (!empty($searchWords)) {
-            sort($searchWords); // Sort words to make order-independent
-            $reorderedSearch = implode(' ', $searchWords);
-            $normalizedFullOrderIndependent = ProductNormalizer::normalizeFullName(null, $reorderedSearch);
-        }
-
-        // Split into keywords for fallback search
-        $keywords = array_filter(explode(' ', $searchTerm));
-
-        $products = DB::table('inventory_master as p')
-            ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
-            ->leftJoin('categories as c', 'p.category_id', '=', 'c.id')
-            ->leftJoin('sub_categories as sc', 'p.sub_category_id', '=', 'sc.id')
-            ->select(
-                'p.id as product_id',
-                DB::raw("TRIM(CONCAT_WS(' ', b.name, p.model)) as product_name"),
-                'p.model as model_name',
-                'p.psm_code',
-                'b.id as brand_id',
-                'b.name as brand_name',
-                'c.id as category_id',
-                'c.name as category_name',
-                'sc.id as sub_category_id',
-                'sc.name as sub_category_name'
-            )
-            ->where(function ($query) use ($normalizedCode, $normalizedFull, $normalizedFullOrderIndependent, $keywords) {
-                // Priority 1: Match by normalized_model (handles DML-1122, DML1122, etc.)
-                if ($normalizedCode && ProductNormalizer::isValidNormalizedCode($normalizedCode)) {
-                    $query->where('p.normalized_model', $normalizedCode)
-                          ->orWhere('p.normalized_model', 'LIKE', '%' . $normalizedCode . '%');
-                }
-
-                // Priority 2: Match by normalized_full_name (handles "Apogee SSM -", "EV-DML1122", etc.)
-                if ($normalizedFull) {
-                    $query->orWhere('p.normalized_full_name', $normalizedFull)
-                          ->orWhere('p.normalized_full_name', 'LIKE', '%' . $normalizedFull . '%');
-                }
-
-                // Priority 2b: Match by word-order independent normalized_full_name
-                // This handles "Bose 802" vs "802 Bose" by checking if all words appear in normalized string
-                if ($normalizedFullOrderIndependent && $normalizedFullOrderIndependent !== $normalizedFull) {
-                    $query->orWhere('p.normalized_full_name', 'LIKE', '%' . $normalizedFullOrderIndependent . '%');
-                }
-
-                // Priority 3: Fallback to keyword search (AND logic) - case-insensitive, word-order independent
-                // This ensures ALL keywords appear somewhere in the product fields, handling "Bose 802" and "802 Bose" equally
-                if (!empty($keywords)) {
-                    $query->orWhere(function ($q) use ($keywords, $normalizedFullOrderIndependent) {
-                        // Option 1: Try normalized_full_name match (word-order independent)
-                        // This handles cases where "Bose 802" and "802 Bose" normalize differently
-                        if ($normalizedFullOrderIndependent && strlen($normalizedFullOrderIndependent) >= 3) {
-                            $q->whereRaw('p.normalized_full_name LIKE ?', ['%' . $normalizedFullOrderIndependent . '%']);
-                        }
-
-                        // Option 2: Ensure ALL keywords appear in product fields (AND logic)
-                        // Each keyword must match in at least one field - this handles word order variations
-                        // This is OR'd with Option 1, so if normalized_full_name matches, keywords don't need to be checked
-                        $q->orWhere(function ($keywordQ) use ($keywords) {
-                            foreach ($keywords as $word) {
-                                $wordLower = strtolower(trim($word));
-                                if (empty($wordLower) || strlen($wordLower) < 2) {
-                                    continue;
-                                }
-                                $wordLike = '%' . $wordLower . '%';
-
-                                // Preserve decimal points in numeric contexts when normalizing
-                                // Replace decimal points between digits with temporary placeholder
-                                $normalizedWord = preg_replace('/(\d)\.(\d)/', '$1__DECIMAL__$2', $wordLower);
-                                $normalizedWord = preg_replace('/[^a-z0-9]/', '', $normalizedWord);
-                                $normalizedWord = str_replace('__DECIMAL__', '.', $normalizedWord);
-
-                                // Each keyword must appear in at least one of these fields
-                                $keywordQ->where(function ($subQ) use ($wordLike, $normalizedWord) {
-                                    $subQ->whereRaw('LOWER(p.model) LIKE ?', [$wordLike])
-                                        ->orWhereRaw('LOWER(b.name) LIKE ?', [$wordLike])
-                                        ->orWhereRaw('LOWER(c.name) LIKE ?', [$wordLike])
-                                        ->orWhereRaw('LOWER(sc.name) LIKE ?', [$wordLike])
-                                        ->orWhereRaw('LOWER(TRIM(CONCAT_WS(\' \', b.name, p.model))) LIKE ?', [$wordLike]);
-
-                                    // Also check normalized_full_name for the word (handles word order)
-                                    // Since normalized_full_name removes spaces, "bose802" contains both "bose" and "802"
-                                    if ($normalizedWord && strlen($normalizedWord) >= 2) {
-                                        $subQ->orWhereRaw('p.normalized_full_name LIKE ?', ['%' . $normalizedWord . '%']);
-                                    }
-                                });
-                            }
-                        });
-                    });
-                }
-            })
-            ->orderByRaw(
-                "CASE
-                    WHEN LOWER(TRIM(CONCAT_WS(' ', b.name, p.model))) = LOWER(?) THEN 0
-                    WHEN LOWER(p.model) = LOWER(?) THEN 1
-                    WHEN LOWER(b.name) = LOWER(?) THEN 2
-                    WHEN p.normalized_model = ? THEN 3
-                    WHEN p.normalized_model LIKE ? THEN 4
-                    WHEN p.normalized_full_name = ? THEN 5
-                    WHEN p.normalized_full_name LIKE ? THEN 6
-                    ELSE 7
-                 END",
-                [$searchTerm, $searchTerm, $searchTerm, $normalizedCode, '%' . $normalizedCode . '%', $normalizedFull, '%' . $normalizedFull . '%']
-            )
+        $products = $query
             ->limit(50)
-            ->get();
+            ->get()
+            ->map(function (Product $product) {
+                $brandName = $product->brand?->name;
+
+                return [
+                    'product_id' => $product->id,
+                    'product_name' => trim(($brandName ?? '') . ' ' . ($product->model ?? '')),
+                    'model_name' => $product->model,
+                    'psm_code' => $product->psm_code,
+                    'brand_id' => $product->brand_id,
+                    'brand_name' => $brandName,
+                    'category_id' => $product->category_id,
+                    'category_name' => $product->category?->name,
+                    'sub_category_id' => $product->sub_category_id,
+                    'sub_category_name' => $product->subCategory?->name,
+                ];
+            })
+            ->values();
 
         return response()->json([
             'success' => true,
-            'data' => $products
+            'data' => $products,
         ]);
     }
 

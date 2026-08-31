@@ -50,6 +50,40 @@ class InventoryProductSearch
         $query->whereRaw("CAST({$idColumn} AS CHAR) LIKE ?", [$idLike]);
     }
 
+    private static function productDescriptionSql(): string
+    {
+        return 'LOWER(TRIM(CONCAT(COALESCE((SELECT name FROM brands WHERE brands.id = inventory_master.brand_id LIMIT 1), \'\'), \' \', COALESCE(inventory_master.model, \'\'))))';
+    }
+
+    /**
+     * HireTrack-style AND search on product description (brand + model) and PSM code.
+     * Each whitespace-separated word must appear in the description or psm_code:
+     * ((description LIKE '%word1%') OR (psm_code LIKE '%word1%')) AND ...
+     */
+    public static function applyDescriptionAndSearchToProductQuery(Builder $query, string $searchValue): void
+    {
+        $searchValue = trim($searchValue);
+        if ($searchValue === '') {
+            return;
+        }
+
+        $keywords = self::splitKeywords($searchValue);
+        if ($keywords === []) {
+            return;
+        }
+
+        $descriptionSql = self::productDescriptionSql();
+
+        foreach ($keywords as $word) {
+            $like = '%' . self::escapeLike(mb_strtolower($word, 'UTF-8')) . '%';
+
+            $query->where(function ($q) use ($descriptionSql, $like) {
+                $q->whereRaw("{$descriptionSql} LIKE ?", [$like])
+                    ->orWhereRaw('LOWER(COALESCE(inventory_master.psm_code, \'\')) LIKE ?', [$like]);
+            });
+        }
+    }
+
     /**
      * Apply AND-of-keywords search to an Eloquent query on {@see \App\Models\Product} (inventory_master).
      */
@@ -153,6 +187,23 @@ class InventoryProductSearch
     }
 
     /**
+     * Relevance ordering for description + PSM code search (exact matches first).
+     */
+    public static function applyDescriptionSearchRelevanceOrderToProductQuery(Builder $query, string $searchValue): void
+    {
+        $searchValue = trim($searchValue);
+        if ($searchValue === '') {
+            return;
+        }
+
+        [$caseSql, $bindings] = self::buildDescriptionSearchRelevanceCaseSql($searchValue);
+
+        $query->orderByRaw($caseSql, $bindings)
+            ->orderByRaw('CHAR_LENGTH(TRIM(COALESCE(inventory_master.model, \'\'))) ASC')
+            ->orderBy('inventory_master.id', 'asc');
+    }
+
+    /**
      * Order inventory_master rows by match quality when a search is active (best matches first).
      */
     public static function applyRelevanceOrderToProductQuery(Builder $query, string $searchValue): void
@@ -196,6 +247,53 @@ class InventoryProductSearch
         $query->orderByRaw($caseSql, $bindings)
             ->orderByRaw('CHAR_LENGTH(TRIM(COALESCE(inventory_master.model, \'\'))) ASC')
             ->orderBy('company_inventory.id', 'asc');
+    }
+
+    /**
+     * @return array{0: string, 1: array<int, mixed>}
+     */
+    private static function buildDescriptionSearchRelevanceCaseSql(string $searchValue): array
+    {
+        $lower = mb_strtolower($searchValue, 'UTF-8');
+        $phraseLike = '%' . self::escapeLike($lower) . '%';
+        $descriptionSql = self::productDescriptionSql();
+        $normalizedPhrase = ProductNormalizer::normalizeFullName(null, $searchValue);
+
+        $whens = [];
+        $bindings = [];
+
+        $whens[] = 'WHEN inventory_master.psm_code IS NOT NULL AND LOWER(TRIM(inventory_master.psm_code)) = ? THEN 1';
+        $bindings[] = $lower;
+
+        $whens[] = "WHEN {$descriptionSql} = ? THEN 2";
+        $bindings[] = $lower;
+
+        $whens[] = "WHEN {$descriptionSql} LIKE ? THEN 3";
+        $bindings[] = $phraseLike;
+
+        $whens[] = 'WHEN LOWER(TRIM(inventory_master.model)) LIKE ? THEN 4';
+        $bindings[] = $phraseLike;
+
+        $whens[] = "WHEN {$descriptionSql} LIKE ? THEN 5";
+        $bindings[] = self::escapeLike($lower) . '%';
+
+        $whens[] = 'WHEN LOWER(TRIM(inventory_master.model)) = ? THEN 6';
+        $bindings[] = $lower;
+
+        $whens[] = 'WHEN inventory_master.psm_code IS NOT NULL AND LOWER(TRIM(inventory_master.psm_code)) LIKE ? THEN 7';
+        $bindings[] = self::escapeLike($lower) . '%';
+
+        if ($normalizedPhrase !== null && $normalizedPhrase !== '') {
+            $whens[] = 'WHEN inventory_master.normalized_full_name = ? THEN 8';
+            $bindings[] = $normalizedPhrase;
+
+            $whens[] = 'WHEN inventory_master.normalized_full_name LIKE ? THEN 9';
+            $bindings[] = '%' . self::escapeLike($normalizedPhrase) . '%';
+        }
+
+        $whens[] = 'ELSE 100';
+
+        return ['CASE ' . implode(' ', $whens) . ' END', $bindings];
     }
 
     /**
