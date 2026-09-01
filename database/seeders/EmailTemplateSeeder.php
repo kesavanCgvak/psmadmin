@@ -169,6 +169,13 @@ class EmailTemplateSeeder extends Seeder
                 'file' => 'quoteRequest.blade.php',
             ],
             [
+                'name' => 'hireTrackRentalRequest',
+                'subject' => 'New HireTrack Rental Request - Pro Subrental Marketplace',
+                'description' => 'Email sent to HireTrack providers with a text file of requested equipment codes',
+                'variables' => ['provider_contact_name', 'rental_name', 'from_date', 'to_date', 'shipping_method', 'delivery_address', 'user_name', 'user_company', 'csv_note', 'skipped_products_section', 'global_message_section', 'offer_requirements_section', 'private_message_section', 'current_year'],
+                'file' => 'hireTrackRentalRequest.blade.php',
+            ],
+            [
                 'name' => 'test-email',
                 'subject' => 'PSM Test Email',
                 'description' => 'Test email for mail configuration',

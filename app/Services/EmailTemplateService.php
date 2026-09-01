@@ -245,6 +245,7 @@ class EmailTemplateService
             'support-request' => 'New Support Request',
             'contact-sales' => 'New Contact Sales Inquiry',
             'new-admin-user' => 'Welcome to PSM Admin Panel',
+            'hireTrackRentalRequest' => 'New HireTrack Rental Request - Pro Subrental Marketplace',
         ];
 
         return $defaultSubjects[$templateName] ?? 'Notification from Pro Subrental Marketplace';

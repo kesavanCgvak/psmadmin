@@ -13,8 +13,10 @@ use App\Models\RentalJobComment;
 use App\Models\JobOffer;
 use App\Models\Equipment;
 use App\Jobs\CreateFlexQuoteFromRentalRequestJob;
+use App\Jobs\CreateHireTrackCsvFromRentalRequestJob;
 use App\Jobs\CreateRentmanProjectRequestFromRentalRequestJob;
 use App\Support\FlexIntegrationDebugLog;
+use App\Support\HireTrackIntegrationDebugLog;
 use App\Support\RentmanIntegrationDebugLog;
 use App\Support\RentalShippingMethods;
 use App\Services\SupplierSmsNotifier;
@@ -309,6 +311,17 @@ class RentalRequestController extends Controller
                         CreateRentmanProjectRequestFromRentalRequestJob::dispatch($rentalJob->id);
                     } catch (\Throwable $e) {
                         RentmanIntegrationDebugLog::error($rentalJob->id, null, 'RENTMAN_PROJECT_REQUEST_JOB', 'AFTER_COMMIT_FAILED', [
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+
+                    try {
+                        HireTrackIntegrationDebugLog::info($rentalJob->id, null, 'HIRETRACK_CSV_JOB', 'AFTER_COMMIT_RUN', [
+                            'note' => 'Runs synchronously (not queued)',
+                        ]);
+                        CreateHireTrackCsvFromRentalRequestJob::dispatch($rentalJob->id);
+                    } catch (\Throwable $e) {
+                        HireTrackIntegrationDebugLog::error($rentalJob->id, null, 'HIRETRACK_CSV_JOB', 'AFTER_COMMIT_FAILED', [
                             'error' => $e->getMessage(),
                         ]);
                     }
