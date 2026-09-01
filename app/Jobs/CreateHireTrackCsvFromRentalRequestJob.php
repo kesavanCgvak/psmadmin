@@ -26,6 +26,7 @@ class CreateHireTrackCsvFromRentalRequestJob
                 'user.profile',
                 'user.company',
                 'supplyJobs.provider.rentalSoftware',
+                'supplyJobs.provider.dateFormat',
                 'supplyJobs.provider.getDefaultcontact',
                 'supplyJobs.products.product.brand',
                 'supplyJobs.comments',

@@ -10,6 +10,8 @@ use App\Models\RentalJob;
 use App\Models\SupplyJob;
 use App\Support\HireTrackIntegrationDebugLog;
 use App\Support\RentalShippingMethods;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -57,6 +59,27 @@ class HireTrackIntegrationService
         $brand = $product->brand->name ?? '';
 
         return trim($brand . ' ' . ($product->model ?? ''));
+    }
+
+    /**
+     * Format a rental-request date using the provider's date_formats row (via companies.date_format_id).
+     * Falls back to the existing application date format when none is configured.
+     */
+    public static function formatDateForProvider(mixed $date, ?Company $provider): string
+    {
+        if ($date === null || $date === '') {
+            return '';
+        }
+
+        $carbon = $date instanceof CarbonInterface
+            ? $date
+            : Carbon::parse((string) $date);
+
+        $dateFormatId = $provider?->date_format_id;
+
+        return $carbon->format(
+            SupplierSmsNotifier::getPhpDateFormat($dateFormatId !== null ? (int) $dateFormatId : null)
+        );
     }
 
     /**
@@ -244,11 +267,12 @@ class HireTrackIntegrationService
         }
 
         $rentalJob->loadMissing(['user.profile', 'user.company']);
+        $provider->loadMissing('dateFormat');
         $supplyJob->loadMissing('comments');
         $user = $rentalJob->user;
         $providerContactName = $defaultContact->full_name ?? $defaultContact->email ?? 'there';
-        $fromDate = $rentalJob->from_date?->format('Y-m-d') ?? (string) $rentalJob->from_date;
-        $toDate = $rentalJob->to_date?->format('Y-m-d') ?? (string) $rentalJob->to_date;
+        $fromDate = self::formatDateForProvider($rentalJob->from_date, $provider);
+        $toDate = self::formatDateForProvider($rentalJob->to_date, $provider);
         $deliveryAddress = $rentalJob->delivery_address !== null && $rentalJob->delivery_address !== ''
             ? $rentalJob->delivery_address
             : 'N/A';

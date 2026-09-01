@@ -3,10 +3,13 @@
 namespace Tests\Unit;
 
 use App\Models\Brand;
+use App\Models\Company;
 use App\Models\Equipment;
 use App\Models\Product;
 use App\Models\SupplyJobProduct;
 use App\Services\HireTrackIntegrationService;
+use App\Services\SupplierSmsNotifier;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Tests\TestCase;
 
@@ -117,6 +120,29 @@ class HireTrackIntegrationServiceTest extends TestCase
         $this->assertStringContainsString('Shure SM58 Microphone — Quantity: 4', $html);
         $this->assertStringContainsString('Yamaha Mixer — Quantity: 1', $html);
         $this->assertStringContainsString('Please review these items manually', $html);
+    }
+
+    public function test_format_date_for_provider_falls_back_when_no_date_format_is_configured(): void
+    {
+        $provider = new Company();
+        $provider->date_format_id = null;
+
+        $formatted = HireTrackIntegrationService::formatDateForProvider(
+            Carbon::parse('2026-09-15'),
+            $provider
+        );
+
+        $this->assertSame(
+            Carbon::parse('2026-09-15')->format(SupplierSmsNotifier::getPhpDateFormat(null)),
+            $formatted
+        );
+        $this->assertNotSame('2026-09-15', $formatted);
+    }
+
+    public function test_format_date_for_provider_returns_empty_string_for_missing_date(): void
+    {
+        $this->assertSame('', HireTrackIntegrationService::formatDateForProvider(null, new Company()));
+        $this->assertSame('', HireTrackIntegrationService::formatDateForProvider('', null));
     }
 
     private function makeProduct(int $id, string $model, string $brandName): Product
