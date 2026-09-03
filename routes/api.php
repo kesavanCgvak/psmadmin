@@ -238,6 +238,7 @@ Route::middleware(['jwt.verify', 'throttle:12,1'])->prefix('provider/api-keys')-
 
 Route::prefix('v1/partner')->middleware(['provider.api.key', 'throttle:60,1'])->group(function () {
     Route::get('/products/search', [PartnerProductController::class, 'search']);
+    Route::get('/products', [PartnerProductController::class, 'list']);
     Route::get('/products/{product_id}', [PartnerProductController::class, 'details'])->whereNumber('product_id');
 });
 

@@ -53,6 +53,15 @@ DESC
                 ]
             ),
             new OA\Schema(
+                schema: 'PartnerProductMinimal',
+                type: 'object',
+                properties: [
+                    new OA\Property(property: 'product_id', type: 'integer', example: 101),
+                    new OA\Property(property: 'psm_code', type: 'string', example: 'PSM-001'),
+                    new OA\Property(property: 'product_name', type: 'string', example: 'Sony FX6'),
+                ]
+            ),
+            new OA\Schema(
                 schema: 'PartnerProductSummary',
                 type: 'object',
                 properties: [
