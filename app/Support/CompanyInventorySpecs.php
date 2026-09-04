@@ -147,6 +147,107 @@ final class CompanyInventorySpecs
     }
 
     /**
+     * Build a company_inventory update patch from Rentman equipment (overwrite when Rentman has a value).
+     * Includes software_code when Rentman code is present.
+     * Linear/weight units always come from RENTMAN_DEFAULT_* env when dimensions/weight are synced.
+     *
+     * @return array<string, mixed>
+     */
+    public static function syncPatchForCompanyInventoryFromRentman(
+        RentmanEquipment $row,
+        ?int $linearUnitId = null,
+        ?int $weightUnitId = null,
+    ): array {
+        $patch = [];
+        $linearUnitId = $linearUnitId ?? InventoryMeasurementUnits::resolveRentmanLinearUnitId();
+        $weightUnitId = $weightUnitId ?? InventoryMeasurementUnits::resolveRentmanWeightUnitId();
+        $attrs = self::attributesFromRentmanRow($row, $linearUnitId, $weightUnitId);
+
+        $hasLinearDimension = false;
+        foreach (['height', 'width', 'length'] as $field) {
+            $value = $attrs[$field] ?? null;
+            if ($value !== null && $value !== '') {
+                $patch[$field] = $value;
+                $hasLinearDimension = true;
+            }
+        }
+
+        $weight = $attrs['weight'] ?? null;
+        $hasWeight = $weight !== null && $weight !== '';
+        if ($hasWeight) {
+            $patch['weight'] = $weight;
+        }
+
+        // Rentman dims/weight use the units configured in env (inches / lbs by default).
+        if ($hasLinearDimension && $linearUnitId !== null) {
+            $patch['linear_unit_id'] = $linearUnitId;
+        }
+        if ($hasWeight && $weightUnitId !== null) {
+            $patch['weight_unit_id'] = $weightUnitId;
+        }
+
+        $coo = $attrs['country_of_origin'] ?? null;
+        if ($coo !== null && $coo !== '') {
+            $patch['country_of_origin'] = strtoupper(trim((string) $coo));
+        }
+
+        $code = trim((string) ($row->code ?? ''));
+        if ($code !== '') {
+            $patch['software_code'] = $code;
+        }
+
+        if ($row->subrental_costs !== null) {
+            $patch['rental_price'] = (float) $row->subrental_costs;
+        }
+
+        return $patch;
+    }
+
+    /**
+     * Build an inventory_master update patch from Rentman equipment (fill empty fields only).
+     *
+     * @return array<string, mixed>
+     */
+    public static function syncPatchForProductFromRentmanIfEmpty(
+        Product $product,
+        RentmanEquipment $row,
+        ?int $linearUnitId = null,
+        ?int $weightUnitId = null,
+    ): array {
+        $productUpdates = [];
+        $mapping = [
+            'height' => $row->height,
+            'width' => $row->width,
+            'length' => $row->length,
+            'weight' => $row->weight,
+        ];
+
+        foreach ($mapping as $dbField => $value) {
+            if ($product->{$dbField} !== null && $product->{$dbField} !== '') {
+                continue;
+            }
+            if ($value !== null && $value !== '') {
+                $productUpdates[$dbField] = $value;
+            }
+        }
+
+        if ($product->linear_unit_id === null && $linearUnitId !== null) {
+            $productUpdates['linear_unit_id'] = $linearUnitId;
+        }
+        if ($product->weight_unit_id === null && $weightUnitId !== null) {
+            $productUpdates['weight_unit_id'] = $weightUnitId;
+        }
+
+        if (($product->country_of_origin === null || $product->country_of_origin === '')
+            && $row->country_of_origin !== null
+            && trim((string) $row->country_of_origin) !== '') {
+            $productUpdates['country_of_origin'] = strtoupper(trim((string) $row->country_of_origin));
+        }
+
+        return $productUpdates;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function attributesFromRentmanRow(
@@ -154,6 +255,13 @@ final class CompanyInventorySpecs
         ?int $linearUnitId = null,
         ?int $weightUnitId = null
     ): array {
+        $coo = $row->country_of_origin;
+        if ($coo !== null && trim((string) $coo) !== '') {
+            $coo = strtoupper(trim((string) $coo));
+        } else {
+            $coo = null;
+        }
+
         return [
             'height' => $row->height,
             'width' => $row->width,
@@ -161,7 +269,7 @@ final class CompanyInventorySpecs
             'weight' => $row->weight,
             'linear_unit_id' => $linearUnitId,
             'weight_unit_id' => $weightUnitId,
-            'country_of_origin' => $row->country_of_origin,
+            'country_of_origin' => $coo,
             'hsn_code' => null,
         ];
     }

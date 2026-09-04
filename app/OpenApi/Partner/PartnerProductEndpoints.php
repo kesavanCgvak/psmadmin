@@ -85,6 +85,73 @@ class PartnerProductEndpoints
     }
 
     #[OA\Get(
+        path: '/api/v1/partner/products',
+        operationId: 'partnerProductsListMinimal',
+        description: 'List all products (minimal fields) for the authenticated provider company inventory.',
+        summary: 'List provider products (minimal)',
+        security: [['partnerApiKey' => []]],
+        tags: ['Partner Products'],
+        parameters: [
+            new OA\Parameter(
+                name: 'page',
+                in: 'query',
+                required: false,
+                description: 'Page number for pagination.',
+                schema: new OA\Schema(type: 'integer', minimum: 1, default: 1, example: 1)
+            ),
+            new OA\Parameter(
+                name: 'per_page',
+                in: 'query',
+                required: false,
+                description: 'Number of items per page (max 100).',
+                schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 100, default: 25, example: 25)
+            ),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Products fetched successfully.',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Products fetched successfully.'),
+                        new OA\Property(
+                            property: 'data',
+                            type: 'array',
+                            items: new OA\Items(ref: '#/components/schemas/PartnerProductMinimal')
+                        ),
+                        new OA\Property(property: 'meta', ref: '#/components/schemas/PaginationMeta'),
+                    ]
+                )
+            ),
+            new OA\Response(
+                response: 401,
+                description: 'Missing or invalid API key.',
+                content: new OA\JsonContent(ref: '#/components/schemas/ApiError')
+            ),
+            new OA\Response(
+                response: 403,
+                description: 'Open API access disabled, expired key, or invalid provider context.',
+                content: new OA\JsonContent(ref: '#/components/schemas/ApiError')
+            ),
+            new OA\Response(
+                response: 422,
+                description: 'Validation error (e.g. invalid pagination parameters).',
+                content: new OA\JsonContent(ref: '#/components/schemas/ApiError')
+            ),
+            new OA\Response(
+                response: 429,
+                description: 'Too many requests (rate limit: 60 requests per minute).',
+                content: new OA\JsonContent(ref: '#/components/schemas/ApiError')
+            ),
+        ]
+    )]
+    public function list(): void
+    {
+    }
+
+    #[OA\Get(
         path: '/api/v1/partner/products/{product_id}',
         operationId: 'partnerProductDetails',
         description: 'Get full details for a single product in the provider company inventory.',

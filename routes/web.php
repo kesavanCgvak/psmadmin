@@ -178,6 +178,8 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('companies.inventory.store');
     Route::delete('/companies/{company}/inventory/{equipment}', [CompanyManagementController::class, 'destroyInventory'])
         ->name('companies.inventory.destroy');
+    Route::get('/companies/{company}/referrals', [CompanyManagementController::class, 'referrals'])
+        ->name('companies.referrals');
 
     Route::resource('companies', CompanyManagementController::class);
     Route::post('/companies/bulk-delete', [CompanyManagementController::class, 'bulkDelete'])

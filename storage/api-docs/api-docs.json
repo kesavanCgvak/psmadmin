@@ -2,7 +2,7 @@
     "openapi": "3.0.0",
     "info": {
         "title": "PSM Partner Open API",
-        "description": "Partner APIs for provider companies to search and retrieve product inventory via API key authentication.\n\n**Getting started**\n1. Log in to the provider dashboard and generate an API key (`psm_pk_...`).\n2. Ensure your company has **Open API Access** enabled by an administrator.\n3. Send the API key on each request using `Authorization: Bearer {api_key}` (preferred) or `X-API-KEY: {api_key}`.\n\nResults are scoped to the provider company linked to the API key.",
+        "description": "Partner APIs for provider companies to search and retrieve product inventory via API key authentication.\r\n\r\n**Getting started**\r\n1. Log in to the provider dashboard and generate an API key (`psm_pk_...`).\r\n2. Ensure your company has **Open API Access** enabled by an administrator.\r\n3. Send the API key on each request using `Authorization: Bearer {api_key}` (preferred) or `X-API-KEY: {api_key}`.\r\n\r\nResults are scoped to the provider company linked to the API key.",
         "version": "1.0.0"
     },
     "servers": [
@@ -136,6 +136,119 @@
                 ]
             }
         },
+        "/api/v1/partner/products": {
+            "get": {
+                "tags": [
+                    "Partner Products"
+                ],
+                "summary": "List provider products (minimal)",
+                "description": "List all products (minimal fields) for the authenticated provider company inventory.",
+                "operationId": "partnerProductsListMinimal",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "Page number for pagination.",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "example": 1,
+                            "default": 1,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "description": "Number of items per page (max 100).",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "example": 25,
+                            "default": 25,
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Products fetched successfully.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Products fetched successfully."
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/PartnerProductMinimal"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/PaginationMeta"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API key.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Open API access disabled, expired key, or invalid provider context.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error (e.g. invalid pagination parameters).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (rate limit: 60 requests per minute).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "partnerApiKey": []
+                    }
+                ]
+            }
+        },
         "/api/v1/partner/products/{product_id}": {
             "get": {
                 "tags": [
@@ -240,6 +353,23 @@
                     "message": {
                         "type": "string",
                         "example": "Invalid API key."
+                    }
+                },
+                "type": "object"
+            },
+            "PartnerProductMinimal": {
+                "properties": {
+                    "product_id": {
+                        "type": "integer",
+                        "example": 101
+                    },
+                    "psm_code": {
+                        "type": "string",
+                        "example": "PSM-001"
+                    },
+                    "product_name": {
+                        "type": "string",
+                        "example": "Sony FX6"
                     }
                 },
                 "type": "object"

@@ -234,7 +234,7 @@ class UserManagementController extends Controller
      */
     public function show(Request $request, User $user)
     {
-        $user->load(['profile', 'company']);
+        $user->load(['profile', 'company.referralReceived.referrerCompany']);
 
         $showBackToCompany = false;
         $backToCompanyUrl = null;

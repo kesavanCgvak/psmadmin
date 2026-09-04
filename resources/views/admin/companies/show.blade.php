@@ -164,6 +164,24 @@
                             @endif
                         </dd>
 
+                        <dt class="col-sm-3">Referred By</dt>
+                        <dd class="col-sm-9">
+                            @if($company->referralReceived?->referrerCompany)
+                                <strong>{{ $company->referralReceived->referrerCompany->name }}</strong>
+                            @else
+                                <span class="text-muted">N/A</span>
+                            @endif
+                        </dd>
+
+                        <dt class="col-sm-3">Referral Status</dt>
+                        <dd class="col-sm-9">
+                            @if($company->referralReceived)
+                                <span class="badge badge-info">{{ $company->referralReceived->statusLabel() }}</span>
+                            @else
+                                <span class="text-muted">N/A</span>
+                            @endif
+                        </dd>
+
                         @if($companyType === 'provider')
                             <dt class="col-sm-3">Open API Access</dt>
                             <dd class="col-sm-9">
@@ -387,6 +405,52 @@
                         </ul>
                     @else
                         <p class="text-muted p-3">No users yet.</p>
+                    @endif
+                </div>
+            </div>
+
+            <!-- Companies referred by this company -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Referred Companies</h3>
+                    <div class="card-tools">
+                        <span class="badge badge-secondary">{{ $company->referralsMade->count() }}</span>
+                    </div>
+                </div>
+                <div class="card-body p-0" style="max-height: 300px; overflow-y: auto;">
+                    @if($company->referralsMade->count() > 0)
+                        <table class="table table-sm table-striped mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Company Name</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($company->referralsMade->sortByDesc('created_at') as $referral)
+                                    <tr>
+                                        <td>
+                                            @if($referral->referredCompany)
+                                                <a href="{{ route('admin.companies.show', $referral->referredCompany) }}">
+                                                    <strong>{{ $referral->referredCompany->name }}</strong>
+                                                </a>
+                                            @else
+                                                <span class="text-muted">Unknown</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            <span class="badge badge-info">{{ $referral->statusLabel() }}</span>
+                                        </td>
+                                        <td>
+                                            {{ $referral->created_at?->format('M j, Y') ?? 'N/A' }}
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    @else
+                        <p class="text-muted p-3 mb-0">No companies have been referred by this company.</p>
                     @endif
                 </div>
             </div>

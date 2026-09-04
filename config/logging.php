@@ -75,6 +75,26 @@ return [
             'replace_placeholders' => true,
         ],
 
+        /*
+         * Rentman project request integration (always check storage/logs/rentman-integration.log)
+         */
+        'rentman' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/rentman-integration.log'),
+            'level' => env('RENTMAN_LOG_LEVEL', env('LOG_LEVEL', 'debug')),
+            'replace_placeholders' => true,
+        ],
+
+        /*
+         * HireTrack import txt + provider email integration (always check storage/logs/hiretrack-integration.log)
+         */
+        'hiretrack' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/hiretrack-integration.log'),
+            'level' => env('HIRETRACK_LOG_LEVEL', env('LOG_LEVEL', 'debug')),
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),

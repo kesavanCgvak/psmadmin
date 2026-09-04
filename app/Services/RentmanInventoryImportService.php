@@ -458,7 +458,10 @@ class RentmanInventoryImportService
             $productUpdates['weight'] = $row->weight;
         }
         if ($product->country_of_origin === null && $row->country_of_origin !== null) {
-            $productUpdates['country_of_origin'] = $row->country_of_origin;
+            $coo = strtoupper(trim((string) $row->country_of_origin));
+            if ($coo !== '') {
+                $productUpdates['country_of_origin'] = $coo;
+            }
         }
         if ($product->linear_unit_id === null) {
             $linearUnitId = InventoryMeasurementUnits::resolveRentmanLinearUnitId();

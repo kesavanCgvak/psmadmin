@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\CompanyManagementController;
 use App\Http\Controllers\Api\AuthController;
 // Duplicate import removed during formatting cleanup
 use App\Http\Controllers\Api\BrandController;
@@ -32,6 +33,7 @@ use App\Http\Controllers\Api\PricingSchemeController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PromotionalLogoController;
 use App\Http\Controllers\Api\ProviderApiKeyController;
+use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\RegistrationCheckController;
 use App\Http\Controllers\Api\RentalJobActionsController;
 use App\Http\Controllers\Api\RentalJobController;
@@ -61,6 +63,13 @@ Route::post('/auth/refresh', [AuthController::class, 'refresh']);
 // Registration availability checks (public, JSON body)
 Route::post('/registration/availability', [RegistrationCheckController::class, 'checkAvailability']);
 Route::post('/contact-sales', [SupportRequestController::class, 'contactSales']);
+
+// Referral code validation (public; returns only basic referring company info)
+Route::get('/referrals/{referral_code}', [ReferralController::class, 'show']);
+
+// Registration "Referred By" company search (public; limited id/name results only)
+Route::get('/registration/companies/search', [ReferralController::class, 'searchCompanies'])
+    ->middleware('throttle:30,1');
 
 // Mail Test API (public, for testing and debugging mail configuration only)
 Route::post('/mail/test', [MailTestController::class, 'testEmail']);
@@ -145,6 +154,9 @@ Route::middleware('jwt.verify')->group(function () {
     Route::delete('/company/users/{id}', [CompanyUserController::class, 'deleteUser']);
     Route::put('/company/users/{id}/make-admin', [CompanyUserController::class, 'makeAdmin']);
 
+    // Company referral link (get or create reusable link)
+    Route::post('/referrals', [ReferralController::class, 'store']);
+
     Route::get('/company/info', [CompanyController::class, 'getInfo']);
     Route::put('/company/info/update', [CompanyController::class, 'updateCompanyInfo']);
     Route::get('/company/default-contact', [CompanyController::class, 'getDefaultContact']);
@@ -226,6 +238,7 @@ Route::middleware(['jwt.verify', 'throttle:12,1'])->prefix('provider/api-keys')-
 
 Route::prefix('v1/partner')->middleware(['provider.api.key', 'throttle:60,1'])->group(function () {
     Route::get('/products/search', [PartnerProductController::class, 'search']);
+    Route::get('/products', [PartnerProductController::class, 'list']);
     Route::get('/products/{product_id}', [PartnerProductController::class, 'details'])->whereNumber('product_id');
 });
 
@@ -240,6 +253,8 @@ Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
 Route::middleware(['jwt.verify'])->prefix('company-inventory')->group(function () {
     Route::post('/search-flex-product', [FlexInventoryController::class, 'searchFlexProduct']);
     Route::post('/confirm-flex-sync', [FlexInventoryController::class, 'confirmFlexSync']);
+    Route::post('/search-rentman-product', [RentmanEquipmentController::class, 'searchRentmanProduct']);
+    Route::post('/confirm-rentman-sync', [RentmanEquipmentController::class, 'confirmRentmanSync']);
 });
 
 // Rentman equipment (local cache + import; search is DB-only)
@@ -378,6 +393,13 @@ Route::middleware('jwt.verify')->group(function () {
     Route::get('/subscription/billing-history', [SubscriptionController::class, 'billingHistory']);
     Route::get('/subscription/invoice/{invoiceId}', [SubscriptionController::class, 'downloadInvoice']);
 
+});
+
+// ------------------------------
+// 🛡 Admin APIs (session auth; used by AdminLTE / admin tools)
+// ------------------------------
+Route::middleware(['web', 'auth', 'verified', 'admin.access'])->prefix('admin')->group(function () {
+    Route::get('/companies/{company}/referrals', [CompanyManagementController::class, 'referrals']);
 });
 
 // Contact Sales API (public, no authentication required)

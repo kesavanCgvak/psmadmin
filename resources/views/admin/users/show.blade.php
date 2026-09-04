@@ -61,6 +61,20 @@
                             <b>Company</b> <a class="float-right">{{ $user->company?->name ?? 'N/A' }}</a>
                         </li>
                         <li class="list-group-item">
+                            <b>Referred By</b>
+                            <a class="float-right">{{ $user->company?->referralReceived?->referrerCompany?->name ?? 'N/A' }}</a>
+                        </li>
+                        <li class="list-group-item">
+                            <b>Referral Status</b>
+                            <a class="float-right">
+                                @if($user->company?->referralReceived)
+                                    <span class="badge badge-info">{{ $user->company->referralReceived->statusLabel() }}</span>
+                                @else
+                                    N/A
+                                @endif
+                            </a>
+                        </li>
+                        <li class="list-group-item">
                             <b>Status</b> <a class="float-right">
                                 <span class="badge badge-{{ $user->email_verified ? 'success' : 'warning' }}">
                                     {{ $user->email_verified ? 'Verified' : 'Unverified' }}
