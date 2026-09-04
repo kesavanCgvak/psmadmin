@@ -81,6 +81,60 @@ class PartnerProductController extends Controller
         ]);
     }
 
+    /**
+     * List provider-scoped products with minimal fields for third-party integrations.
+     */
+    public function list(Request $request): JsonResponse
+    {
+        $request->validate([
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:100',
+        ]);
+
+        $providerCompany = $request->attributes->get('provider_company');
+        if (!$providerCompany) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Provider company context is missing.',
+            ], 403);
+        }
+
+        $perPage = (int) $request->query('per_page', config('app.admin_list_per_page', 25));
+        $page = (int) $request->query('page', 1);
+        $offset = ($page - 1) * $perPage;
+
+        // Provider-scoped inventory rows only; returns minimal product identity fields.
+        $baseQuery = DB::table('company_inventory as ci')
+            ->join('inventory_master as p', 'ci.product_id', '=', 'p.id')
+            ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
+            ->where('ci.company_id', $providerCompany->id);
+
+        $total = (clone $baseQuery)->count('ci.id');
+
+        $products = $baseQuery
+            ->select(
+                'p.id as product_id',
+                'p.psm_code',
+                DB::raw("TRIM(CONCAT_WS(' ', b.name, p.model)) as product_name")
+            )
+            ->orderBy('p.id', 'desc')
+            ->offset($offset)
+            ->limit($perPage)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Products fetched successfully.',
+            'data' => $products,
+            'meta' => [
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'total_pages' => $perPage > 0 ? (int) ceil($total / $perPage) : 0,
+            ],
+        ]);
+    }
+
     public function details(Request $request, int $productId): JsonResponse
     {
         $providerCompany = $request->attributes->get('provider_company');
