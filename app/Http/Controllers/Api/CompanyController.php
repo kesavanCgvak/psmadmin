@@ -1175,7 +1175,7 @@ class CompanyController extends Controller
             }
 
             // 2️⃣ Get all companies except user's company (exclude admin-blocked)
-            $companies = Company::with(['country', 'state', 'city'])
+            $companies = Company::with(['country', 'state', 'city', 'defaultContactProfile'])
                 ->where('id', '!=', $user->company_id)
                 ->whereNull('blocked_by_admin_at')
                 ->get();
@@ -1316,6 +1316,9 @@ class CompanyController extends Controller
 
                     // Block status
                     'is_blocked' => in_array($company->id, $blockedCompanies),
+
+                    'default_contact_email' => $company->defaultContactProfile?->email,
+                    'default_contact_mobile' => $company->defaultContactProfile?->mobile,
                 ];
             });
 
