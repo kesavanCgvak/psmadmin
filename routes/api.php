@@ -51,6 +51,7 @@ use App\Http\Controllers\Api\TermsAndConditionsController;
 use App\Http\Controllers\Api\UserProfileController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Artisan;
 
 Route::post('register', [AuthController::class, 'register']);
 Route::post('login', [AuthController::class, 'login']);
@@ -403,4 +404,59 @@ Route::middleware(['web', 'auth', 'verified', 'admin.access'])->prefix('admin')-
     Route::get('/companies/{company}/referrals', [CompanyManagementController::class, 'referrals']);
 });
 
+
 // Contact Sales API (public, no authentication required)
+
+Route::get('/cache-clear', function () {
+    Artisan::call('cache:clear');
+
+    return response()->json([
+        'success' => true,
+        'message' => Artisan::output(),
+    ]);
+});
+
+Route::get('/config-clear', function () {
+    Artisan::call('config:clear');
+
+    return response()->json([
+        'success' => true,
+        'message' => Artisan::output(),
+    ]);
+});
+
+Route::get('/route-clear', function () {
+    Artisan::call('route:clear');
+
+    return response()->json([
+        'success' => true,
+        'message' => Artisan::output(),
+    ]);
+});
+
+Route::get('/view-clear', function () {
+    Artisan::call('view:clear');
+
+    return response()->json([
+        'success' => true,
+        'message' => Artisan::output(),
+    ]);
+});
+
+Route::get('/optimize-clear', function () {
+    Artisan::call('optimize:clear');
+
+    return response()->json([
+        'success' => true,
+        'message' => Artisan::output(),
+    ]);
+});
+
+Route::get('/optimize', function () {
+    Artisan::call('optimize');
+
+    return response()->json([
+        'success' => true,
+        'message' => Artisan::output(),
+    ]);
+});
