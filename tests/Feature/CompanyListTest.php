@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\Company;
 use App\Models\User;
 use App\Models\UserProfile;
+use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -18,6 +20,13 @@ class CompanyListTest extends TestCase
         parent::setUp();
 
         $this->createMinimalSchema();
+        config(['presence.online_status_timeout' => 120]);
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
     }
 
     public function test_list_companies_includes_default_contact_email_and_mobile(): void
@@ -50,6 +59,8 @@ class CompanyListTest extends TestCase
         $this->assertArrayHasKey('rating_breakdown', $company);
         $this->assertArrayHasKey('user_rating', $company);
         $this->assertArrayHasKey('is_blocked', $company);
+        $this->assertArrayHasKey('is_online', $company);
+        $this->assertFalse($company['is_online']);
     }
 
     public function test_list_companies_returns_null_default_contact_fields_when_missing(): void
@@ -91,6 +102,132 @@ class CompanyListTest extends TestCase
 
         $this->assertContains($other->id, $ids);
         $this->assertNotContains($ownCompany->id, $ids);
+    }
+
+    public function test_list_companies_is_online_when_associated_user_was_seen_recently(): void
+    {
+        Carbon::setTestNow('2026-09-09 12:00:00');
+
+        [$caller] = $this->createCompanyWithUser('Caller Company');
+        [$providerUser, $listed] = $this->createCompanyWithUser('ABC Rental Company');
+        $this->setLastSeen($providerUser, now()->subSeconds(119));
+
+        $response = $this->withToken($this->tokenFor($caller))
+            ->getJson('/api/companies');
+
+        $company = collect($response->json('companies'))->firstWhere('id', $listed->id);
+
+        $this->assertNotNull($company);
+        $this->assertTrue($company['is_online']);
+        $this->assertIsBool($company['is_online']);
+    }
+
+    public function test_list_companies_is_offline_when_last_seen_is_older_than_timeout(): void
+    {
+        Carbon::setTestNow('2026-09-09 12:00:00');
+
+        [$caller] = $this->createCompanyWithUser('Caller Company');
+        [$providerUser, $listed] = $this->createCompanyWithUser('ABC Rental Company');
+        $this->setLastSeen($providerUser, now()->subSeconds(121));
+
+        $response = $this->withToken($this->tokenFor($caller))
+            ->getJson('/api/companies');
+
+        $company = collect($response->json('companies'))->firstWhere('id', $listed->id);
+
+        $this->assertNotNull($company);
+        $this->assertFalse($company['is_online']);
+        $this->assertIsBool($company['is_online']);
+    }
+
+    public function test_list_companies_is_offline_when_last_seen_at_is_null(): void
+    {
+        [$caller] = $this->createCompanyWithUser('Caller Company');
+        [, $listed] = $this->createCompanyWithUser('ABC Rental Company');
+
+        $response = $this->withToken($this->tokenFor($caller))
+            ->getJson('/api/companies');
+
+        $company = collect($response->json('companies'))->firstWhere('id', $listed->id);
+
+        $this->assertNotNull($company);
+        $this->assertFalse($company['is_online']);
+    }
+
+    public function test_list_companies_is_offline_when_provider_has_no_associated_user(): void
+    {
+        [$caller] = $this->createCompanyWithUser('Caller Company');
+        $listed = Company::create([
+            'name' => 'No Users Co',
+            'account_type' => 'provider',
+        ]);
+
+        $response = $this->withToken($this->tokenFor($caller))
+            ->getJson('/api/companies');
+
+        $company = collect($response->json('companies'))->firstWhere('id', $listed->id);
+
+        $this->assertNotNull($company);
+        $this->assertFalse($company['is_online']);
+    }
+
+    public function test_list_companies_does_not_n_plus_one_for_online_status(): void
+    {
+        [$caller] = $this->createCompanyWithUser('Caller Company');
+
+        for ($i = 1; $i <= 5; $i++) {
+            [$providerUser] = $this->createCompanyWithUser("Provider {$i}");
+            $this->setLastSeen($providerUser, now());
+        }
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $this->withToken($this->tokenFor($caller))
+            ->getJson('/api/companies')
+            ->assertOk();
+
+        $presenceQueries = collect(DB::getQueryLog())->filter(
+            fn (array $query) => str_contains($query['query'], 'last_seen_at')
+        );
+
+        $this->assertCount(1, $presenceQueries);
+    }
+
+    public function test_list_companies_orders_online_first_then_newest_registered(): void
+    {
+        Carbon::setTestNow('2026-09-09 12:00:00');
+
+        [$caller] = $this->createCompanyWithUser('Caller Company');
+
+        [$oldOfflineUser, $oldOffline] = $this->createCompanyWithUser('Old Offline');
+        $this->setCreatedAt($oldOffline, now()->subDays(10));
+        $this->setLastSeen($oldOfflineUser, now()->subMinutes(10));
+
+        [, $newOffline] = $this->createCompanyWithUser('New Offline');
+        $this->setCreatedAt($newOffline, now()->subDays(1));
+
+        [$oldOnlineUser, $oldOnline] = $this->createCompanyWithUser('Old Online');
+        $this->setCreatedAt($oldOnline, now()->subDays(8));
+        $this->setLastSeen($oldOnlineUser, now()->subSeconds(30));
+
+        [$newOnlineUser, $newOnline] = $this->createCompanyWithUser('New Online');
+        $this->setCreatedAt($newOnline, now()->subHours(2));
+        $this->setLastSeen($newOnlineUser, now()->subSeconds(10));
+
+        $response = $this->withToken($this->tokenFor($caller))
+            ->getJson('/api/companies');
+
+        $response->assertOk();
+
+        $this->assertSame(
+            [$newOnline->id, $oldOnline->id, $newOffline->id, $oldOffline->id],
+            collect($response->json('companies'))->pluck('id')->all()
+        );
+        $this->assertTrue($response->json('companies.0.is_online'));
+        $this->assertTrue($response->json('companies.1.is_online'));
+        $this->assertFalse($response->json('companies.2.is_online'));
+        $this->assertFalse($response->json('companies.3.is_online'));
     }
 
     /**
@@ -140,6 +277,18 @@ class CompanyListTest extends TestCase
     private function tokenFor(User $user): string
     {
         return JWTAuth::fromUser($user);
+    }
+
+    private function setLastSeen(User $user, ?Carbon $at): void
+    {
+        $user->last_seen_at = $at;
+        $user->save();
+    }
+
+    private function setCreatedAt(Company $company, Carbon $at): void
+    {
+        $company->created_at = $at;
+        $company->save();
     }
 
     private function createMinimalSchema(): void
@@ -201,6 +350,7 @@ class CompanyListTest extends TestCase
             $table->boolean('is_admin')->default(false);
             $table->string('role')->default('user');
             $table->boolean('is_blocked')->default(false);
+            $table->timestamp('last_seen_at')->nullable();
             $table->timestamps();
         });
 

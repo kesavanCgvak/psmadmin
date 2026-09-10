@@ -36,5 +36,6 @@
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="JWT_SECRET" value="testing-jwt-secret-key-for-phpunit-only"/>
         <env name="APP_FRONTEND_URL" value="https://psm.com"/>
+        <env name="ONLINE_STATUS_TIMEOUT" value="120"/>
     </php>
 </phpunit>

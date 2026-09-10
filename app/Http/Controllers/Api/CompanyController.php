@@ -18,6 +18,7 @@ use App\Models\CompanyBlock;
 use App\Models\CompanyProviderBlock;
 use App\Models\JobRating;
 use App\Support\DefaultImagePath;
+use App\Support\UserPresence;
 
 
 
@@ -1262,6 +1263,20 @@ class CompanyController extends Controller
                 ->pluck('company_id')
                 ->toArray();
 
+            $onlineCompanyIds = array_flip(UserPresence::onlineCompanyIds($companyIds));
+
+            // Online companies first, then newest registrations.
+            $companies = $companies->sort(function ($a, $b) use ($onlineCompanyIds) {
+                $aOnline = isset($onlineCompanyIds[(int) $a->id]) ? 1 : 0;
+                $bOnline = isset($onlineCompanyIds[(int) $b->id]) ? 1 : 0;
+
+                if ($aOnline !== $bOnline) {
+                    return $bOnline <=> $aOnline;
+                }
+
+                return ($b->created_at?->getTimestamp() ?? 0) <=> ($a->created_at?->getTimestamp() ?? 0);
+            })->values();
+
             // 5️⃣ Final response map (no queries inside)
             $formatted = $companies->map(function ($company) use (
                 $jobRatingsAvg,
@@ -1271,7 +1286,8 @@ class CompanyController extends Controller
                 $companyRatingsCount,
                 $companyRatingsBreakdown,
                 $userRatings,
-                $blockedCompanies
+                $blockedCompanies,
+                $onlineCompanyIds
             ) {
                 // Calculate average rating and count: prioritize job_ratings (new system) if available
                 $avgRating = 0;
@@ -1319,8 +1335,10 @@ class CompanyController extends Controller
 
                     'default_contact_email' => $company->defaultContactProfile?->email,
                     'default_contact_mobile' => $company->defaultContactProfile?->mobile,
+
+                    'is_online' => isset($onlineCompanyIds[(int) $company->id]),
                 ];
-            });
+            })->values();
 
             return response()->json([
                 'success' => true,

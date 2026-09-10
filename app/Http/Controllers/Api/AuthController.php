@@ -27,6 +27,7 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 use App\Models\Equipment;
 use App\Models\Product;
 use App\Support\ProviderRegistrationInventory;
+use App\Support\UserPresence;
 
 class AuthController extends Controller
 {
@@ -909,6 +910,7 @@ class AuthController extends Controller
         $user = auth('api')->user() ?? JWTAuth::user();
 
         if ($user) {
+            UserPresence::clear($user);
             AuthEventLogger::logLogout($user, $request, 'api');
         }
 

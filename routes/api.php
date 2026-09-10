@@ -128,6 +128,7 @@ Route::middleware('jwt.verify')->group(function () {
 // ------------------------------
 Route::middleware('jwt.verify')->group(function () {
     Route::get('/user/profile', [UserProfileController::class, 'getProfile']);
+    Route::post('/user/heartbeat', [UserProfileController::class, 'heartbeat']);
     Route::post('/profile/upload-picture', [UserProfileController::class, 'uploadPicture']);
     Route::post('/profile/change-password', [UserProfileController::class, 'changePassword']);
 

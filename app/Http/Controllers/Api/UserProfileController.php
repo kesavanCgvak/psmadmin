@@ -11,10 +11,32 @@ use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Validation\Rule;
 use App\Support\DefaultImagePath;
+use App\Support\UserPresence;
 
 
 class UserProfileController extends Controller
 {
+    /**
+     * Record that the authenticated user is currently online.
+     */
+    public function heartbeat()
+    {
+        $user = JWTAuth::parseToken()->authenticate();
+
+        if (! $user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized user',
+            ], 401);
+        }
+
+        UserPresence::heartbeat($user);
+
+        return response()->json([
+            'success' => true,
+        ]);
+    }
+
     public function uploadPicture(Request $request)
     {
         try {
