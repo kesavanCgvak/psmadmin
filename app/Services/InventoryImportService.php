@@ -15,9 +15,8 @@ class InventoryImportService
     /**
      * Check if company already has inventory for the given product (inventory_master).
      *
-     * @param int $companyId Company ID
-     * @param int $productId inventory_master (Product) ID
-     * @return Equipment|null
+     * @param  int  $companyId  Company ID
+     * @param  int  $productId  inventory_master (Product) ID
      */
     public static function findExistingInventoryForProduct(int $companyId, int $productId): ?Equipment
     {
@@ -27,10 +26,61 @@ class InventoryImportService
     }
 
     /**
+     * Copy an inventory_master product into the authenticated company's inventory.
+     * Fills catalog specs only; does not set Flex/Rentman or rental_price.
+     *
+     * @param  array{quantity?: int, rental_price?: float|null, software_code?: string|null}  $companyFields
+     * @return array{created: bool, already_exists: bool, equipment: Equipment}
+     */
+    public static function importMasterProductToCompany(
+        int $companyId,
+        int $userId,
+        int $productId,
+        array $companyFields = []
+    ): array {
+        $existing = self::findExistingInventoryForProduct($companyId, $productId);
+
+        if ($existing) {
+            return [
+                'created' => false,
+                'already_exists' => true,
+                'equipment' => $existing,
+            ];
+        }
+
+        $product = Product::findOrFail($productId);
+
+        $equipment = DB::transaction(function () use ($companyId, $userId, $productId, $product, $companyFields) {
+            $equipment = Equipment::create(array_merge([
+                'user_id' => $userId,
+                'company_id' => $companyId,
+                'product_id' => $productId,
+                'quantity' => $companyFields['quantity'] ?? 1,
+            ], CompanyInventorySpecs::attributesFromProduct($product), array_filter(
+                [
+                    'rental_price' => $companyFields['rental_price'] ?? null,
+                    'software_code' => $companyFields['software_code'] ?? null,
+                ],
+                static fn ($value) => $value !== null && $value !== ''
+            )));
+
+            InventoryImageSyncService::syncMasterToEquipment($productId, (int) $equipment->id, true);
+
+            return $equipment->fresh();
+        });
+
+        return [
+            'created' => true,
+            'already_exists' => false,
+            'equipment' => $equipment,
+        ];
+    }
+
+    /**
      * Check import status for a Flex product. Used by checkImport and import endpoints.
      *
-     * @param int $companyId Company ID
-     * @param string $flexId Flex resource ID
+     * @param  int  $companyId  Company ID
+     * @param  string  $flexId  Flex resource ID
      * @return array{status: string, flex?: array, inventory_id?: int, product_id?: int, day_rate?: float|null, message?: string}
      */
     public static function checkImportStatus(int $companyId, string $flexId): array
@@ -61,13 +111,13 @@ class InventoryImportService
         $proSubFields = FlexService::getProSubrentalMarketplaceCustomFields($companyId, $flexId);
         if ($proSubFields !== null) {
             $flex['publish_to_psm'] = $proSubFields['publish_to_psm'] ?? null;
-            if (!empty(trim((string) ($proSubFields['psm_code'] ?? '')))) {
+            if (! empty(trim((string) ($proSubFields['psm_code'] ?? '')))) {
                 $flex['flex_psm_code'] = trim((string) $proSubFields['psm_code']);
             }
         }
 
         $existingProduct = FlexService::matchUsingPSMCode($companyId, $flexId, $proSubFields);
-        if (!$existingProduct) {
+        if (! $existingProduct) {
             $name = $details['name'] ?? '';
             $parsed = FlexService::parseBrandAndModel($name);
             $existingProduct = FlexService::findExistingProduct($parsed['brand_id'], $parsed['normalized_model'], $name);
@@ -215,7 +265,7 @@ class InventoryImportService
 
         if ($unlinked) {
             $result = self::linkFlexToExistingInventory($companyId, $unlinked->id, $flexId, $quantity, $rentalOverride);
-            if (!$result['success']) {
+            if (! $result['success']) {
                 throw new \RuntimeException($result['message']);
             }
             $equipment = Equipment::where('company_id', $companyId)
@@ -242,11 +292,11 @@ class InventoryImportService
      * Link an existing company_inventory record to a Flex resource.
      * Fetches Flex pricing and details, updates company_inventory and inventory_master.
      *
-     * @param int $companyId Company ID
-     * @param int $inventoryId company_inventory (Equipment) ID
-     * @param string $flexId Flex resource ID
-     * @param int|null $quantity When set, updates company_inventory.quantity
-     * @param float|null $rentalOverride When set, uses this instead of Flex Day Rate
+     * @param  int  $companyId  Company ID
+     * @param  int  $inventoryId  company_inventory (Equipment) ID
+     * @param  string  $flexId  Flex resource ID
+     * @param  int|null  $quantity  When set, updates company_inventory.quantity
+     * @param  float|null  $rentalOverride  When set, uses this instead of Flex Day Rate
      * @return array{success: bool, status?: string, message: string}
      */
     public static function linkFlexToExistingInventory(
@@ -260,7 +310,7 @@ class InventoryImportService
             ->where('company_id', $companyId)
             ->first();
 
-        if (!$inventory) {
+        if (! $inventory) {
             return [
                 'success' => false,
                 'message' => 'Inventory not found or does not belong to this company.',
@@ -379,7 +429,7 @@ class InventoryImportService
             $inventory->update($inventoryUpdates);
 
             $imageUrls = $details['imageUrls'] ?? [];
-            if (!empty($imageUrls) && $inventory->product_id) {
+            if (! empty($imageUrls) && $inventory->product_id) {
                 InventoryImageSyncService::importUrlsToMasterAndEquipment(
                     (int) $inventory->product_id,
                     (int) $inventory->id,
