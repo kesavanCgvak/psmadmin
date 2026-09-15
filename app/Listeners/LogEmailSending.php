@@ -3,7 +3,10 @@
 namespace App\Listeners;
 
 use App\Models\EmailLog;
+use App\Models\User;
+use App\Models\UserProfile;
 use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Support\Facades\Log;
 
 class LogEmailSending
 {
@@ -19,8 +22,9 @@ class LogEmailSending
             $fromEmail = $this->extractFirstAddress($message->getFrom());
             $toEmail = $this->extractFirstAddress($message->getTo());
             $subject = $message->getSubject();
+            $explicitEmailType = $this->extractHeaderValue($message, EmailLog::EMAIL_TYPE_HEADER);
 
-            if (!$toEmail) {
+            if (! $toEmail) {
                 return;
             }
 
@@ -38,7 +42,7 @@ class LogEmailSending
                 $log = $existingLog;
             } else {
                 $mailClass = $this->extractMailClass($message);
-                $emailType = EmailLog::inferEmailType($subject, $mailClass);
+                $emailType = $explicitEmailType ?: EmailLog::inferEmailType($subject, $mailClass);
                 $relatedUserId = $this->resolveRelatedUserId($toEmail);
 
                 $log = EmailLog::create([
@@ -55,7 +59,7 @@ class LogEmailSending
 
             $message->getHeaders()->addTextHeader(EmailLog::LOG_ID_HEADER, (string) $log->id);
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('Email log (sending) failed', [
+            Log::error('Email log (sending) failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
@@ -82,7 +86,22 @@ class LogEmailSending
 
     private function extractMailClass($message): ?string
     {
-        return null;
+        return $this->extractHeaderValue($message, EmailLog::MAIL_CLASS_HEADER);
+    }
+
+    private function extractHeaderValue($message, string $headerName): ?string
+    {
+        $headers = $message->getHeaders();
+        if (! $headers->has($headerName)) {
+            return null;
+        }
+
+        $header = $headers->get($headerName);
+        $value = $header && method_exists($header, 'getBodyAsString')
+            ? trim($header->getBodyAsString())
+            : null;
+
+        return $value !== '' ? $value : null;
     }
 
     /**
@@ -95,12 +114,12 @@ class LogEmailSending
 
     private function resolveRelatedUserId(string $toEmail): ?int
     {
-        $user = \App\Models\User::where('email', $toEmail)->first();
+        $user = User::where('email', $toEmail)->first();
         if ($user) {
             return $user->id;
         }
 
-        $profile = \App\Models\UserProfile::where('email', $toEmail)->first();
+        $profile = UserProfile::where('email', $toEmail)->first();
         if ($profile && $profile->user_id) {
             return $profile->user_id;
         }

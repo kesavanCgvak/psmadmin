@@ -133,6 +133,7 @@ return [
     'admin' => [
         'name' => env('MAIL_FROM_NAME', 'PSM Admin'),
         'address' => env('MAIL_TO_ADMIN', 'noreply@prosubmarket.com'),
+        'panel_url' => env('ADMIN_PANEL_URL'),
     ],
 
     /*
@@ -160,7 +161,6 @@ return [
     'support_inbox' => env('SUPPORT_INBOX_EMAIL', 'support@secondwarehouse.com'),
 
     /** Sales Inbox Email   */
-
     'sales_inbox' => env('SALES_INBOX_EMAIL', 'contact@secondwarehouse.com'),
 
     /*

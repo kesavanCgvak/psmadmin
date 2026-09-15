@@ -25,13 +25,21 @@ class EmailLog extends Model
     ];
 
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_SENT = 'sent';
+
     public const STATUS_FAILED = 'failed';
+
+    public const TYPE_PSM_PRODUCT_SUBMISSION = 'PSM Product Submission';
 
     /**
      * Header name used to pass email log ID between MessageSending and MessageSent events.
      */
     public const LOG_ID_HEADER = 'X-Email-Log-Id';
+
+    public const EMAIL_TYPE_HEADER = 'X-Email-Type';
+
+    public const MAIL_CLASS_HEADER = 'X-Mail-Class';
 
     public function relatedUser(): BelongsTo
     {
@@ -41,19 +49,24 @@ class EmailLog extends Model
     /**
      * Infer email type from subject or mail class.
      */
-    public static function inferEmailType(?string $subject, ?string $mailClass): string
+    public static function inferEmailType(?string $subject, ?string $mailClass = null): string
     {
         if ($mailClass) {
             $shortName = class_basename($mailClass);
-            return $shortName;
+            $classMap = [
+                'PsmProductSubmitted' => self::TYPE_PSM_PRODUCT_SUBMISSION,
+            ];
+
+            return $classMap[$shortName] ?? $shortName;
         }
 
-        if (!$subject) {
+        if (! $subject) {
             return 'unknown';
         }
 
         $subjectLower = strtolower($subject);
         $typeMap = [
+            self::TYPE_PSM_PRODUCT_SUBMISSION => ['psm product submitted', 'new psm product'],
             'verification' => ['verification', 'verify', 'confirm your email'],
             'forgot password' => ['forgot', 'password reset', 'reset password'],
             'rental request' => ['rental', 'quote request', 'rental request'],

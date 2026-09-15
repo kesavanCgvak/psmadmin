@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PromotionalLogoController;
 use App\Http\Controllers\Api\ProviderApiKeyController;
 use App\Http\Controllers\Api\PsmEquipmentController;
+use App\Http\Controllers\Api\PsmProductSubmissionController;
 use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\RegistrationCheckController;
 use App\Http\Controllers\Api\RentalJobActionsController;
@@ -206,6 +207,10 @@ Route::middleware('jwt.verify')->get('/psm-equipments', [PsmEquipmentController:
 Route::middleware('jwt.verify')->get('/psm-equipments/{id}', [PsmEquipmentController::class, 'show'])
     ->whereNumber('id');
 Route::middleware('jwt.verify')->post('/psm-equipments/{id}/import', [PsmEquipmentController::class, 'import'])
+    ->whereNumber('id');
+Route::middleware('jwt.verify')->get('/psm-product-submissions', [PsmProductSubmissionController::class, 'index']);
+Route::middleware('jwt.verify')->post('/psm-product-submissions', [PsmProductSubmissionController::class, 'store']);
+Route::middleware('jwt.verify')->get('/psm-product-submissions/{id}', [PsmProductSubmissionController::class, 'show'])
     ->whereNumber('id');
 Route::middleware('jwt.verify')->get('/inventory-master/physical-details', [InventoryMasterDataController::class, 'show']);
 Route::middleware(['jwt.verify', 'throttle:5,1'])->post(
