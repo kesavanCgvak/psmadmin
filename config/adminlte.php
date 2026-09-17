@@ -548,6 +548,28 @@ return [
             ],
         ],
         [
+            'text' => 'AI Chatbot',
+            'icon' => 'fas fa-fw fa-robot',
+            'icon_color' => 'primary',
+            'submenu' => [
+                [
+                    'text' => 'Chat',
+                    'route' => 'admin.chatbot.index',
+                    'icon' => 'fas fa-fw fa-comment-dots',
+                ],
+                [
+                    'text' => 'Knowledge Base',
+                    'route' => 'admin.chatbot.knowledge.index',
+                    'icon' => 'fas fa-fw fa-book',
+                ],
+                [
+                    'text' => 'Conversations',
+                    'route' => 'admin.chatbot.conversations.index',
+                    'icon' => 'fas fa-fw fa-history',
+                ],
+            ],
+        ],
+        [
             'text' => 'User Login Activity',
             'route' => 'admin.user-auth-events.index',
             'icon' => 'fas fa-fw fa-user-clock',

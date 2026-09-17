@@ -31,7 +31,7 @@ class GeminiProductSpecificationProvider implements ProductSpecificationAiProvid
         $this->apiKey = (string) ($config['api_key'] ?? '');
         $this->baseUrl = rtrim((string) ($config['base_url'] ?? 'https://generativelanguage.googleapis.com'), '/');
         $this->apiVersion = (string) ($config['api_version'] ?? 'v1beta');
-        $this->model = (string) ($config['model'] ?? 'gemini-2.5-flash');
+        $this->model = (string) ($config['model'] ?? 'gemini-3.6-flash');
         $this->timeout = (int) config('ai.timeout', 60);
     }
 

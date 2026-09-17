@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CityController;
+use App\Http\Controllers\Api\ChatbotController as ApiChatbotController;
 use App\Http\Controllers\Api\CmsPageController as ApiCmsPageController;
 use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\CompanyController;
@@ -373,6 +374,16 @@ Route::middleware('jwt.verify')->group(function () {
 
     // Support Request API
     Route::post('/support-request', [SupportRequestController::class, 'store']);
+
+    // AI Chatbot API
+    Route::prefix('chatbot')->group(function () {
+        Route::get('/knowledge', [ApiChatbotController::class, 'knowledge']);
+        Route::get('/conversations', [ApiChatbotController::class, 'conversations']);
+        Route::post('/conversations', [ApiChatbotController::class, 'start']);
+        Route::get('/conversations/{conversationId}/messages', [ApiChatbotController::class, 'messages']);
+        Route::post('/message', [ApiChatbotController::class, 'message'])
+            ->middleware('throttle:20,1');
+    });
 });
 
 // ------------------------------

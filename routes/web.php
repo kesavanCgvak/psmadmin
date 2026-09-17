@@ -3,6 +3,9 @@
 use App\Http\Controllers\Admin\AdminUserManagementController;
 use App\Http\Controllers\Admin\BrandController;
 use App\Http\Controllers\Admin\CategoryController;
+use App\Http\Controllers\Admin\ChatbotController as AdminChatbotController;
+use App\Http\Controllers\Admin\ChatbotConversationController;
+use App\Http\Controllers\Admin\ChatbotKnowledgeController;
 use App\Http\Controllers\Admin\CityController;
 use App\Http\Controllers\Admin\CmsPageController as AdminCmsPageController;
 use App\Http\Controllers\Admin\CompanyManagementController;
@@ -316,6 +319,19 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
     Route::resource('cms-pages', AdminCmsPageController::class)->except(['show']);
     Route::post('/cms-pages/upload-image', [AdminCmsPageController::class, 'uploadImage'])
         ->name('cms-pages.upload-image');
+
+    // AI Chatbot
+    Route::get('/chatbot', [AdminChatbotController::class, 'index'])->name('chatbot.index');
+    Route::post('/chatbot/send', [AdminChatbotController::class, 'send'])
+        ->middleware('throttle:20,1')
+        ->name('chatbot.send');
+    Route::get('/chatbot/conversations', [ChatbotConversationController::class, 'index'])
+        ->name('chatbot.conversations.index');
+    Route::get('/chatbot/conversations/{conversation}', [ChatbotConversationController::class, 'show'])
+        ->name('chatbot.conversations.show');
+    Route::resource('chatbot/knowledge', ChatbotKnowledgeController::class)
+        ->names('chatbot.knowledge')
+        ->parameters(['knowledge' => 'knowledge']);
 
     // Terms and Conditions Management
     Route::get('/terms-and-conditions', [TermsAndConditionsController::class, 'index'])
