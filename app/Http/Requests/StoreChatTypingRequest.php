@@ -6,7 +6,7 @@ use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
-class ListChatConversationsRequest extends FormRequest
+class StoreChatTypingRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -15,12 +15,10 @@ class ListChatConversationsRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        foreach (['archived', 'include_archived', 'general_only'] as $key) {
-            if ($this->exists($key)) {
-                $this->merge([
-                    $key => filter_var($this->input($key), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
-                ]);
-            }
+        if ($this->exists('is_typing')) {
+            $this->merge([
+                'is_typing' => filter_var($this->input('is_typing'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
+            ]);
         }
     }
 
@@ -30,12 +28,7 @@ class ListChatConversationsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'archived' => ['nullable', 'boolean'],
-            'include_archived' => ['nullable', 'boolean'],
-            'general_only' => ['nullable', 'boolean'],
-            'rental_job_id' => ['nullable', 'integer', 'min:1'],
+            'is_typing' => ['required', 'boolean'],
         ];
     }
 

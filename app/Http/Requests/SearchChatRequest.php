@@ -6,22 +6,11 @@ use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
-class ListChatConversationsRequest extends FormRequest
+class SearchChatRequest extends FormRequest
 {
     public function authorize(): bool
     {
         return true;
-    }
-
-    protected function prepareForValidation(): void
-    {
-        foreach (['archived', 'include_archived', 'general_only'] as $key) {
-            if ($this->exists($key)) {
-                $this->merge([
-                    $key => filter_var($this->input($key), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
-                ]);
-            }
-        }
     }
 
     /**
@@ -30,12 +19,9 @@ class ListChatConversationsRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'q' => ['required', 'string', 'min:2', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'archived' => ['nullable', 'boolean'],
-            'include_archived' => ['nullable', 'boolean'],
-            'general_only' => ['nullable', 'boolean'],
-            'rental_job_id' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
         ];
     }
 

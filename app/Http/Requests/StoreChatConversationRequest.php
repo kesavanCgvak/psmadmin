@@ -27,6 +27,7 @@ class StoreChatConversationRequest extends FormRequest
                 'exists:companies,id',
                 Rule::notIn([$this->authenticatedCompanyId()]),
             ],
+            'rental_job_id' => ['nullable', 'integer', 'exists:rental_jobs,id'],
         ];
     }
 

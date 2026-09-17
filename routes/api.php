@@ -130,14 +130,32 @@ Route::middleware('jwt.verify')->group(function () {
 // 💬 Chat APIs
 // ------------------------------
 Route::middleware('jwt.verify')->prefix('chat')->group(function () {
+    Route::get('/realtime-config', [ChatController::class, 'realtimeConfig']);
+    Route::get('/unread-count', [ChatController::class, 'unreadCount']);
+    Route::get('/search', [ChatController::class, 'search'])->middleware('throttle:30,1');
+    Route::get('/notification-settings', [ChatController::class, 'notificationSettings']);
+    Route::put('/notification-settings', [ChatController::class, 'updateNotificationSettings']);
     Route::get('/conversations', [ChatController::class, 'index']);
     Route::post('/conversations', [ChatController::class, 'store'])->middleware('throttle:30,1');
+    Route::get('/conversations/{conversation}', [ChatController::class, 'show'])
+        ->whereNumber('conversation');
     Route::get('/conversations/{conversation}/messages', [ChatController::class, 'messages'])
         ->whereNumber('conversation');
     Route::post('/conversations/{conversation}/messages', [ChatController::class, 'sendMessage'])
         ->middleware('throttle:60,1')
         ->whereNumber('conversation');
+    Route::delete('/conversations/{conversation}/messages/{message}', [ChatController::class, 'destroyMessage'])
+        ->middleware('throttle:60,1')
+        ->whereNumber('conversation')
+        ->whereNumber('message');
+    Route::post('/conversations/{conversation}/typing', [ChatController::class, 'typing'])
+        ->middleware('throttle:60,1')
+        ->whereNumber('conversation');
     Route::post('/conversations/{conversation}/read', [ChatController::class, 'markRead'])
+        ->whereNumber('conversation');
+    Route::post('/conversations/{conversation}/archive', [ChatController::class, 'archive'])
+        ->whereNumber('conversation');
+    Route::post('/conversations/{conversation}/unarchive', [ChatController::class, 'unarchive'])
         ->whereNumber('conversation');
 });
 

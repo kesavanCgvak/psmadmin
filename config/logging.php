@@ -76,6 +76,16 @@ return [
         ],
 
         /*
+         * Chat / Reverb broadcasting (no JWT tokens or message bodies)
+         */
+        'chat' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/chat.log'),
+            'level' => env('CHAT_LOG_LEVEL', env('LOG_LEVEL', 'debug')),
+            'replace_placeholders' => true,
+        ],
+
+        /*
          * Rentman project request integration (always check storage/logs/rentman-integration.log)
          */
         'rentman' => [

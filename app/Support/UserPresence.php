@@ -57,4 +57,29 @@ final class UserPresence
             ->map(fn ($id) => (int) $id)
             ->all();
     }
+
+    /**
+     * Derive company online status from Reverb presence members.
+     * A company is online when at least one of its users is present.
+     *
+     * @param  iterable<int, array<string, mixed>|object>  $members
+     */
+    public static function companyIsOnlineFromPresenceMembers(iterable $members, int $companyId): bool
+    {
+        if ($companyId <= 0) {
+            return false;
+        }
+
+        foreach ($members as $member) {
+            $memberCompanyId = is_array($member)
+                ? (int) ($member['company_id'] ?? 0)
+                : (int) ($member->company_id ?? 0);
+
+            if ($memberCompanyId === $companyId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

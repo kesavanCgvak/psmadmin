@@ -21,9 +21,8 @@ class ChatMessageReceived extends Notification
     ) {}
 
     /**
-     * Phase 1 keeps the payload ready without delivering channels.
-     * Phase 2 can add `broadcast` (browser push) and/or `database`.
-     * Prefer notifying the recipient company's default contact first.
+     * Browser/desktop notifications are delivered by the frontend Notification API
+     * using the `chat.message.sent` Reverb payload. Mobile push is out of scope.
      *
      * @return list<string>
      */
@@ -37,13 +36,23 @@ class ChatMessageReceived extends Notification
      */
     public function toArray(object $notifiable): array
     {
+        $this->conversation->loadMissing(['companyA', 'companyB']);
+        $senderCompanyId = (int) $this->message->sender_company_id;
+        $senderCompanyName = null;
+        if ((int) $this->conversation->company_a_id === $senderCompanyId) {
+            $senderCompanyName = $this->conversation->companyA?->name;
+        } elseif ((int) $this->conversation->company_b_id === $senderCompanyId) {
+            $senderCompanyName = $this->conversation->companyB?->name;
+        }
+
         return [
             'conversation_id' => $this->conversation->id,
             'message_id' => $this->message->id,
             'sender_user_id' => $this->sender->id,
-            'sender_company_id' => $this->message->sender_company_id,
+            'sender_company_id' => $senderCompanyId,
             'sender_name' => $this->sender->profile?->full_name ?: $this->sender->getUsername(),
-            'preview' => Str::limit($this->message->message, 120),
+            'sender_company_name' => $senderCompanyName,
+            'preview' => Str::limit((string) $this->message->message, 80),
             'message_type' => $this->message->message_type,
             'default_contact_user_id' => $this->defaultContactUserId,
             'created_at' => $this->message->created_at?->toIso8601String(),

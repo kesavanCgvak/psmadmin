@@ -12,13 +12,28 @@ class ChatMessage extends Model
 
     public const TYPE_TEXT = 'text';
 
+    public const STATUS_SENT = 'sent';
+
+    public const STATUS_DELIVERED = 'delivered';
+
+    public const STATUS_READ = 'read';
+
     protected $fillable = [
         'conversation_id',
         'sender_user_id',
         'sender_company_id',
         'message',
         'message_type',
+        'delivered_at',
+        'deleted_by_user_id',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'delivered_at' => 'datetime',
+        ];
+    }
 
     public function conversation(): BelongsTo
     {
@@ -33,5 +48,10 @@ class ChatMessage extends Model
     public function senderCompany(): BelongsTo
     {
         return $this->belongsTo(Company::class, 'sender_company_id');
+    }
+
+    public function deletedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deleted_by_user_id');
     }
 }

@@ -6,24 +6,20 @@ use App\Events\ChatMessageSent;
 use App\Models\ChatConversation;
 use App\Models\ChatConversationUserState;
 use App\Models\ChatMessage;
-use App\Models\Company;
-use App\Models\User;
-use App\Models\UserProfile;
 use Carbon\Carbon;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Schema;
+use Tests\Concerns\InteractsWithChat;
 use Tests\TestCase;
-use Tymon\JWTAuth\Facades\JWTAuth;
 
 class ChatApiTest extends TestCase
 {
+    use InteractsWithChat;
+
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->createMinimalSchema();
+        $this->createMinimalChatSchema();
         config(['presence.online_status_timeout' => 120]);
     }
 
@@ -216,7 +212,11 @@ class ChatApiTest extends TestCase
             ->assertJsonPath('data.0.other_company_name', 'Company B')
             ->assertJsonPath('data.0.online_status', true)
             ->assertJsonPath('data.0.last_message.message', 'Yes, it is in stock.')
-            ->assertJsonPath('data.0.unread_count', 1);
+            ->assertJsonPath('data.0.last_message.is_deleted', false)
+            ->assertJsonPath('data.0.unread_count', 1)
+            ->assertJsonPath('data.0.archived', false)
+            ->assertJsonPath('data.0.rental_job_id', null)
+            ->assertJsonPath('meta.total_unread', 1);
 
         $this->assertIsBool($response->json('data.0.online_status'));
         $this->assertNotNull($response->json('data.0.other_company_logo'));
@@ -353,148 +353,4 @@ class ChatApiTest extends TestCase
             ->assertStatus(404);
     }
 
-    /**
-     * @param  list<string>  $fullNames
-     * @return array{0: User, 1: Company, ...}
-     */
-    private function createCompanyUsers(string $companyName, string $accountType, array $fullNames): array
-    {
-        $company = Company::create([
-            'name' => $companyName,
-            'account_type' => $accountType,
-        ]);
-
-        $users = [];
-        foreach ($fullNames as $index => $fullName) {
-            $isDefault = $index === 0;
-            $user = User::create([
-                'account_type' => $accountType,
-                'username' => 'user_'.uniqid(),
-                'email' => uniqid('u_', true).'@example.com',
-                'password' => Hash::make('password'),
-                'company_id' => $company->id,
-                'is_admin' => $isDefault ? 1 : 0,
-                'is_company_default_contact' => $isDefault,
-                'role' => $isDefault ? 'admin' : 'user',
-                'email_verified' => true,
-            ]);
-
-            $parts = explode(' ', $fullName, 2);
-            UserProfile::create([
-                'user_id' => $user->id,
-                'full_name' => $fullName,
-                'first_name' => $parts[0],
-                'last_name' => $parts[1] ?? '',
-            ]);
-
-            if ($isDefault) {
-                $company->default_contact_id = $user->id;
-                $company->save();
-            }
-
-            $users[] = $user->fresh(['profile', 'company']);
-        }
-
-        return [$users[0], $company->fresh(), ...array_slice($users, 1)];
-    }
-
-    private function openConversation(User $from, int $otherCompanyId): int
-    {
-        $response = $this->withToken($this->tokenFor($from))
-            ->postJson('/api/chat/conversations', ['company_id' => $otherCompanyId]);
-
-        $response->assertCreated();
-
-        return (int) $response->json('data.id');
-    }
-
-    private function tokenFor(User $user): string
-    {
-        return JWTAuth::fromUser($user);
-    }
-
-    private function setLastSeen(User $user, ?Carbon $at): void
-    {
-        $user->last_seen_at = $at;
-        $user->save();
-    }
-
-    private function createMinimalSchema(): void
-    {
-        Schema::dropIfExists('chat_messages');
-        Schema::dropIfExists('chat_conversation_user_states');
-        Schema::dropIfExists('chat_conversation_participants');
-        Schema::dropIfExists('chat_conversations');
-        Schema::dropIfExists('user_profiles');
-        Schema::dropIfExists('users');
-        Schema::dropIfExists('companies');
-
-        Schema::create('companies', function (Blueprint $table) {
-            $table->id();
-            $table->string('name')->unique();
-            $table->string('account_type')->nullable();
-            $table->string('logo')->nullable();
-            $table->unsignedBigInteger('default_contact_id')->nullable();
-            $table->timestamps();
-        });
-
-        Schema::create('users', function (Blueprint $table) {
-            $table->id();
-            $table->string('account_type')->nullable();
-            $table->string('username')->unique();
-            $table->string('email')->nullable();
-            $table->boolean('email_verified')->default(false);
-            $table->timestamp('email_verified_at')->nullable();
-            $table->string('password')->nullable();
-            $table->rememberToken();
-            $table->unsignedBigInteger('company_id')->nullable();
-            $table->boolean('is_company_default_contact')->default(false);
-            $table->boolean('is_admin')->default(false);
-            $table->string('role')->default('user');
-            $table->boolean('is_blocked')->default(false);
-            $table->timestamp('last_seen_at')->nullable();
-            $table->timestamps();
-        });
-
-        Schema::create('user_profiles', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('user_id');
-            $table->string('full_name')->nullable();
-            $table->string('first_name')->nullable();
-            $table->string('last_name')->nullable();
-            $table->string('email')->nullable();
-            $table->string('mobile')->nullable();
-            $table->timestamps();
-        });
-
-        Schema::create('chat_conversations', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('company_a_id');
-            $table->unsignedBigInteger('company_b_id');
-            $table->unsignedBigInteger('created_by_user_id');
-            $table->unsignedBigInteger('rental_job_id')->nullable();
-            $table->string('pair_key', 80)->unique();
-            $table->timestamps();
-        });
-
-        Schema::create('chat_conversation_user_states', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('conversation_id');
-            $table->unsignedBigInteger('user_id');
-            $table->timestamp('last_read_at')->nullable();
-            $table->timestamps();
-            $table->unique(['conversation_id', 'user_id']);
-        });
-
-        Schema::create('chat_messages', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('conversation_id');
-            $table->unsignedBigInteger('sender_user_id');
-            $table->unsignedBigInteger('sender_company_id');
-            $table->text('message');
-            $table->string('message_type', 32)->default('text');
-            $table->timestamps();
-            $table->softDeletes();
-        });
-    }
 }

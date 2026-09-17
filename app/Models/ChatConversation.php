@@ -49,7 +49,20 @@ class ChatConversation extends Model
 
     public function latestMessage(): HasOne
     {
-        return $this->hasOne(ChatMessage::class, 'conversation_id')->latestOfMany();
+        return $this->hasOne(ChatMessage::class, 'conversation_id')->withTrashed()->latestOfMany();
+    }
+
+    public function viewerState(?User $user): ?ChatConversationUserState
+    {
+        if ($user === null) {
+            return null;
+        }
+
+        if ($this->relationLoaded('userStates')) {
+            return $this->userStates->firstWhere('user_id', $user->id);
+        }
+
+        return $this->userStates()->where('user_id', $user->id)->first();
     }
 
     public function involvesCompany(int $companyId): bool

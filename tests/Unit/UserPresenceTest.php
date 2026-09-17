@@ -56,4 +56,17 @@ class UserPresenceTest extends TestCase
     {
         $this->assertSame(120, UserPresence::timeoutSeconds());
     }
+
+    public function test_company_is_online_from_presence_when_any_member_belongs_to_company(): void
+    {
+        $members = [
+            ['user_id' => 1, 'company_id' => 10],
+            ['user_id' => 2, 'company_id' => 20],
+        ];
+
+        $this->assertTrue(UserPresence::companyIsOnlineFromPresenceMembers($members, 10));
+        $this->assertTrue(UserPresence::companyIsOnlineFromPresenceMembers($members, 20));
+        $this->assertFalse(UserPresence::companyIsOnlineFromPresenceMembers($members, 30));
+        $this->assertFalse(UserPresence::companyIsOnlineFromPresenceMembers([], 10));
+    }
 }

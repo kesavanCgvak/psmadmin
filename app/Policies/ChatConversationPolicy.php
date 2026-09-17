@@ -21,4 +21,24 @@ class ChatConversationPolicy
     {
         return $conversation->hasCompanyParticipant($user);
     }
+
+    public function type(User $user, ChatConversation $conversation): bool
+    {
+        return $conversation->hasCompanyParticipant($user);
+    }
+
+    public function archive(User $user, ChatConversation $conversation): bool
+    {
+        return $conversation->hasCompanyParticipant($user);
+    }
+
+    public function unarchive(User $user, ChatConversation $conversation): bool
+    {
+        return $conversation->hasCompanyParticipant($user);
+    }
+
+    public function search(User $user, ChatConversation $conversation): bool
+    {
+        return $conversation->hasCompanyParticipant($user);
+    }
 }

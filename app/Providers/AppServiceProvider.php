@@ -6,9 +6,11 @@ use App\Contracts\SmsProvider;
 use App\Listeners\LogEmailSending;
 use App\Listeners\LogEmailSent;
 use App\Models\ChatConversation;
+use App\Models\ChatMessage;
 use App\Models\Equipment;
 use App\Observers\EquipmentObserver;
 use App\Policies\ChatConversationPolicy;
+use App\Policies\ChatMessagePolicy;
 use App\Services\TextMagicService;
 use App\Services\TwilioService;
 use Illuminate\Mail\Events\MessageSending;
@@ -39,6 +41,7 @@ class AppServiceProvider extends ServiceProvider
         Equipment::observe(EquipmentObserver::class);
 
         Gate::policy(ChatConversation::class, ChatConversationPolicy::class);
+        Gate::policy(ChatMessage::class, ChatMessagePolicy::class);
 
         Event::listen(MessageSending::class, LogEmailSending::class);
         Event::listen(MessageSent::class, LogEmailSent::class);
