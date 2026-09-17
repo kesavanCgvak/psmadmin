@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 // Duplicate import removed during formatting cleanup
 use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\CityController;
 use App\Http\Controllers\Api\CmsPageController as ApiCmsPageController;
 use App\Http\Controllers\Api\CommentController;
@@ -123,6 +124,21 @@ Route::middleware('jwt.verify')->group(function () {
 
     // Issue Types
     Route::get('/issue-types', [IssueTypeController::class, 'index']);
+});
+
+// ------------------------------
+// 💬 Chat APIs
+// ------------------------------
+Route::middleware('jwt.verify')->prefix('chat')->group(function () {
+    Route::get('/conversations', [ChatController::class, 'index']);
+    Route::post('/conversations', [ChatController::class, 'store'])->middleware('throttle:30,1');
+    Route::get('/conversations/{conversation}/messages', [ChatController::class, 'messages'])
+        ->whereNumber('conversation');
+    Route::post('/conversations/{conversation}/messages', [ChatController::class, 'sendMessage'])
+        ->middleware('throttle:60,1')
+        ->whereNumber('conversation');
+    Route::post('/conversations/{conversation}/read', [ChatController::class, 'markRead'])
+        ->whereNumber('conversation');
 });
 
 // ------------------------------

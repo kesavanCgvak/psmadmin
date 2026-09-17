@@ -191,6 +191,16 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany(RentalJobComment::class, 'sender_id');
     }
 
+    public function chatUserStates()
+    {
+        return $this->hasMany(ChatConversationUserState::class);
+    }
+
+    public function sentChatMessages()
+    {
+        return $this->hasMany(ChatMessage::class, 'sender_user_id');
+    }
+
     public function subscription()
     {
         return $this->hasOne(Subscription::class)->latestOfMany();

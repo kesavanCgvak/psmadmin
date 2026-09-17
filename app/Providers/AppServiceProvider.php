@@ -3,15 +3,18 @@
 namespace App\Providers;
 
 use App\Contracts\SmsProvider;
-use App\Listeners\LogEmailSent;
 use App\Listeners\LogEmailSending;
+use App\Listeners\LogEmailSent;
+use App\Models\ChatConversation;
 use App\Models\Equipment;
 use App\Observers\EquipmentObserver;
+use App\Policies\ChatConversationPolicy;
 use App\Services\TextMagicService;
 use App\Services\TwilioService;
-use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -34,6 +37,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Equipment::observe(EquipmentObserver::class);
+
+        Gate::policy(ChatConversation::class, ChatConversationPolicy::class);
 
         Event::listen(MessageSending::class, LogEmailSending::class);
         Event::listen(MessageSent::class, LogEmailSent::class);
