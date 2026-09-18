@@ -196,6 +196,18 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany(ChatConversationUserState::class);
     }
 
+    public function chatUserSetting()
+    {
+        return $this->hasOne(ChatUserSetting::class);
+    }
+
+    public function routeNotificationForMail(): ?string
+    {
+        $email = trim((string) ($this->preferred_email ?: ''));
+
+        return $email !== '' ? $email : null;
+    }
+
     public function sentChatMessages()
     {
         return $this->hasMany(ChatMessage::class, 'sender_user_id');

@@ -275,7 +275,7 @@ class ChatController extends Controller
             'message' => 'Notification settings updated.',
             'data' => $this->chatService->updateNotificationSettings(
                 $user,
-                (bool) $request->validated()['browser_notifications_enabled']
+                $request->validated()
             ),
         ]);
     }
@@ -316,6 +316,15 @@ class ChatController extends Controller
                 'browser_notifications' => [
                     'enabled' => $settings['browser_notifications_enabled'],
                     'permission_must_be_granted_in_browser' => true,
+                ],
+                'email_notifications' => [
+                    'enabled' => $settings['email_notifications_enabled'],
+                    'when' => 'offline',
+                ],
+                'sms_notifications' => [
+                    'enabled' => $settings['sms_notifications_enabled'],
+                    'consented' => $settings['sms_consented'],
+                    'when' => 'offline',
                 ],
             ],
         ]);

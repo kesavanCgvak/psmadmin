@@ -8,7 +8,6 @@ use App\Models\User;
 use App\Support\ChatChannels;
 use App\Support\ChatIdentity;
 use App\Support\ChatLog;
-use Illuminate\Support\Str;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -16,6 +15,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Str;
 use Throwable;
 
 class ChatMessageSent implements ShouldBroadcastNow, ShouldRescue
@@ -89,6 +89,7 @@ class ChatMessageSent implements ShouldBroadcastNow, ShouldRescue
                 'sender_company_name' => $senderCompanyName,
                 'conversation_id' => $this->conversation->id,
                 'message_id' => $this->message->id,
+                'tag' => 'chat-'.$this->conversation->id,
             ],
         ];
     }

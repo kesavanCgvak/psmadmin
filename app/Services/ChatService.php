@@ -6,6 +6,7 @@ use App\Events\ChatMessageDeleted;
 use App\Events\ChatMessageSent;
 use App\Events\ChatMessagesRead;
 use App\Events\ChatUserTyping;
+use App\Jobs\ProcessChatMessageNotificationsJob;
 use App\Models\ChatConversation;
 use App\Models\ChatConversationUserState;
 use App\Models\ChatMessage;
@@ -13,6 +14,7 @@ use App\Models\ChatUserSetting;
 use App\Models\Company;
 use App\Models\User;
 use App\Support\ChatIdentity;
+use App\Support\ChatLog;
 use App\Support\DefaultImagePath;
 use App\Support\UserPresence;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -22,6 +24,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class ChatService
 {
@@ -293,6 +296,21 @@ class ChatService
         $event->dontBroadcastToCurrentUser();
         event($event);
 
+        try {
+            ProcessChatMessageNotificationsJob::dispatch(
+                (int) $chatMessage->id,
+                (int) $conversation->id,
+                (int) $sender->id,
+            );
+        } catch (Throwable $e) {
+            ChatLog::error('Failed to queue chat notifications', [
+                'message_id' => $chatMessage->id,
+                'conversation_id' => $conversation->id,
+                'sender_user_id' => $sender->id,
+                'exception' => $e->getMessage(),
+            ]);
+        }
+
         return $chatMessage;
     }
 
@@ -488,31 +506,67 @@ class ChatService
     }
 
     /**
-     * @return array{browser_notifications_enabled: bool}
+     * @return array{browser_notifications_enabled: bool, email_notifications_enabled: bool, sms_notifications_enabled: bool, sms_consented: bool}
      */
     public function notificationSettings(User $user): array
     {
         $settings = ChatUserSetting::query()->firstOrCreate(
             ['user_id' => $user->id],
-            ['browser_notifications_enabled' => false]
+            [
+                'browser_notifications_enabled' => (bool) config('chat.defaults.browser_notifications_enabled', false),
+                'email_notifications_enabled' => (bool) config('chat.defaults.email_notifications_enabled', true),
+                'sms_notifications_enabled' => (bool) config('chat.defaults.sms_notifications_enabled', false),
+            ]
         );
 
-        return [
-            'browser_notifications_enabled' => (bool) $settings->browser_notifications_enabled,
-        ];
+        return $this->formatNotificationSettings($settings);
     }
 
     /**
-     * @return array{browser_notifications_enabled: bool}
+     * @param  array{browser_notifications_enabled?: bool, email_notifications_enabled?: bool, sms_notifications_enabled?: bool}  $input
+     * @return array{browser_notifications_enabled: bool, email_notifications_enabled: bool, sms_notifications_enabled: bool, sms_consented: bool}
      */
-    public function updateNotificationSettings(User $user, bool $enabled): array
+    public function updateNotificationSettings(User $user, array $input): array
     {
         $settings = ChatUserSetting::query()->firstOrNew(['user_id' => $user->id]);
-        $settings->browser_notifications_enabled = $enabled;
+
+        if (! $settings->exists) {
+            $settings->browser_notifications_enabled = (bool) config('chat.defaults.browser_notifications_enabled', false);
+            $settings->email_notifications_enabled = (bool) config('chat.defaults.email_notifications_enabled', true);
+            $settings->sms_notifications_enabled = (bool) config('chat.defaults.sms_notifications_enabled', false);
+        }
+
+        if (array_key_exists('browser_notifications_enabled', $input)) {
+            $settings->browser_notifications_enabled = (bool) $input['browser_notifications_enabled'];
+        }
+
+        if (array_key_exists('email_notifications_enabled', $input)) {
+            $settings->email_notifications_enabled = (bool) $input['email_notifications_enabled'];
+        }
+
+        if (array_key_exists('sms_notifications_enabled', $input)) {
+            $enabled = (bool) $input['sms_notifications_enabled'];
+            $settings->sms_notifications_enabled = $enabled;
+            if ($enabled && $settings->sms_consented_at === null) {
+                $settings->sms_consented_at = now();
+            }
+        }
+
         $settings->save();
 
+        return $this->formatNotificationSettings($settings);
+    }
+
+    /**
+     * @return array{browser_notifications_enabled: bool, email_notifications_enabled: bool, sms_notifications_enabled: bool, sms_consented: bool}
+     */
+    private function formatNotificationSettings(ChatUserSetting $settings): array
+    {
         return [
             'browser_notifications_enabled' => (bool) $settings->browser_notifications_enabled,
+            'email_notifications_enabled' => (bool) $settings->email_notifications_enabled,
+            'sms_notifications_enabled' => (bool) $settings->sms_notifications_enabled,
+            'sms_consented' => $settings->sms_consented_at !== null,
         ];
     }
 

@@ -2,6 +2,7 @@
 
 namespace Tests\Concerns;
 
+use App\Models\ChatUserSetting;
 use App\Models\Company;
 use App\Models\User;
 use App\Models\UserProfile;
@@ -17,6 +18,7 @@ trait InteractsWithChat
     {
         Schema::disableForeignKeyConstraints();
 
+        Schema::dropIfExists('chat_notification_logs');
         Schema::dropIfExists('chat_user_settings');
         Schema::dropIfExists('chat_messages');
         Schema::dropIfExists('chat_conversation_user_states');
@@ -109,7 +111,23 @@ trait InteractsWithChat
             $table->id();
             $table->unsignedBigInteger('user_id')->unique();
             $table->boolean('browser_notifications_enabled')->default(false);
+            $table->boolean('email_notifications_enabled')->default(true);
+            $table->boolean('sms_notifications_enabled')->default(false);
+            $table->timestamp('sms_consented_at')->nullable();
             $table->timestamps();
+        });
+
+        Schema::create('chat_notification_logs', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('message_id');
+            $table->unsignedBigInteger('conversation_id');
+            $table->string('channel', 16);
+            $table->string('status', 16)->default('pending');
+            $table->string('error_message', 500)->nullable();
+            $table->timestamp('processed_at')->nullable();
+            $table->timestamps();
+            $table->unique(['user_id', 'message_id', 'channel']);
         });
 
         Schema::enableForeignKeyConstraints();
@@ -184,5 +202,78 @@ trait InteractsWithChat
     {
         $user->last_seen_at = $at;
         $user->save();
+    }
+
+    /**
+     * @param  array{browser_notifications_enabled?: bool, email_notifications_enabled?: bool, sms_notifications_enabled?: bool, mobile?: string|null, email?: string|null}  $prefs
+     */
+    private function setChatNotificationPrefs(User $user, array $prefs): void
+    {
+        if (array_key_exists('email', $prefs)) {
+            $user->email = $prefs['email'];
+            $user->save();
+            if ($user->profile) {
+                $user->profile->email = $prefs['email'];
+                $user->profile->save();
+            }
+        }
+
+        if (array_key_exists('mobile', $prefs) && $user->profile) {
+            $user->profile->mobile = $prefs['mobile'];
+            $user->profile->save();
+        }
+
+        $settings = ChatUserSetting::query()->firstOrNew(['user_id' => $user->id]);
+        if (! $settings->exists) {
+            $settings->browser_notifications_enabled = false;
+            $settings->email_notifications_enabled = true;
+            $settings->sms_notifications_enabled = false;
+        }
+
+        if (array_key_exists('browser_notifications_enabled', $prefs)) {
+            $settings->browser_notifications_enabled = (bool) $prefs['browser_notifications_enabled'];
+        }
+        if (array_key_exists('email_notifications_enabled', $prefs)) {
+            $settings->email_notifications_enabled = (bool) $prefs['email_notifications_enabled'];
+        }
+        if (array_key_exists('sms_notifications_enabled', $prefs)) {
+            $settings->sms_notifications_enabled = (bool) $prefs['sms_notifications_enabled'];
+            if ($settings->sms_notifications_enabled && $settings->sms_consented_at === null) {
+                $settings->sms_consented_at = now();
+            }
+        }
+        if (array_key_exists('sms_consented', $prefs)) {
+            $settings->sms_consented_at = ! empty($prefs['sms_consented']) ? now() : null;
+        }
+
+        $settings->save();
+        $user->unsetRelation('chatUserSetting');
+        $user->unsetRelation('profile');
+    }
+
+    private function createSmsLogsTable(): void
+    {
+        Schema::dropIfExists('sms_logs');
+        Schema::create('sms_logs', function (Blueprint $table) {
+            $table->id();
+            $table->string('provider')->nullable();
+            $table->string('provider_message_id')->nullable();
+            $table->string('status')->default('pending');
+            $table->text('message');
+            $table->string('recipient_name')->nullable();
+            $table->string('phone_number')->nullable();
+            $table->unsignedBigInteger('company_id')->nullable();
+            $table->string('company_name')->nullable();
+            $table->string('contact_person_name')->nullable();
+            $table->string('contact_person_mobile')->nullable();
+            $table->string('related_type')->nullable();
+            $table->unsignedBigInteger('related_id')->nullable();
+            $table->string('sent_by')->nullable();
+            $table->text('error_message')->nullable();
+            $table->json('provider_response')->nullable();
+            $table->unsignedTinyInteger('attempts')->default(0);
+            $table->timestamp('sent_at')->nullable();
+            $table->timestamps();
+        });
     }
 }
