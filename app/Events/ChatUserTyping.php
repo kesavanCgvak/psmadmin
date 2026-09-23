@@ -45,6 +45,15 @@ class ChatUserTyping implements ShouldBroadcastNow, ShouldRescue
      */
     public function broadcastWith(): array
     {
+        ChatLog::info('[CHAT-REVERB] Broadcast payload prepared', [
+            'event_class' => self::class,
+            'event' => $this->broadcastAs(),
+            'conversation_id' => $this->conversation->id,
+            'user_id' => $this->user->id,
+            'channels' => ChatLog::channelNames($this->broadcastOn()),
+            'reverb_target' => ChatLog::reverbTarget(),
+        ]);
+
         return [
             'conversation_id' => $this->conversation->id,
             'user_id' => $this->user->id,

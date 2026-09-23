@@ -31,6 +31,7 @@ class ChatChannelAuthorizer
         }
 
         UserPresence::heartbeat($user);
+        $this->grant('chat.conversation.'.$conversationId, $user, ['conversation_id' => $conversationId]);
 
         return ChatIdentity::presencePayload($user);
     }
@@ -45,6 +46,8 @@ class ChatChannelAuthorizer
 
             return false;
         }
+
+        $this->grant('chat.company.'.$companyId, $user);
 
         return true;
     }
@@ -63,6 +66,7 @@ class ChatChannelAuthorizer
         }
 
         UserPresence::heartbeat($user);
+        $this->grant('chat.online', $user);
 
         return ChatIdentity::presencePayload($user);
     }
@@ -70,6 +74,21 @@ class ChatChannelAuthorizer
     private function isChatUser(?User $user): bool
     {
         return $user !== null && (int) ($user->company_id ?? 0) > 0;
+    }
+
+    /**
+     * Subscription granted. Without this, a client that never subscribes looks
+     * identical to one that subscribed successfully.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function grant(string $channel, ?User $user, array $context = []): void
+    {
+        ChatLog::info('[CHAT-REVERB] Channel subscription authorized', array_merge($context, [
+            'channel' => $channel,
+            'user_id' => $user?->id,
+            'company_id' => $user?->company_id,
+        ]));
     }
 
     /**

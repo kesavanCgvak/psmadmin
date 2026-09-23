@@ -15,6 +15,7 @@ use App\Models\ChatMessage;
 use App\Models\User;
 use App\Services\ChatService;
 use App\Support\ChatChannels;
+use App\Support\ChatLog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -336,7 +337,18 @@ class ChatController extends Controller
     public function typing(StoreChatTypingRequest $request, ChatConversation $conversation): JsonResponse
     {
         $user = $this->authenticatedUser();
+
+        ChatLog::info('[CHAT-TYPING] Typing endpoint called', [
+            'conversation_id' => $conversation->id,
+            'user_id' => $user->id,
+        ]);
+
         if ($denied = $this->denyUnless($user, 'type', $conversation)) {
+            ChatLog::warning('[CHAT-TYPING] Typing endpoint denied', [
+                'conversation_id' => $conversation->id,
+                'user_id' => $user->id,
+            ]);
+
             return $denied;
         }
 

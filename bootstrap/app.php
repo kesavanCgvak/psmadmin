@@ -6,6 +6,7 @@ use App\Http\Middleware\ProviderApiKeyMiddleware;
 use App\Http\Middleware\RequireSubscription;
 use App\Http\Middleware\SetJwtAuthenticatedUser;
 use App\Support\ChatLog;
+use Illuminate\Broadcasting\BroadcastException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -37,6 +38,21 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        /*
+         * Chat/Reverb events are ShouldBroadcastNow + ShouldRescue, so the framework
+         * swallows broadcaster failures via rescue() and never calls the event's
+         * failed() hook. Mirror them into the chat log so they are traceable.
+         */
+        $exceptions->reportable(function (BroadcastException $e) {
+            $request = request();
+            ChatLog::reverbFailed($e, [
+                'connection' => config('broadcasting.default'),
+                'path' => $request->path(),
+                'user_id' => $request->user('api')?->id,
+                'company_id' => $request->user('api')?->company_id,
+            ]);
+        });
+
         $exceptions->reportable(function (AccessDeniedHttpException $e) {
             $request = request();
             if ($request->is('api/broadcasting/auth')) {

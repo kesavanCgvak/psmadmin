@@ -284,6 +284,15 @@ class ChatService
             ? (int) $recipientCompany->default_contact_id
             : null;
 
+        ChatLog::info('[CHAT] Message sent', [
+            'user_id' => $sender->id,
+            'company_id' => $senderCompanyId,
+            'conversation_id' => $conversation->id,
+            'message_id' => $chatMessage->id,
+            'recipient_company_id' => $recipientCompanyId,
+            'recipient_online' => $recipientOnline,
+        ]);
+
         $event = new ChatMessageSent(
             message: $chatMessage,
             conversation: $conversation,
@@ -294,7 +303,41 @@ class ChatService
             defaultContactUserId: $defaultContactUserId,
         );
         $event->dontBroadcastToCurrentUser();
-        event($event);
+
+        ChatLog::info('[CHAT-REALTIME] Dispatching broadcast event', [
+            'event' => $event->broadcastAs(),
+            'event_class' => $event::class,
+            'conversation_id' => $conversation->id,
+            'message_id' => $chatMessage->id,
+            'user_id' => $sender->id,
+            'channels' => ChatLog::channelNames($event->broadcastOn()),
+        ]);
+
+        $failuresBefore = ChatLog::broadcastFailureCount();
+
+        try {
+            event($event);
+        } catch (Throwable $e) {
+            ChatLog::broadcastFailed($event->broadcastAs(), $e, [
+                'conversation_id' => $conversation->id,
+                'message_id' => $chatMessage->id,
+                'user_id' => $sender->id,
+                'company_id' => $senderCompanyId,
+            ]);
+
+            throw $e;
+        }
+
+        ChatLog::info('[CHAT-REVERB] Broadcast dispatch completed', [
+            'event' => $event->broadcastAs(),
+            'event_class' => $event::class,
+            'conversation_id' => $conversation->id,
+            'message_id' => $chatMessage->id,
+            'user_id' => $sender->id,
+            'succeeded' => ChatLog::broadcastFailureCount() === $failuresBefore,
+            'connection' => config('broadcasting.default'),
+            'reverb_target' => ChatLog::reverbTarget(),
+        ]);
 
         try {
             ProcessChatMessageNotificationsJob::dispatch(
@@ -347,13 +390,51 @@ class ChatService
     {
         $user->loadMissing('profile');
 
+        ChatLog::info('[CHAT-TYPING] Typing state changed', [
+            'user_id' => $user->id,
+            'company_id' => $user->company_id,
+            'conversation_id' => $conversation->id,
+            'is_typing' => $isTyping,
+        ]);
+
         $event = new ChatUserTyping(
             conversation: $conversation,
             user: $user,
             isTyping: $isTyping,
         );
         $event->dontBroadcastToCurrentUser();
-        event($event);
+
+        ChatLog::info('[CHAT-REALTIME] Dispatching broadcast event', [
+            'event' => $event->broadcastAs(),
+            'event_class' => $event::class,
+            'conversation_id' => $conversation->id,
+            'user_id' => $user->id,
+            'channels' => ChatLog::channelNames($event->broadcastOn()),
+        ]);
+
+        $failuresBefore = ChatLog::broadcastFailureCount();
+
+        try {
+            event($event);
+        } catch (Throwable $e) {
+            ChatLog::broadcastFailed($event->broadcastAs(), $e, [
+                'conversation_id' => $conversation->id,
+                'user_id' => $user->id,
+                'company_id' => $user->company_id,
+            ]);
+
+            throw $e;
+        }
+
+        ChatLog::info('[CHAT-REVERB] Broadcast dispatch completed', [
+            'event' => $event->broadcastAs(),
+            'event_class' => $event::class,
+            'conversation_id' => $conversation->id,
+            'user_id' => $user->id,
+            'succeeded' => ChatLog::broadcastFailureCount() === $failuresBefore,
+            'connection' => config('broadcasting.default'),
+            'reverb_target' => ChatLog::reverbTarget(),
+        ]);
     }
 
     /**

@@ -65,6 +65,16 @@ class ChatMessageSent implements ShouldBroadcastNow, ShouldRescue
      */
     public function broadcastWith(): array
     {
+        ChatLog::info('[CHAT-REVERB] Broadcast payload prepared', [
+            'event_class' => self::class,
+            'event' => $this->broadcastAs(),
+            'conversation_id' => $this->conversation->id,
+            'message_id' => $this->message->id,
+            'user_id' => $this->sender->id,
+            'channels' => ChatLog::channelNames($this->broadcastOn()),
+            'reverb_target' => ChatLog::reverbTarget(),
+        ]);
+
         $senderName = ChatIdentity::displayName($this->sender);
         $senderCompanyName = $this->senderCompanyName();
         $preview = Str::limit((string) $this->message->message, 80);
