@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 // Duplicate import removed during formatting cleanup
 use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\CityController;
 use App\Http\Controllers\Api\ChatbotController as ApiChatbotController;
 use App\Http\Controllers\Api\CmsPageController as ApiCmsPageController;
@@ -16,7 +17,6 @@ use App\Http\Controllers\Api\CurrencyController;
 use App\Http\Controllers\Api\DateFormatController;
 use App\Http\Controllers\Api\EquipmentController;
 use App\Http\Controllers\Api\FlexInventoryController;
-use App\Http\Controllers\Api\RentmanEquipmentController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\GeoController;
 use App\Http\Controllers\Api\ImportController;
@@ -28,19 +28,22 @@ use App\Http\Controllers\Api\JobNegotiationController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MailTestController;
 use App\Http\Controllers\Api\MeasurementUnitController;
-use App\Http\Controllers\Api\PaymentStatusController;
 use App\Http\Controllers\Api\PartnerProductController;
+use App\Http\Controllers\Api\PaymentStatusController;
 use App\Http\Controllers\Api\PricingSchemeController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PromotionalLogoController;
 use App\Http\Controllers\Api\ProviderApiKeyController;
+use App\Http\Controllers\Api\PsmEquipmentController;
+use App\Http\Controllers\Api\PsmProductSubmissionController;
 use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\RegistrationCheckController;
 use App\Http\Controllers\Api\RentalJobActionsController;
 use App\Http\Controllers\Api\RentalJobController;
 use App\Http\Controllers\Api\RentalRequestController;
-use App\Http\Controllers\Api\RentalSoftwareController;
 use App\Http\Controllers\Api\RentalSoftwareCompanyLogoController;
+use App\Http\Controllers\Api\RentalSoftwareController;
+use App\Http\Controllers\Api\RentmanEquipmentController;
 use App\Http\Controllers\Api\StateController;
 use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\SubCategoryController;
@@ -51,8 +54,8 @@ use App\Http\Controllers\Api\SupportRequestController;
 use App\Http\Controllers\Api\TermsAndConditionsController;
 use App\Http\Controllers\Api\UserProfileController;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Route;
 
 Route::post('register', [AuthController::class, 'register']);
 Route::post('login', [AuthController::class, 'login']);
@@ -91,7 +94,6 @@ Route::get('/rental-software-company-logos', [RentalSoftwareCompanyLogoControlle
 // Promotional company logos (public endpoint; user consent + admin approval)
 Route::get('/promotional-logos', [PromotionalLogoController::class, 'index']);
 
-
 // CMS pages (public; HTML already sanitized when saved in admin)
 Route::get('/cms-pages', [ApiCmsPageController::class, 'index']);
 Route::get('/cms-pages/{slug}', [ApiCmsPageController::class, 'show']);
@@ -123,6 +125,39 @@ Route::middleware('jwt.verify')->group(function () {
 
     // Issue Types
     Route::get('/issue-types', [IssueTypeController::class, 'index']);
+});
+
+// ------------------------------
+// 💬 Chat APIs
+// ------------------------------
+Route::middleware('jwt.verify')->prefix('chat')->group(function () {
+    Route::get('/realtime-config', [ChatController::class, 'realtimeConfig']);
+    Route::get('/unread-count', [ChatController::class, 'unreadCount']);
+    Route::get('/search', [ChatController::class, 'search'])->middleware('throttle:30,1');
+    Route::get('/notification-settings', [ChatController::class, 'notificationSettings']);
+    Route::put('/notification-settings', [ChatController::class, 'updateNotificationSettings']);
+    Route::get('/conversations', [ChatController::class, 'index']);
+    Route::post('/conversations', [ChatController::class, 'store'])->middleware('throttle:30,1');
+    Route::get('/conversations/{conversation}', [ChatController::class, 'show'])
+        ->whereNumber('conversation');
+    Route::get('/conversations/{conversation}/messages', [ChatController::class, 'messages'])
+        ->whereNumber('conversation');
+    Route::post('/conversations/{conversation}/messages', [ChatController::class, 'sendMessage'])
+        ->middleware('throttle:60,1')
+        ->whereNumber('conversation');
+    Route::delete('/conversations/{conversation}/messages/{message}', [ChatController::class, 'destroyMessage'])
+        ->middleware('throttle:60,1')
+        ->whereNumber('conversation')
+        ->whereNumber('message');
+    Route::post('/conversations/{conversation}/typing', [ChatController::class, 'typing'])
+        ->middleware('throttle:60,1')
+        ->whereNumber('conversation');
+    Route::post('/conversations/{conversation}/read', [ChatController::class, 'markRead'])
+        ->whereNumber('conversation');
+    Route::post('/conversations/{conversation}/archive', [ChatController::class, 'archive'])
+        ->whereNumber('conversation');
+    Route::post('/conversations/{conversation}/unarchive', [ChatController::class, 'unarchive'])
+        ->whereNumber('conversation');
 });
 
 // ------------------------------
@@ -203,6 +238,15 @@ Route::middleware('jwt.verify')->group(function () {
 
 Route::middleware('jwt.verify')->get('/products/{product_id}', [ProductController::class, 'show'])
     ->whereNumber('product_id');
+Route::middleware('jwt.verify')->get('/psm-equipments', [PsmEquipmentController::class, 'index']);
+Route::middleware('jwt.verify')->get('/psm-equipments/{id}', [PsmEquipmentController::class, 'show'])
+    ->whereNumber('id');
+Route::middleware('jwt.verify')->post('/psm-equipments/{id}/import', [PsmEquipmentController::class, 'import'])
+    ->whereNumber('id');
+Route::middleware('jwt.verify')->get('/psm-product-submissions', [PsmProductSubmissionController::class, 'index']);
+Route::middleware('jwt.verify')->post('/psm-product-submissions', [PsmProductSubmissionController::class, 'store']);
+Route::middleware('jwt.verify')->get('/psm-product-submissions/{id}', [PsmProductSubmissionController::class, 'show'])
+    ->whereNumber('id');
 Route::middleware('jwt.verify')->get('/inventory-master/physical-details', [InventoryMasterDataController::class, 'show']);
 Route::middleware(['jwt.verify', 'throttle:5,1'])->post(
     '/inventory-master/specifications/export-sql',
@@ -414,7 +458,6 @@ Route::middleware('jwt.verify')->group(function () {
 Route::middleware(['web', 'auth', 'verified', 'admin.access'])->prefix('admin')->group(function () {
     Route::get('/companies/{company}/referrals', [CompanyManagementController::class, 'referrals']);
 });
-
 
 // Contact Sales API (public, no authentication required)
 

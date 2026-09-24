@@ -61,6 +61,16 @@ class Company extends Model
         return $this->hasMany(User::class);
     }
 
+    public function chatConversationsAsCompanyA()
+    {
+        return $this->hasMany(ChatConversation::class, 'company_a_id');
+    }
+
+    public function chatConversationsAsCompanyB()
+    {
+        return $this->hasMany(ChatConversation::class, 'company_b_id');
+    }
+
     public function equipments()
     {
         return $this->hasMany(Equipment::class);

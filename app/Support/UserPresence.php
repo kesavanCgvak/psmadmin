@@ -57,4 +57,53 @@ final class UserPresence
             ->map(fn ($id) => (int) $id)
             ->all();
     }
+
+    /**
+     * User IDs that currently count as online via last_seen_at.
+     * Presence-channel joins heartbeat this timestamp, so it is the
+     * backend-queryable stand-in for Reverb connection state.
+     *
+     * @param  iterable<int|string|null>  $userIds
+     * @return array<int, int>
+     */
+    public static function onlineUserIds(iterable $userIds): array
+    {
+        $ids = collect($userIds)->filter()->unique()->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        return User::query()
+            ->whereIn('id', $ids)
+            ->where('last_seen_at', '>=', now()->subSeconds(self::timeoutSeconds()))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Derive company online status from Reverb presence members.
+     * A company is online when at least one of its users is present.
+     *
+     * @param  iterable<int, array<string, mixed>|object>  $members
+     */
+    public static function companyIsOnlineFromPresenceMembers(iterable $members, int $companyId): bool
+    {
+        if ($companyId <= 0) {
+            return false;
+        }
+
+        foreach ($members as $member) {
+            $memberCompanyId = is_array($member)
+                ? (int) ($member['company_id'] ?? 0)
+                : (int) ($member->company_id ?? 0);
+
+            if ($memberCompanyId === $companyId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

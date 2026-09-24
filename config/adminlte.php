@@ -385,6 +385,12 @@ return [
             'icon' => 'fas fa-fw fa-cubes',
             'icon_color' => 'warning',
         ],
+        [
+            'text' => 'PSM Product Submissions',
+            'route' => 'admin.psm-product-submissions.index',
+            'icon' => 'fas fa-fw fa-clipboard-check',
+            'icon_color' => 'info',
+        ],
         ['header' => 'INVENTORY MANAGEMENT'],
         [
             'text' => 'AI Specification Reviews',

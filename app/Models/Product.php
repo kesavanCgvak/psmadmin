@@ -1,9 +1,10 @@
 <?php
+
 namespace App\Models;
 
 use App\Support\ProductNormalizer;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class Product extends Model
 {
@@ -48,7 +49,7 @@ class Product extends Model
             $brandName = null;
             if ($product->brand_id) {
                 // Load brand if not already loaded
-                if (!$product->relationLoaded('brand') && $product->brand_id) {
+                if (! $product->relationLoaded('brand') && $product->brand_id) {
                     $product->load('brand');
                 }
                 $brandName = $product->brand->name ?? null;
@@ -119,6 +120,13 @@ class Product extends Model
             ->orderBy('id');
     }
 
+    public function primaryMasterImage()
+    {
+        return $this->hasOne(InventoryMasterImage::class, 'inventory_master_id')
+            ->where('is_primary', true)
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
 
     public function rentalJobProducts()
     {
@@ -139,6 +147,4 @@ class Product extends Model
     {
         return $this->equipments->first()->software_code ?? null;
     }
-
 }
-

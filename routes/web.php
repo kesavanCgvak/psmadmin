@@ -18,7 +18,6 @@ use App\Http\Controllers\Admin\EmailTemplateController;
 use App\Http\Controllers\Admin\EquipmentManagementController;
 use App\Http\Controllers\Admin\InventoryAiRejectedProductController;
 use App\Http\Controllers\Admin\InventoryAiSpecificationController;
-use App\Http\Controllers\Admin\ProductsMissingSpecificationsController;
 use App\Http\Controllers\Admin\IssueTypeController;
 use App\Http\Controllers\Admin\JobRatingsController;
 use App\Http\Controllers\Admin\LinearUnitController;
@@ -26,6 +25,8 @@ use App\Http\Controllers\Admin\LogoManagementController;
 use App\Http\Controllers\Admin\PaymentSettingsController;
 use App\Http\Controllers\Admin\PricingSchemeManagementController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\ProductsMissingSpecificationsController;
+use App\Http\Controllers\Admin\PsmProductSubmissionController;
 use App\Http\Controllers\Admin\RegionController;
 use App\Http\Controllers\Admin\RentalJobController;
 use App\Http\Controllers\Admin\RentalSoftwareCompanyLogoController;
@@ -34,9 +35,9 @@ use App\Http\Controllers\Admin\SmsLogController;
 use App\Http\Controllers\Admin\StateProvinceController;
 use App\Http\Controllers\Admin\SubCategoryController;
 use App\Http\Controllers\Admin\SubscriptionManagementController;
-use App\Http\Controllers\Admin\TrialIncentiveManagementController;
 use App\Http\Controllers\Admin\SupplyJobController;
 use App\Http\Controllers\Admin\TermsAndConditionsController;
+use App\Http\Controllers\Admin\TrialIncentiveManagementController;
 use App\Http\Controllers\Admin\UserAuthEventController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\UserRestrictionsController;
@@ -142,6 +143,14 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
     Route::post('/products/bulk-enrich-specifications', [ProductController::class, 'bulkEnrichSpecifications'])
         ->name('products.bulk-enrich-specifications');
 
+    Route::prefix('psm-product-submissions')->name('psm-product-submissions.')->group(function () {
+        Route::get('/', [PsmProductSubmissionController::class, 'index'])->name('index');
+        Route::get('/data', [PsmProductSubmissionController::class, 'data'])->name('data');
+        Route::get('/{psmProductSubmission}', [PsmProductSubmissionController::class, 'show'])->name('show');
+        Route::post('/{psmProductSubmission}/approve', [PsmProductSubmissionController::class, 'approve'])->name('approve');
+        Route::post('/{psmProductSubmission}/reject', [PsmProductSubmissionController::class, 'reject'])->name('reject');
+    });
+
     // AI specification enrichment review
     Route::prefix('ai-specifications')->name('ai-specifications.')->group(function () {
         Route::get('/', [InventoryAiSpecificationController::class, 'index'])->name('index');
@@ -230,7 +239,7 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
 
     // Rental Software Company Logos
     Route::resource('rental-software-company-logos', RentalSoftwareCompanyLogoController::class)
-    ->except(['show']);
+        ->except(['show']);
 
     // Equipment
     Route::post('/equipment/{equipment}/images', [EquipmentManagementController::class, 'storeImage'])

@@ -21,14 +21,14 @@ final class InventoryImageManagementService
     public static function storeUploadedFile(UploadedFile $file, string $relativeDir): string
     {
         $destinationPath = public_path($relativeDir);
-        if (!is_dir($destinationPath)) {
+        if (! is_dir($destinationPath)) {
             mkdir($destinationPath, 0755, true);
         }
 
-        $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+        $filename = time().'_'.uniqid().'.'.$file->getClientOriginalExtension();
         $file->move($destinationPath, $filename);
 
-        return rtrim($relativeDir, '/') . '/' . $filename;
+        return rtrim($relativeDir, '/').'/'.$filename;
     }
 
     public static function deleteLocalFileIfStored(?string $imagePath): void
@@ -72,7 +72,7 @@ final class InventoryImageManagementService
         $image = InventoryMasterImage::create([
             'inventory_master_id' => $inventoryMasterId,
             'image_path' => $path,
-            'is_primary' => !$hasPrimary,
+            'is_primary' => ! $hasPrimary,
             'sort_order' => $maxSort + 1,
             'source' => 'admin',
             'created_by' => $createdBy,
@@ -111,7 +111,7 @@ final class InventoryImageManagementService
         $image = EquipmentImage::create([
             'equipment_id' => $equipmentId,
             'image_path' => $path,
-            'is_primary' => !$hasPrimary,
+            'is_primary' => ! $hasPrimary,
             'sort_order' => $maxSort + 1,
         ]);
 
@@ -201,7 +201,9 @@ final class InventoryImageManagementService
                 ->where('inventory_master_id', $inventoryMasterId)
                 ->update(['is_primary' => false]);
 
-            $image->update(['is_primary' => true]);
+            InventoryMasterImage::query()
+                ->whereKey($image->id)
+                ->update(['is_primary' => true]);
         });
     }
 
@@ -216,7 +218,9 @@ final class InventoryImageManagementService
                 ->where('equipment_id', $equipmentId)
                 ->update(['is_primary' => false]);
 
-            $image->update(['is_primary' => true]);
+            EquipmentImage::query()
+                ->whereKey($image->id)
+                ->update(['is_primary' => true]);
         });
     }
 
