@@ -374,16 +374,16 @@ Route::middleware('jwt.verify')->group(function () {
 
     // Support Request API
     Route::post('/support-request', [SupportRequestController::class, 'store']);
+});
 
-    // AI Chatbot API
-    Route::prefix('chatbot')->group(function () {
-        Route::get('/knowledge', [ApiChatbotController::class, 'knowledge']);
-        Route::get('/conversations', [ApiChatbotController::class, 'conversations']);
-        Route::post('/conversations', [ApiChatbotController::class, 'start']);
-        Route::get('/conversations/{conversationId}/messages', [ApiChatbotController::class, 'messages']);
-        Route::post('/message', [ApiChatbotController::class, 'message'])
-            ->middleware('throttle:20,1');
-    });
+// AI Chatbot API (JWT optional — guests can chat with guest_token)
+Route::prefix('chatbot')->middleware('throttle:30,1')->group(function () {
+    Route::get('/knowledge', [ApiChatbotController::class, 'knowledge']);
+    Route::get('/conversations', [ApiChatbotController::class, 'conversations']);
+    Route::post('/conversations', [ApiChatbotController::class, 'start']);
+    Route::get('/conversations/{conversationId}/messages', [ApiChatbotController::class, 'messages']);
+    Route::post('/message', [ApiChatbotController::class, 'message'])
+        ->middleware('throttle:20,1');
 });
 
 // ------------------------------

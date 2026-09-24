@@ -18,6 +18,7 @@ class ChatbotConversation extends Model
 
     protected $fillable = [
         'user_id',
+        'guest_token',
         'source',
         'title',
         'status',

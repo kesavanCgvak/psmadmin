@@ -18,10 +18,14 @@ class ChatbotService
         private readonly ChatbotKnowledgeRetriever $retriever,
     ) {}
 
-    public function startConversation(?User $user, string $source = ChatbotConversation::SOURCE_API): ChatbotConversation
-    {
+    public function startConversation(
+        ?User $user = null,
+        string $source = ChatbotConversation::SOURCE_API,
+        bool $asGuest = false,
+    ): ChatbotConversation {
         return ChatbotConversation::create([
             'user_id' => $user?->id,
+            'guest_token' => ($asGuest || !$user) ? (string) Str::uuid() : null,
             'source' => $source,
             'status' => ChatbotConversation::STATUS_OPEN,
             'title' => 'New conversation',

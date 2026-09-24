@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ChatbotConversation;
 use App\Models\ChatbotKnowledge;
+use App\Models\User;
 use App\Services\Chatbot\ChatbotService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,43 +20,36 @@ class ChatbotController extends Controller
 
     public function start(Request $request): JsonResponse
     {
-        $user = $this->authenticatedUser();
-        if ($user instanceof JsonResponse) {
-            return $user;
-        }
+        $user = $this->optionalUser();
 
         $conversation = $this->chatbotService->startConversation(
             $user,
             ChatbotConversation::SOURCE_API,
+            $user === null,
         );
 
         return response()->json([
             'success' => true,
             'message' => 'Conversation started.',
-            'data' => [
-                'conversation_id' => $conversation->id,
-                'status' => $conversation->status,
-            ],
+            'data' => $this->conversationPayload($conversation),
         ], 201);
     }
 
     public function message(Request $request): JsonResponse
     {
-        $user = $this->authenticatedUser();
-        if ($user instanceof JsonResponse) {
-            return $user;
-        }
-
         $validated = $request->validate([
             'message' => 'required|string|max:4000',
             'conversation_id' => 'nullable|integer|exists:chatbot_conversations,id',
+            'guest_token' => 'nullable|uuid',
         ]);
+
+        $user = $this->optionalUser();
 
         try {
             if (!empty($validated['conversation_id'])) {
                 $conversation = ChatbotConversation::query()->findOrFail($validated['conversation_id']);
 
-                if ((int) $conversation->user_id !== (int) $user->id) {
+                if (!$this->canAccessConversation($conversation, $user, $validated['guest_token'] ?? null)) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Conversation not found.',
@@ -65,6 +59,7 @@ class ChatbotController extends Controller
                 $conversation = $this->chatbotService->startConversation(
                     $user,
                     ChatbotConversation::SOURCE_API,
+                    $user === null,
                 );
             }
 
@@ -78,7 +73,7 @@ class ChatbotController extends Controller
                 'success' => true,
                 'message' => 'Reply generated.',
                 'data' => [
-                    'conversation_id' => $result['conversation']->id,
+                    ...$this->conversationPayload($result['conversation']),
                     'reply' => $result['assistant_message']->content,
                     'user_message' => [
                         'id' => $result['user_message']->id,
@@ -106,9 +101,13 @@ class ChatbotController extends Controller
 
     public function conversations(Request $request): JsonResponse
     {
-        $user = $this->authenticatedUser();
-        if ($user instanceof JsonResponse) {
-            return $user;
+        $user = $this->optionalUser();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Login required to list conversations. Guests should keep conversation_id and guest_token from the first reply.',
+            ], 401);
         }
 
         $conversations = ChatbotConversation::query()
@@ -139,17 +138,29 @@ class ChatbotController extends Controller
 
     public function messages(Request $request, int $conversationId): JsonResponse
     {
-        $user = $this->authenticatedUser();
-        if ($user instanceof JsonResponse) {
-            return $user;
-        }
+        $validated = $request->validate([
+            'guest_token' => 'nullable|uuid',
+        ]);
 
-        $conversation = ChatbotConversation::query()
-            ->where('id', $conversationId)
-            ->where('user_id', $user->id)
-            ->first();
+        $user = $this->optionalUser();
+
+        $conversation = ChatbotConversation::query()->find($conversationId);
 
         if (!$conversation) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Conversation not found.',
+            ], 404);
+        }
+
+        if ($conversation->user_id === null && empty($validated['guest_token'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'guest_token is required for guest conversations. Pass it as a query parameter.',
+            ], 422);
+        }
+
+        if (!$this->canAccessConversation($conversation, $user, $validated['guest_token'] ?? null)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Conversation not found.',
@@ -170,14 +181,14 @@ class ChatbotController extends Controller
             'success' => true,
             'message' => 'Messages retrieved.',
             'data' => [
-                'conversation_id' => $conversation->id,
+                ...$this->conversationPayload($conversation),
                 'title' => $conversation->title,
                 'messages' => $messages,
             ],
         ]);
     }
 
-    public function knowledge(Request $request): JsonResponse
+    public function knowledge(): JsonResponse
     {
         $entries = ChatbotKnowledge::query()
             ->active()
@@ -192,24 +203,50 @@ class ChatbotController extends Controller
         ]);
     }
 
-    private function authenticatedUser(): mixed
+    private function optionalUser(): ?User
     {
         try {
+            if (!JWTAuth::getToken()) {
+                return null;
+            }
+
             $user = JWTAuth::parseToken()->authenticate();
+
+            return $user ?: null;
         } catch (Throwable) {
-            return response()->json([
-                'success' => false,
-                'message' => 'User not authenticated',
-            ], 401);
+            return null;
+        }
+    }
+
+    private function canAccessConversation(
+        ChatbotConversation $conversation,
+        ?User $user,
+        ?string $guestToken,
+    ): bool {
+        if ($user && (int) $conversation->user_id === (int) $user->id) {
+            return true;
         }
 
-        if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'User not authenticated',
-            ], 401);
+        if ($conversation->user_id === null
+            && $conversation->guest_token
+            && $guestToken
+            && hash_equals($conversation->guest_token, $guestToken)
+        ) {
+            return true;
         }
 
-        return $user;
+        return false;
+    }
+
+    /**
+     * @return array{conversation_id: int, guest_token: ?string, status: string}
+     */
+    private function conversationPayload(ChatbotConversation $conversation): array
+    {
+        return [
+            'conversation_id' => $conversation->id,
+            'guest_token' => $conversation->guest_token,
+            'status' => $conversation->status,
+        ];
     }
 }
