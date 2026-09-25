@@ -15,6 +15,7 @@ use App\Services\TextMagicService;
 use App\Services\TwilioService;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -38,6 +39,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // AdminLTE uses Bootstrap 4 — avoid Laravel's default Tailwind pagination
+        // (Tailwind classes/SVGs are not loaded, which causes oversized chevrons).
+        Paginator::useBootstrapFour();
+
         Equipment::observe(EquipmentObserver::class);
 
         Gate::policy(ChatConversation::class, ChatConversationPolicy::class);
