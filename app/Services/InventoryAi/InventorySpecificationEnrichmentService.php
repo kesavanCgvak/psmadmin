@@ -30,6 +30,7 @@ class InventorySpecificationEnrichmentService
         bool $retryIncomplete = false,
         bool $bypassRejectionCheck = false,
         ?string $batchRunId = null,
+        bool $reevaluateExisting = false,
     ): array {
         $product = Product::query()
             ->with(['brand:id,name', 'category:id,name', 'subCategory:id,name'])
@@ -56,7 +57,7 @@ class InventorySpecificationEnrichmentService
             ];
         }
 
-        if (InventoryMasterSpecEnrichment::hasCompletePhysicalSpecs($product)) {
+        if (!$reevaluateExisting && InventoryMasterSpecEnrichment::hasCompletePhysicalSpecs($product)) {
             return [
                 'status' => 'skipped',
                 'spec_id' => null,
@@ -137,8 +138,13 @@ class InventorySpecificationEnrichmentService
             ];
         }
 
-        $missingFields = InventoryMasterSpecEnrichment::missingSpecFields($product);
+        $missingFields = $reevaluateExisting
+            ? InventoryMasterSpecEnrichment::SPEC_FIELDS
+            : InventoryMasterSpecEnrichment::missingSpecFields($product);
         $lookupContext = InventoryMasterSpecEnrichment::buildLookupContext($product);
+        if ($reevaluateExisting) {
+            $lookupContext['missing_fields'] = InventoryMasterSpecEnrichment::SPEC_FIELDS;
+        }
 
         if (!$retryIncomplete) {
             $alreadyInsufficient = InventoryMasterAiSpec::query()
@@ -172,6 +178,17 @@ class InventorySpecificationEnrichmentService
         $validation = $this->validator->validate($parsed, $missingFields);
         $mapped = $validation['mapped'];
 
+        $aiResponse = [
+            'provider' => $aiResult['provider'] ?? AiProviderFactory::activeProviderName(),
+            'model' => $aiResult['model'] ?? null,
+            'parsed' => $parsed,
+            'validation_errors' => $validation['errors'],
+            'raw' => $aiResult['raw_response'],
+        ];
+        if ($reevaluateExisting) {
+            $aiResponse['reevaluate_existing'] = true;
+        }
+
         $spec = $this->createStagingRecord($product, [
             'height' => $mapped['height'],
             'width' => $mapped['width'],
@@ -181,13 +198,7 @@ class InventorySpecificationEnrichmentService
             'weight_unit_id' => $mapped['weight_unit_id'],
             'confidence_score' => $mapped['confidence_score'],
             'source_url' => $mapped['source_url'],
-            'ai_response' => [
-                'provider' => $aiResult['provider'] ?? AiProviderFactory::activeProviderName(),
-                'model' => $aiResult['model'] ?? null,
-                'parsed' => $parsed,
-                'validation_errors' => $validation['errors'],
-                'raw' => $aiResult['raw_response'],
-            ],
+            'ai_response' => $aiResponse,
             'status' => InventoryMasterAiSpec::STATUS_PENDING,
         ]);
 
@@ -294,6 +305,7 @@ class InventorySpecificationEnrichmentService
         array $inventoryMasterIds,
         bool $bypassRejectionCheck = true,
         bool $retryIncomplete = true,
+        bool $reevaluateExisting = false,
     ): array {
         $results = [];
         $batchRunId = (string) str()->uuid();
@@ -307,6 +319,7 @@ class InventorySpecificationEnrichmentService
                     retryIncomplete: $retryIncomplete,
                     bypassRejectionCheck: $bypassRejectionCheck,
                     batchRunId: $batchRunId,
+                    reevaluateExisting: $reevaluateExisting,
                 );
 
                 $results[] = [
@@ -431,7 +444,9 @@ class InventorySpecificationEnrichmentService
         }
 
         $product = Product::query()->findOrFail($spec->inventory_master_id);
-        $missingFields = InventoryMasterSpecEnrichment::missingSpecFields($product);
+        $missingFields = $this->specReevaluatesExisting($spec)
+            ? InventoryMasterSpecEnrichment::SPEC_FIELDS
+            : InventoryMasterSpecEnrichment::missingSpecFields($product);
         $values = $this->mergeSpecValues($spec, $overrides);
 
         $validation = $this->validator->validateManualApprovalValues($values, $missingFields);
@@ -546,11 +561,13 @@ class InventorySpecificationEnrichmentService
         ?int $reviewerUserId = null,
         ?string $reviewNotes = null,
     ): void {
-        DB::transaction(function () use ($spec, $product, $updatedBy, $reviewerUserId, $reviewNotes) {
+        $overwriteExisting = $this->specReevaluatesExisting($spec);
+
+        DB::transaction(function () use ($spec, $product, $updatedBy, $reviewerUserId, $reviewNotes, $overwriteExisting) {
             $updates = [];
 
             foreach (InventoryMasterSpecEnrichment::SPEC_FIELDS as $field) {
-                if (!InventoryMasterSpecEnrichment::isFieldEmpty($product->{$field})) {
+                if (!$overwriteExisting && !InventoryMasterSpecEnrichment::isFieldEmpty($product->{$field})) {
                     continue;
                 }
 
@@ -560,6 +577,10 @@ class InventorySpecificationEnrichmentService
                 }
 
                 $oldValue = $product->{$field};
+                if ($overwriteExisting && !$this->specValuesDiffer($field, $oldValue, $newValue)) {
+                    continue;
+                }
+
                 $updates[$field] = $newValue;
 
                 InventoryMasterAiLog::create([
@@ -663,5 +684,23 @@ class InventorySpecificationEnrichmentService
         }
 
         return (string) $value;
+    }
+
+    private function specReevaluatesExisting(InventoryMasterAiSpec $spec): bool
+    {
+        return (bool) data_get($spec->ai_response, 'reevaluate_existing', false);
+    }
+
+    private function specValuesDiffer(string $field, mixed $oldValue, mixed $newValue): bool
+    {
+        if (InventoryMasterSpecEnrichment::isFieldEmpty($oldValue)) {
+            return true;
+        }
+
+        if (in_array($field, InventoryMasterSpecEnrichment::DIMENSION_WEIGHT_FIELDS, true)) {
+            return round((float) $oldValue, 2) !== round((float) $newValue, 2);
+        }
+
+        return (string) $oldValue !== (string) $newValue;
     }
 }

@@ -121,24 +121,7 @@ class ProductController extends Controller
             // Prepare data for DataTables
             $data = [];
             foreach ($products as $product) {
-                $dimensions = null;
-                if ($product->height !== null || $product->width !== null || $product->length !== null) {
-                    $h = $product->height ?? '—';
-                    $w = $product->width ?? '—';
-                    $l = $product->length ?? '—';
-                    $dimensions = "{$l} × {$w} × {$h}";
-                    if ($product->linearUnit) {
-                        $dimensions .= ' ' . $product->linearUnit->code;
-                    }
-                }
-
-                $weight = null;
-                if ($product->weight !== null) {
-                    $weight = (string) $product->weight;
-                    if ($product->weightUnit) {
-                        $weight .= ' ' . $product->weightUnit->code;
-                    }
-                }
+                $specs = $this->productListSpecPayload($product);
 
                 $data[] = [
                     'checkbox' => '', // Placeholder for checkbox column (rendered client-side)
@@ -149,8 +132,8 @@ class ProductController extends Controller
                     'sub_category' => $product->subCategory ? $product->subCategory->name : '—',
                     'psm_code' => $product->psm_code ?? '—',
                     'replacement_price' => $product->replacement_price !== null ? number_format($product->replacement_price, 2) : '—',
-                    'dimensions' => $dimensions,
-                    'weight' => $weight,
+                    'dimensions' => $specs['dimensions'],
+                    'weight' => $specs['weight'],
                     'is_verified' => $product->is_verified ?? 0,
                     'created_at' => $product->created_at ? $product->created_at->format('M d, Y') : '—',
                     'actions' => $this->getActionButtons($product)
@@ -219,6 +202,8 @@ class ProductController extends Controller
         $cloneUrl = route('admin.products.clone', $product);
         $deleteUrl = route('admin.products.destroy', $product);
 
+        $productName = htmlspecialchars((string) ($product->model ?? ''), ENT_QUOTES, 'UTF-8');
+
         return '
             <div class="btn-group">
                 <a href="' . $viewUrl . '" class="btn btn-info btn-sm" title="View">
@@ -227,6 +212,9 @@ class ProductController extends Controller
                 <a href="' . $editUrl . '" class="btn btn-warning btn-sm" title="Edit">
                     <i class="fas fa-edit"></i>
                 </a>
+                <button type="button" class="btn btn-primary btn-sm enrich-product-btn" title="AI Enrichment" data-product-id="' . $product->id . '" data-product-name="' . $productName . '">
+                    <i class="fas fa-robot"></i>
+                </button>
                 <a href="' . $cloneUrl . '" class="btn btn-success btn-sm" title="Clone" onclick="return confirm(\'Are you sure you want to clone this product? A new product will be created with \' (clone)\' appended to the model name.\');">
                     <i class="fas fa-copy"></i>
                 </a>
@@ -1002,35 +990,7 @@ class ProductController extends Controller
         try {
             $results = $enrichmentService->enrichProductsSynchronously($productIds);
 
-            $summary = [
-                'total' => count($results),
-                'success' => 0,
-                'skipped' => 0,
-                'rejected' => 0,
-                'errors' => 0,
-            ];
-
-            foreach ($results as $row) {
-                match ($row['outcome']) {
-                    'Success' => $summary['success']++,
-                    'Skipped' => $summary['skipped']++,
-                    'Still Rejected', 'Failed' => $summary['rejected']++,
-                    default => $summary['errors']++,
-                };
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => sprintf(
-                    'Enrichment complete: %d succeeded, %d skipped, %d rejected, %d errors.',
-                    $summary['success'],
-                    $summary['skipped'],
-                    $summary['rejected'],
-                    $summary['errors'],
-                ),
-                'summary' => $summary,
-                'results' => $results,
-            ]);
+            return response()->json($this->enrichmentResultPayload($results));
         } catch (\Throwable $e) {
             \Log::error('Bulk AI enrichment error: ' . $e->getMessage());
 
@@ -1039,6 +999,128 @@ class ProductController extends Controller
                 'message' => 'Error running AI enrichment: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Synchronously re-run AI specification enrichment for one product.
+     * Existing dimensions are included so incorrect values can be replaced.
+     */
+    public function enrichSpecification(Request $request, Product $product, InventorySpecificationEnrichmentService $enrichmentService)
+    {
+        $validator = Validator::make($request->all(), [
+            'confirm_enrich' => 'accepted',
+        ], [
+            'confirm_enrich.accepted' => 'Please confirm you want to run synchronous AI enrichment.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        if (!AiProviderFactory::isConfigured()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'AI provider is not configured. Set OPENAI_API_KEY or GEMINI_API_KEY in .env.',
+            ], 422);
+        }
+
+        @set_time_limit(0);
+
+        try {
+            $results = $enrichmentService->enrichProductsSynchronously(
+                [(int) $product->id],
+                reevaluateExisting: true,
+            );
+
+            $product->refresh();
+            $product->load(['linearUnit:id,code', 'weightUnit:id,code']);
+
+            $payload = $this->enrichmentResultPayload($results);
+            $payload['product'] = $this->productListSpecPayload($product);
+
+            return response()->json($payload);
+        } catch (\Throwable $e) {
+            \Log::error('Product AI enrichment error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error running AI enrichment: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * @param  list<array{product_id: int, product_name: string, outcome: string, status: string, message: string}>  $results
+     * @return array{success: bool, message: string, summary: array<string, int>, results: list<array<string, mixed>>}
+     */
+    private function enrichmentResultPayload(array $results): array
+    {
+        $summary = [
+            'total' => count($results),
+            'success' => 0,
+            'skipped' => 0,
+            'rejected' => 0,
+            'errors' => 0,
+        ];
+
+        foreach ($results as $row) {
+            match ($row['outcome']) {
+                'Success' => $summary['success']++,
+                'Skipped' => $summary['skipped']++,
+                'Still Rejected', 'Failed' => $summary['rejected']++,
+                default => $summary['errors']++,
+            };
+        }
+
+        return [
+            'success' => true,
+            'message' => sprintf(
+                'Enrichment complete: %d succeeded, %d skipped, %d rejected, %d errors.',
+                $summary['success'],
+                $summary['skipped'],
+                $summary['rejected'],
+                $summary['errors'],
+            ),
+            'summary' => $summary,
+            'results' => $results,
+        ];
+    }
+
+    /**
+     * Dimensions and weight text shown in the product list.
+     *
+     * @return array{id: int, dimensions: ?string, weight: ?string}
+     */
+    private function productListSpecPayload(Product $product): array
+    {
+        $dimensions = null;
+        if ($product->height !== null || $product->width !== null || $product->length !== null) {
+            $h = $product->height ?? '—';
+            $w = $product->width ?? '—';
+            $l = $product->length ?? '—';
+            $dimensions = "{$l} × {$w} × {$h}";
+            if ($product->linearUnit) {
+                $dimensions .= ' ' . $product->linearUnit->code;
+            }
+        }
+
+        $weight = null;
+        if ($product->weight !== null) {
+            $weight = (string) $product->weight;
+            if ($product->weightUnit) {
+                $weight .= ' ' . $product->weightUnit->code;
+            }
+        }
+
+        return [
+            'id' => (int) $product->id,
+            'dimensions' => $dimensions,
+            'weight' => $weight,
+        ];
     }
 
     public function storeMasterImage(Request $request, Product $product)

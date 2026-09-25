@@ -121,7 +121,8 @@ table.dataTable tbody tr:hover {
 /* Ensure all action buttons have consistent sizing */
 .btn-group .btn-info.btn-sm,
 .btn-group .btn-warning.btn-sm,
-.btn-group .btn-danger.btn-sm {
+.btn-group .btn-danger.btn-sm,
+.btn-group .btn-primary.btn-sm {
     min-width: 36px;
     height: 36px;
     padding: 0;
@@ -174,6 +175,11 @@ table.dataTable tbody tr:hover {
 .btn-group .btn-danger.btn-sm:hover {
     background-color: #c82333;
     border-color: #bd2130;
+}
+
+.btn-group .btn-primary.btn-sm:hover {
+    background-color: #0069d9;
+    border-color: #0062cc;
 }
 
 /* ========== MOBILE RESPONSIVE (320px - 576px) ========== */
@@ -253,7 +259,8 @@ table.dataTable tbody tr:hover {
 
     .btn-group .btn-info.btn-sm,
     .btn-group .btn-warning.btn-sm,
-    .btn-group .btn-danger.btn-sm {
+    .btn-group .btn-danger.btn-sm,
+    .btn-group .btn-primary.btn-sm {
         min-width: 32px;
         height: 32px;
         padding: 0;
@@ -340,7 +347,8 @@ table.dataTable tbody tr:hover {
 
     .btn-group .btn-info.btn-sm,
     .btn-group .btn-warning.btn-sm,
-    .btn-group .btn-danger.btn-sm {
+    .btn-group .btn-danger.btn-sm,
+    .btn-group .btn-primary.btn-sm {
         min-width: 34px;
         height: 34px;
         padding: 0;

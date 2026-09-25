@@ -139,6 +139,8 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('products.bulk-verify');
     Route::post('/products/bulk-enrich-specifications', [ProductController::class, 'bulkEnrichSpecifications'])
         ->name('products.bulk-enrich-specifications');
+    Route::post('/products/{product}/enrich-specifications', [ProductController::class, 'enrichSpecification'])
+        ->name('products.enrich-specifications');
 
     Route::prefix('psm-product-submissions')->name('psm-product-submissions.')->group(function () {
         Route::get('/', [PsmProductSubmissionController::class, 'index'])->name('index');

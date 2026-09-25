@@ -219,6 +219,7 @@
         $(document).ready(function() {
             var maxSyncEnrich = {{ (int) config('inventory_ai.max_sync_product_enrich', 100) }};
             var pageLoaderActive = false;
+            var enrichRequestActive = false;
 
             function showProductsLoader(title, message) {
                 pageLoaderActive = true;
@@ -226,7 +227,7 @@
                 $('#productsLoaderMessage').text(message);
                 $('#productsPageLoader').addClass('is-active');
                 $('#bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified').prop('disabled', true);
-                $('#productsTable .row-checkbox').prop('disabled', true);
+                $('#productsTable .row-checkbox, #productsTable .enrich-product-btn').prop('disabled', true);
                 $('a[href="{{ route('admin.products.create') }}"]').addClass('disabled').attr('aria-disabled', 'true');
             }
 
@@ -234,7 +235,7 @@
                 pageLoaderActive = false;
                 $('#productsPageLoader').removeClass('is-active');
                 $('#bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified').prop('disabled', false);
-                $('#productsTable .row-checkbox').prop('disabled', false);
+                $('#productsTable .row-checkbox, #productsTable .enrich-product-btn').prop('disabled', false);
                 $('a[href="{{ route('admin.products.create') }}"]').removeClass('disabled').removeAttr('aria-disabled');
             }
 
@@ -602,6 +603,124 @@
                     complete: function() {
                         hideProductsLoader();
                         $btn.prop('disabled', false);
+                        updateBulkButtons();
+                    }
+                });
+            });
+
+            function renderDimensionsCell(row) {
+                var parts = [];
+                if (row.dimensions) {
+                    parts.push('<div><small class="text-muted">Dimensions:</small> ' + $('<div/>').text(row.dimensions).html() + '</div>');
+                }
+                if (row.weight) {
+                    parts.push('<div><small class="text-muted">Weight:</small> ' + $('<div/>').text(row.weight).html() + '</div>');
+                }
+                if (parts.length === 0) {
+                    return '<span class="text-muted">—</span>';
+                }
+                return parts.join('');
+            }
+
+            function updateProductSpecCell(product) {
+                if (!product || product.id == null) {
+                    return;
+                }
+
+                productsTable.rows().every(function() {
+                    var data = this.data();
+                    if (!data || String(data.id) !== String(product.id)) {
+                        return;
+                    }
+
+                    data.dimensions = product.dimensions || null;
+                    data.weight = product.weight || null;
+
+                    var cellNode = productsTable.cell(this.index(), 8).node();
+                    if (cellNode) {
+                        $(cellNode).html(renderDimensionsCell(data));
+                    }
+
+                    var $child = $(this.node()).next('tr.child');
+                    $child.find('li[data-dt-column="8"] .dtr-data').html(renderDimensionsCell(data));
+                });
+            }
+
+            $(document).on('click', '.enrich-product-btn', function() {
+                if (pageLoaderActive || enrichRequestActive) {
+                    return;
+                }
+
+                var productId = $(this).data('product-id');
+                var productName = $(this).data('product-name') || ('Product ' + productId);
+
+                if (!productId) {
+                    alert('Unable to identify the selected product.');
+                    return;
+                }
+
+                var message = 'Run synchronous AI specification enrichment for "' + productName + '"?\n\n'
+                    + 'This uses the same enrichment process as AI Enrich Selected and runs immediately in this browser session.\n\n'
+                    + 'Existing dimensions and weight are included so incorrect values can be re-evaluated.\n\n'
+                    + 'Do not close this page until processing completes.';
+
+                if (!confirm(message)) {
+                    return;
+                }
+
+                enrichRequestActive = true;
+                var $btn = $(this);
+                showProductsLoader(
+                    'Running AI Enrichment',
+                    'Processing "' + productName + '" synchronously. Please do not close this page.'
+                );
+                $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+
+                $.ajax({
+                    url: '{{ route("admin.products.enrich-specifications", ["product" => 0]) }}'.replace(/\/0\/enrich-specifications$/, '/' + productId + '/enrich-specifications'),
+                    method: 'POST',
+                    timeout: 0,
+                    data: {
+                        _token: '{{ csrf_token() }}',
+                        confirm_enrich: 1
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            $('#enrichResultsSummary').text(response.message);
+                            var rowsHtml = '';
+                            (response.results || []).forEach(function(row) {
+                                var badgeClass = 'secondary';
+                                if (row.outcome === 'Success') badgeClass = 'success';
+                                else if (row.outcome === 'Skipped') badgeClass = 'secondary';
+                                else if (row.outcome === 'Still Rejected' || row.outcome === 'Failed') badgeClass = 'warning';
+                                else badgeClass = 'danger';
+
+                                rowsHtml += '<tr>';
+                                rowsHtml += '<td>' + row.product_id + '</td>';
+                                rowsHtml += '<td>' + $('<div/>').text(row.product_name).html() + '</td>';
+                                rowsHtml += '<td><span class="badge badge-' + badgeClass + '">' + row.outcome + '</span></td>';
+                                rowsHtml += '<td>' + $('<div/>').text(row.status).html() + '</td>';
+                                rowsHtml += '<td>' + $('<div/>').text(row.message).html() + '</td>';
+                                rowsHtml += '</tr>';
+                            });
+                            $('#enrichResultsBody').html(rowsHtml);
+                            $('#enrichResultsModal').modal('show');
+                            updateProductSpecCell(response.product);
+                        } else {
+                            alert('Error: ' + (response.message || 'Failed to enrich product.'));
+                        }
+                    },
+                    error: function(xhr) {
+                        var message = 'An error occurred while running AI enrichment.';
+                        if (xhr.responseJSON && xhr.responseJSON.message) {
+                            message = xhr.responseJSON.message;
+                        }
+                        alert(message);
+                    },
+                    complete: function() {
+                        enrichRequestActive = false;
+                        $btn.prop('disabled', false).html('<i class="fas fa-robot"></i>');
+                        hideProductsLoader();
                         updateBulkButtons();
                     }
                 });
