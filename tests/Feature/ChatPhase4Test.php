@@ -513,6 +513,7 @@ class ChatPhase4Test extends TestCase
             ->assertCreated();
 
         $this->assertNotNull($captured);
+        $this->assertStringStartsWith('Pro Subrental Marketplace Request', $captured);
         $this->assertStringContainsString('Alice A', $captured);
         $this->assertStringContainsString('Company A', $captured);
         $this->assertStringNotContainsString('12345', $captured);
