@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\ActivityLogController;
 use App\Http\Controllers\Admin\AdminUserManagementController;
 use App\Http\Controllers\Admin\BrandController;
 use App\Http\Controllers\Admin\CategoryController;
@@ -376,6 +377,13 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
     // User login / logout / failed login history (read-only)
     Route::get('/user-auth-events', [UserAuthEventController::class, 'index'])
         ->name('user-auth-events.index');
+
+    Route::get('/activity-logs', [ActivityLogController::class, 'index'])
+        ->name('activity-logs.index');
+    Route::get('/activity-logs/{activityLog}', [ActivityLogController::class, 'show'])
+        ->name('activity-logs.show');
+    Route::post('/activity-logs/{activityLog}/restore', [ActivityLogController::class, 'restore'])
+        ->name('activity-logs.restore');
 });
 
 require __DIR__.'/auth.php';

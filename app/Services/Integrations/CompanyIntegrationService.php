@@ -64,10 +64,6 @@ class CompanyIntegrationService
 
         $this->validateConnection($integrationType, $validatedData);
 
-        $existingDifferentSource = CompanyIntegration::query()
-            ->where('company_id', $companyId)
-            ->where('integration_type', '!=', $integrationType);
-
         $data = [
             'api_base_url' => ($typeConfig['requires_api_base_url'] ?? false)
                 ? ($validatedData['api_base_url'] ?? null)
@@ -78,15 +74,16 @@ class CompanyIntegrationService
             $data['api_key'] = $validatedData['api_key'];
         }
 
-        $integration = DB::transaction(function () use ($existingDifferentSource, $companyId, $integrationType, $data) {
-            $existingDifferentSource->delete();
-
-            // Remove any existing row via query builder so we never decrypt a stale
-            // api_key (e.g. after APP_KEY rotation — updateOrCreate would throw "The MAC is invalid").
-            DB::table('company_integrations')
+        $integration = DB::transaction(function () use ($companyId, $integrationType, $data) {
+            // Soft-delete through the model so the audit trail records the previous
+            // integration. Attributes are read raw, so a stale encrypted api_key is
+            // not decrypted (updateOrCreate would throw "The MAC is invalid").
+            CompanyIntegration::query()
                 ->where('company_id', $companyId)
-                ->where('integration_type', $integrationType)
-                ->delete();
+                ->get()
+                ->each(function (CompanyIntegration $existing) {
+                    $existing->delete();
+                });
 
             return CompanyIntegration::create(array_merge([
                 'company_id' => $companyId,

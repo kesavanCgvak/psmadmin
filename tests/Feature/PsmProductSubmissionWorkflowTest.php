@@ -392,6 +392,7 @@ class PsmProductSubmissionWorkflowTest extends TestCase
             $table->unsignedBigInteger('company_id');
             $table->integer('quantity')->default(1);
             $table->decimal('rental_price', 12, 2)->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
 

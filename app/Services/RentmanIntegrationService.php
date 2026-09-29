@@ -1121,10 +1121,16 @@ class RentmanIntegrationService
         string $rentmanEquipmentId,
     ): void {
         $updated = DB::transaction(function () use ($providerCompanyId, $productId, $rentmanEquipmentId) {
-            return Equipment::query()
+            $rows = Equipment::query()
                 ->where('company_id', $providerCompanyId)
                 ->where('product_id', $productId)
-                ->update(['rentman_equipment_id' => $rentmanEquipmentId]);
+                ->get();
+
+            foreach ($rows as $row) {
+                $row->update(['rentman_equipment_id' => $rentmanEquipmentId]);
+            }
+
+            return $rows->count();
         });
 
         Log::info('Rentman Integration: Database update rentman_equipment_id', [

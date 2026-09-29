@@ -36,6 +36,7 @@ class PartnerProductController extends Controller
             ->leftJoin('categories as c', 'p.category_id', '=', 'c.id')
             ->leftJoin('sub_categories as sc', 'p.sub_category_id', '=', 'sc.id')
             ->where('ci.company_id', $providerCompany->id)
+            ->whereNull('ci.deleted_at')
             ->where(function ($query) use ($keyword) {
                 $like = '%' . strtolower($keyword) . '%';
                 $query->whereRaw('LOWER(p.model) LIKE ?', [$like])
@@ -107,7 +108,8 @@ class PartnerProductController extends Controller
         $baseQuery = DB::table('company_inventory as ci')
             ->join('inventory_master as p', 'ci.product_id', '=', 'p.id')
             ->leftJoin('brands as b', 'p.brand_id', '=', 'b.id')
-            ->where('ci.company_id', $providerCompany->id);
+            ->where('ci.company_id', $providerCompany->id)
+            ->whereNull('ci.deleted_at');
 
         $total = (clone $baseQuery)->count('ci.id');
 
@@ -151,6 +153,7 @@ class PartnerProductController extends Controller
             ->leftJoin('categories as c', 'p.category_id', '=', 'c.id')
             ->leftJoin('sub_categories as sc', 'p.sub_category_id', '=', 'sc.id')
             ->where('ci.company_id', $providerCompany->id)
+            ->whereNull('ci.deleted_at')
             ->where('p.id', $productId)
             ->select(
                 'p.id as product_id',

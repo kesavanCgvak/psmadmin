@@ -582,6 +582,12 @@ return [
             'icon_color' => 'secondary',
         ],
         [
+            'text' => 'Activity Logs',
+            'route' => 'admin.activity-logs.index',
+            'icon' => 'fas fa-fw fa-clipboard-list',
+            'icon_color' => 'secondary',
+        ],
+        [
             'text' => 'User Restrictions',
             'route' => 'admin.user-restrictions.index',
             'icon' => 'fas fa-fw fa-users-cog',

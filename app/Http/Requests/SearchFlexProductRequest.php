@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\Rule;
 
 class SearchFlexProductRequest extends FormRequest
 {
@@ -19,7 +20,7 @@ class SearchFlexProductRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'company_inventory_id' => ['required', 'integer', 'min:1', 'exists:company_inventory,id'],
+            'company_inventory_id' => ['required', 'integer', 'min:1', Rule::exists('company_inventory', 'id')->whereNull('deleted_at')],
         ];
     }
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Equipment;
 use App\Models\InventoryMasterImage;
 use App\Models\Product;
 use App\Models\Category;
@@ -859,66 +860,52 @@ class ProductController extends Controller
      */
     private function mergeEquipmentInventory(int $wrongProductId, int $correctProductId)
     {
-        // Get all equipment records for the wrong product (Product A), grouped by company
-        $wrongProductEquipments = DB::table('company_inventory')
+        // Eloquent queries exclude soft-deleted rows and record an audit entry per change.
+        $wrongProductEquipments = Equipment::query()
             ->where('product_id', $wrongProductId)
             ->get()
             ->groupBy('company_id');
 
-        // Get all companies that have equipment for the correct product (Product B)
-        $companiesWithCorrectProduct = DB::table('company_inventory')
+        $companiesWithCorrectProduct = Equipment::query()
             ->where('product_id', $correctProductId)
-            ->select('company_id')
-            ->distinct()
             ->pluck('company_id')
-            ->toArray();
+            ->unique()
+            ->all();
 
-        // Process each company's Product A equipment records
         foreach ($wrongProductEquipments as $companyId => $equipmentRecords) {
-            // Check if this company already has equipment for the correct product
             if (in_array($companyId, $companiesWithCorrectProduct)) {
-                // Company has both Product A and Product B
-                // Sum all Product A quantities for this company
                 $totalQuantityToMerge = $equipmentRecords->sum(function ($record) {
                     return $record->quantity ?? 0;
                 });
 
                 if ($totalQuantityToMerge > 0) {
-                    // Get the first Product B equipment record for this company
-                    $firstCorrectEquipment = DB::table('company_inventory')
+                    $firstCorrectEquipment = Equipment::query()
                         ->where('product_id', $correctProductId)
                         ->where('company_id', $companyId)
                         ->orderBy('id')
                         ->first();
 
                     if ($firstCorrectEquipment) {
-                        // Add the merged quantity to the first Product B record
-                        DB::table('company_inventory')
-                            ->where('id', $firstCorrectEquipment->id)
-                            ->increment('quantity', $totalQuantityToMerge);
+                        $firstCorrectEquipment->increment('quantity', $totalQuantityToMerge);
                     }
                 }
 
-                // Delete all Product A equipment records for this company
-                $equipmentIds = $equipmentRecords->pluck('id')->toArray();
-                DB::table('company_inventory')
-                    ->whereIn('id', $equipmentIds)
-                    ->delete();
+                foreach ($equipmentRecords as $equipment) {
+                    $equipment->delete();
+                }
             } else {
-                // Company only has Product A
-                // Update all Product A records' product_id to Product B
-                $equipmentIds = $equipmentRecords->pluck('id')->toArray();
-                DB::table('company_inventory')
-                    ->whereIn('id', $equipmentIds)
-                    ->update(['product_id' => $correctProductId]);
+                foreach ($equipmentRecords as $equipment) {
+                    $equipment->update(['product_id' => $correctProductId]);
+                }
             }
         }
 
-        // Final safety check: Delete any remaining Product A equipment records
-        // This handles edge cases where records might not have been processed above
-        DB::table('company_inventory')
+        Equipment::query()
             ->where('product_id', $wrongProductId)
-            ->delete();
+            ->get()
+            ->each(function (Equipment $equipment) {
+                $equipment->delete();
+            });
     }
 
     /**
