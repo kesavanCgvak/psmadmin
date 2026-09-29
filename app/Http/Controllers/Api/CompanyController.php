@@ -850,7 +850,8 @@ class CompanyController extends Controller
                 ->whereNull('blocked_by_admin_at')
                 ->join('company_inventory', function ($join) use ($productIds) {
                     $join->on('companies.id', '=', 'company_inventory.company_id')
-                        ->whereIn('company_inventory.product_id', $productIds);
+                        ->whereIn('company_inventory.product_id', $productIds)
+                        ->whereNull('company_inventory.deleted_at');
                 })
                 ->join('inventory_master', 'inventory_master.id', '=', 'company_inventory.product_id')
                 ->leftJoin('brands', 'brands.id', '=', 'inventory_master.brand_id')
@@ -1067,7 +1068,8 @@ class CompanyController extends Controller
                 ->with(['defaultContactProfile'])
                 ->join('company_inventory', function ($join) use ($productIds) {
                     $join->on('companies.id', '=', 'company_inventory.company_id')
-                        ->whereIn('company_inventory.product_id', $productIds);
+                        ->whereIn('company_inventory.product_id', $productIds)
+                        ->whereNull('company_inventory.deleted_at');
                 })
                 ->join('inventory_master', 'inventory_master.id', '=', 'company_inventory.product_id')
                 ->select(

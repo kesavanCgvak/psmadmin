@@ -12,6 +12,25 @@
         $backToUsersParams['search'] = request()->query('search');
     }
     $backToUsersUrl = route('admin.users.index', $backToUsersParams);
+
+    $backToUserUrl = null;
+    $returnUserId = request()->query('user_id');
+    if (request()->query('from') === 'user' && is_numeric($returnUserId) && (int) $returnUserId > 0) {
+        $userDetailsPath = parse_url(route('admin.users.show', (int) $returnUserId), PHP_URL_PATH);
+        $returnTarget = request()->query('return');
+        if (is_string($returnTarget) && $returnTarget !== '' && is_string($userDetailsPath) && $userDetailsPath !== '') {
+            $returnParts = parse_url($returnTarget);
+            $returnPath = $returnParts['path'] ?? '';
+            if (
+                empty($returnParts['scheme'])
+                && empty($returnParts['host'])
+                && $returnPath === $userDetailsPath
+            ) {
+                $backToUserUrl = $userDetailsPath . (isset($returnParts['query']) ? '?' . $returnParts['query'] : '');
+            }
+        }
+        $backToUserUrl ??= route('admin.users.show', (int) $returnUserId);
+    }
 @endphp
 
 @section('content_header')
@@ -297,7 +316,11 @@
                     <a href="{{ route('admin.companies.edit', $company) }}" class="btn btn-warning">
                         <i class="fas fa-edit"></i> Edit
                     </a>
-                    @if($fromUsersListing)
+                    @if($backToUserUrl)
+                        <a href="{{ $backToUserUrl }}" class="btn btn-primary btn-lg">
+                            <i class="fas fa-arrow-left"></i> Back
+                        </a>
+                    @elseif($fromUsersListing)
                         <a href="{{ $backToUsersUrl }}" class="btn btn-primary btn-lg">
                             <i class="fas fa-arrow-left"></i> Back to Users
                         </a>

@@ -1,12 +1,18 @@
 <?php
 namespace App\Models;
 
+use App\Traits\Auditable;
+use App\Traits\MaintainsActiveUniqueKeys;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Equipment extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes, Auditable, MaintainsActiveUniqueKeys {
+        MaintainsActiveUniqueKeys::runSoftDelete insteadof SoftDeletes;
+    }
+
     protected $table = 'company_inventory';
 
     protected $fillable = [
@@ -36,6 +42,49 @@ class Equipment extends Model
         'length' => 'decimal:2',
         'weight' => 'decimal:2',
     ];
+
+    /**
+     * Active-row uniqueness keys. Cleared when the row is soft-deleted.
+     *
+     * @var list<string>
+     */
+    protected $hidden = [
+        'active_rentman_key',
+        'active_flex_key',
+    ];
+
+    /**
+     * @return array<string, ?string>
+     */
+    public function activeUniqueKeyMap(): array
+    {
+        return [
+            'active_rentman_key' => $this->composeActiveKey($this->company_id, $this->rentman_equipment_id),
+            'active_flex_key' => $this->composeActiveKey($this->company_id, $this->flex_resource_id),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    public function auditSupplements(array $attributes): array
+    {
+        $productId = $attributes['product_id'] ?? null;
+        if (!$productId) {
+            return [];
+        }
+
+        $product = Product::query()->select(['model', 'psm_code'])->find($productId);
+        if (!$product) {
+            return [];
+        }
+
+        return array_filter([
+            'equipment_name' => $product->model,
+            'psm_code' => $product->psm_code,
+        ], static fn ($value) => $value !== null && $value !== '');
+    }
 
     public function user()
     {

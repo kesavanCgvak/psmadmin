@@ -7,6 +7,18 @@
 @stop
 
 @section('content')
+    @php
+        $companyShowUrl = null;
+        if ($user->company?->id) {
+            $userDetailsPath = parse_url(route('admin.users.show', $user), PHP_URL_PATH);
+            $userDetailsQuery = request()->getQueryString();
+            $companyShowUrl = route('admin.companies.show', $user->company) . '?' . http_build_query([
+                'from' => 'user',
+                'user_id' => $user->id,
+                'return' => $userDetailsPath . ($userDetailsQuery ? '?' . $userDetailsQuery : ''),
+            ]);
+        }
+    @endphp
     <div class="row">
         <div class="col-md-4">
             <div class="card card-primary card-outline">
@@ -58,7 +70,12 @@
                             </a>
                         </li>
                         <li class="list-group-item">
-                            <b>Company</b> <a class="float-right">{{ $user->company?->name ?? 'N/A' }}</a>
+                            <b>Company</b>
+                            @if($companyShowUrl)
+                                <a class="float-right font-weight-bold" href="{{ $companyShowUrl }}">{{ $user->company->name }}</a>
+                            @else
+                                <a class="float-right">N/A</a>
+                            @endif
                         </li>
                         <li class="list-group-item">
                             <b>Referred By</b>
@@ -213,7 +230,13 @@
                                         <span class="info-box-icon"><i class="fas fa-building"></i></span>
                                         <div class="info-box-content">
                                             <span class="info-box-text">Company</span>
-                                            <span class="info-box-number">{{ $user->company?->name ?? 'None' }}</span>
+                                            <span class="info-box-number">
+                                                @if($companyShowUrl)
+                                                    <a href="{{ $companyShowUrl }}" class="text-dark">{{ $user->company->name }}</a>
+                                                @else
+                                                    None
+                                                @endif
+                                            </span>
                                         </div>
                                     </div>
                                 </div>

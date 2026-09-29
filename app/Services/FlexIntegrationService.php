@@ -3833,10 +3833,16 @@ class FlexIntegrationService
     public static function persistFlexResourceOnInventory(int $providerCompanyId, int $productId, string $flexResourceId): void
     {
         $updated = DB::transaction(function () use ($providerCompanyId, $productId, $flexResourceId) {
-            return Equipment::query()
+            $rows = Equipment::query()
                 ->where('company_id', $providerCompanyId)
                 ->where('product_id', $productId)
-                ->update(['flex_resource_id' => $flexResourceId]);
+                ->get();
+
+            foreach ($rows as $row) {
+                $row->update(['flex_resource_id' => $flexResourceId]);
+            }
+
+            return $rows->count();
         });
 
         Log::info('Flex Integration: Database update flex_resource_id', [

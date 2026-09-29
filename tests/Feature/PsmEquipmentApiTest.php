@@ -474,6 +474,7 @@ class PsmEquipmentApiTest extends TestCase
             $table->unsignedBigInteger('weight_unit_id')->nullable();
             $table->string('country_of_origin')->nullable();
             $table->string('hsn_code')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
 
