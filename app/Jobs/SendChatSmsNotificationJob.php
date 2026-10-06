@@ -97,7 +97,7 @@ class SendChatSmsNotificationJob implements ShouldBeUnique, ShouldQueue
 
         $senderCompanyName = $this->companyName($conversation, (int) $message->sender_company_id) ?: 'a company';
         $body = sprintf(
-            'PSM: You have a new message from %s at %s. Open Pro Subrental Marketplace to reply.',
+            'Pro Subrental Marketplace Request: You have a new message from %s at %s. Open the app to reply.',
             ChatIdentity::displayName($sender),
             $senderCompanyName
         );
