@@ -63,7 +63,7 @@ class SendSupplierSmsJob implements ShouldQueue
         $formattedDate = Carbon::parse($this->jobBeginDate)->format($phpFormat);
 
         $message = sprintf(
-            'A request from "%s" starting on "%s" and is titled "%s" has been emailed to you from Pro Subrental Marketplace. Please check your email and respond as soon as possible.',
+            'Pro Subrental Marketplace Request from "%s" starting on "%s" and titled "%s" has been emailed to you. Please check your email and respond as soon as possible.',
             $this->customerName,
             $formattedDate,
             $this->requestName
