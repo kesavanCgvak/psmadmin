@@ -26,7 +26,7 @@ use Illuminate\Support\Str;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use App\Models\Equipment;
 use App\Models\Product;
-use App\Support\ProviderRegistrationInventory;
+use App\Support\CompanyInventorySpecs;
 use App\Support\UserPresence;
 
 class AuthController extends Controller
@@ -59,12 +59,36 @@ class AuthController extends Controller
             'referred_by_company_id' => 'nullable|integer|exists:companies,id',
         ];
 
+        if ($request->input('account_type') === 'provider') {
+            $rules['product_selections'] = 'bail|required|array|min:10';
+            $rules['product_selections.*.product_id'] = 'required|integer|distinct|exists:inventory_master,id';
+            $rules['product_selections.*.quantity'] = 'required|integer|min:1';
+            $rules['product_selections.*.rental_price'] = 'required|numeric|min:0';
+        } else {
+            // Normal users must not submit inventory. An omitted or empty value is allowed.
+            $rules['product_selections'] = 'prohibited';
+        }
+
         $customMessages = [
             'account_type.in' => 'Account type must be provider, customer or user.',
             'company_name.unique' => 'This company name is already registered.',
             'username.unique' => 'This username is already taken.',
             'terms_accepted.accepted' => 'You must accept the terms to register.',
             'referred_by_company_id.exists' => 'The selected referring company is invalid.',
+            'product_selections.required' => 'At least 10 products are required.',
+            'product_selections.array' => 'Product selections must be a list of products.',
+            'product_selections.min' => 'At least 10 products are required.',
+            'product_selections.prohibited' => 'Product selections are only allowed for provider registration.',
+            'product_selections.*.product_id.required' => 'Each selected product must include a product id.',
+            'product_selections.*.product_id.integer' => 'Each product id must be an integer.',
+            'product_selections.*.product_id.distinct' => 'Each product can only be selected once.',
+            'product_selections.*.product_id.exists' => 'One or more selected products do not exist.',
+            'product_selections.*.quantity.required' => 'Each selected product must include a quantity.',
+            'product_selections.*.quantity.integer' => 'Quantity must be a whole number.',
+            'product_selections.*.quantity.min' => 'Quantity must be greater than 0.',
+            'product_selections.*.rental_price.required' => 'Each selected product must include a rental price.',
+            'product_selections.*.rental_price.numeric' => 'Rental price must be a number.',
+            'product_selections.*.rental_price.min' => 'Rental price must be greater than or equal to 0.',
         ];
 
         // Add payment validation only if payment is enabled
@@ -242,56 +266,7 @@ class AuthController extends Controller
             Log::info('Profile created', ['profile' => $user->profile]);
 
             if ($request->account_type === 'provider') {
-                Log::info('Provider registration: resolving default inventory by psm_code', [
-                    'company_id' => $company->id,
-                    'user_id' => $user->id,
-                    'environment' => app()->environment(),
-                ]);
-                $defaultPsmCodes = ProviderRegistrationInventory::defaultProductPsmCodes();
-                Log::info('Provider registration: resolved default inventory psm_codes', [
-                    'company_id' => $company->id,
-                    'user_id' => $user->id,
-                    'default_psm_codes' => $defaultPsmCodes,
-                    'default_psm_code_count' => is_array($defaultPsmCodes) ? count($defaultPsmCodes) : null,
-                ]);
-
-                if (!is_array($defaultPsmCodes) || empty($defaultPsmCodes)) {
-                    Log::warning('Provider registration: default inventory psm_codes are empty or invalid', [
-                        'company_id' => $company->id,
-                        'user_id' => $user->id,
-                        'default_psm_codes' => $defaultPsmCodes,
-                    ]);
-                }
-
-                $products = Product::whereIn('psm_code', $defaultPsmCodes)->get(['id', 'model', 'psm_code']);
-                foreach ($defaultPsmCodes as $psmCode) {
-                    $product = $products->firstWhere('psm_code', $psmCode);
-                    if (!$product) {
-                        Log::error('Provider registration: default inventory product missing in inventory_master', [
-                            'psm_code' => $psmCode,
-                            'company_id' => $company->id,
-                            'user_id' => $user->id,
-                        ]);
-                        continue;
-                    }
-                    if (Equipment::where('company_id', $company->id)->where('product_id', $product->id)->exists()) {
-                        continue;
-                    }
-                    Equipment::create([
-                        'user_id' => $user->id,
-                        'company_id' => $company->id,
-                        'product_id' => $product->id,
-                        'quantity' => 1,
-                        'rental_price' => 0,
-                    ]);
-                    Log::info('Provider registration: default inventory product added', [
-                        'company_id' => $company->id,
-                        'user_id' => $user->id,
-                        'product_id' => $product->id,
-                        'psm_code' => $product->psm_code,
-                        'model' => $product->model,
-                    ]);
-                }
+                $this->createProviderRegistrationInventory($company, $user, $request->input('product_selections', []));
             }
 
             // Handle Stripe Subscription only if payment is enabled
@@ -491,6 +466,46 @@ class AuthController extends Controller
                 'error' => 'Internal server error, please try again later.',
             ], 500);
         }
+    }
+
+    /**
+     * Create company inventory from the products selected during provider registration.
+     * Catalogue physical specs are copied the same way as equipment creation.
+     * Image files are not copied.
+     *
+     * @param  list<array<string, mixed>>  $selections
+     */
+    private function createProviderRegistrationInventory(Company $company, User $user, array $selections): void
+    {
+        $productIds = collect($selections)->pluck('product_id')->map(fn ($id) => (int) $id)->all();
+        $products = Product::query()
+            ->whereIn('id', $productIds)
+            ->get()
+            ->keyBy('id');
+
+        foreach ($selections as $selection) {
+            $productId = (int) ($selection['product_id'] ?? 0);
+            $product = $products->get($productId);
+
+            if (!$product) {
+                throw new \RuntimeException('Selected catalogue product no longer exists.');
+            }
+
+            Equipment::create(array_merge([
+                'user_id' => $user->id,
+                'company_id' => $company->id,
+                'product_id' => $product->id,
+                'quantity' => (int) $selection['quantity'],
+                'rental_price' => $selection['rental_price'],
+            ], CompanyInventorySpecs::attributesFromProduct($product)));
+        }
+
+        Log::info('Provider registration: selected inventory created', [
+            'company_id' => $company->id,
+            'user_id' => $user->id,
+            'product_count' => count($selections),
+            'product_ids' => $productIds,
+        ]);
     }
 
     /**
