@@ -130,6 +130,16 @@ class ProductController extends Controller
                 $query->where('is_verified', 0);
             }
 
+            // Brand, category, and sub-category filters combine with AND, search, and pagination.
+            // "none" matches a missing relation: null, unassigned, or an id the list renders as a dash.
+            foreach ([
+                'brand_id' => 'brand',
+                'category_id' => 'category',
+                'sub_category_id' => 'subCategory',
+            ] as $filterColumn => $relation) {
+                $this->applyProductCatalogFilter($query, $request->input($filterColumn), $filterColumn, $relation);
+            }
+
             // Apply search filter (AND across whitespace-separated keywords; OR across fields)
             if ($searchValue !== '') {
                 InventoryProductSearch::applyToProductQuery($query, $searchValue, true);
@@ -188,6 +198,33 @@ class ProductController extends Controller
     }
 
     /**
+     * Optional catalog filter. A positive id matches that record. "none" matches products
+     * whose relation is missing, which is what the products list renders as a dash.
+     */
+    private function applyProductCatalogFilter($query, mixed $value, string $column, string $relation): void
+    {
+        if (! is_string($value) && ! is_int($value)) {
+            return;
+        }
+
+        $value = trim((string) $value);
+        if ($value === '') {
+            return;
+        }
+
+        if ($value === 'none') {
+            $query->whereDoesntHave($relation);
+
+            return;
+        }
+
+        $filterId = filter_var($value, FILTER_VALIDATE_INT);
+        if ($filterId !== false && $filterId > 0) {
+            $query->where('inventory_master.'.$column, $filterId);
+        }
+    }
+
+    /**
      * Apply DataTables column sort to the products query (works with or without an active search).
      */
     private function applyProductsTableOrder($query, string $orderColumnName, string $orderDir): void
@@ -233,17 +270,21 @@ class ProductController extends Controller
 
         $productName = htmlspecialchars((string) ($product->model ?? ''), ENT_QUOTES, 'UTF-8');
 
-        return '
+        $actions = '
             <div class="btn-group">
                 <a href="' . $viewUrl . '" class="btn btn-info btn-sm" title="View">
                     <i class="fas fa-eye"></i>
                 </a>
                 <a href="' . $editUrl . '" class="btn btn-warning btn-sm" title="Edit">
                     <i class="fas fa-edit"></i>
-                </a>
-                <button type="button" class="btn btn-primary btn-sm enrich-product-btn" title="AI Enrichment" data-product-id="' . $product->id . '" data-product-name="' . $productName . '">
-                    <i class="fas fa-robot"></i>
-                </button>
+                </a>';
+
+        $actions .= '
+            <button type="button" class="btn btn-primary btn-sm enrich-product-btn" title="AI Enrichment" data-product-id="' . $product->id . '" data-product-name="' . $productName . '">
+                <i class="fas fa-robot"></i>
+            </button>';
+
+        $actions .= '
                 <a href="' . $cloneUrl . '" class="btn btn-success btn-sm" title="Clone" onclick="return confirm(\'Are you sure you want to clone this product? A new product will be created with \' (clone)\' appended to the model name.\');">
                     <i class="fas fa-copy"></i>
                 </a>
@@ -259,6 +300,8 @@ class ProductController extends Controller
                 </form>
             </div>
         ';
+
+        return $actions;
     }
 
     /**

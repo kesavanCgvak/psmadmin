@@ -2,6 +2,8 @@
 
 @section('title', 'Products')
 
+@section('plugins.Select2', true)
+
 @section('content_header')
     <h1>Products Management</h1>
 @stop
@@ -22,6 +24,7 @@
     @endif
 
     <div class="card">
+        <div class="products-list-sticky">
         <div class="card-header">
             <h3 class="card-title">All Products</h3>
             <div class="card-tools">
@@ -42,18 +45,38 @@
                 </a>
             </div>
         </div>
-        <div class="card-body">
-            <div class="mb-3">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="filterUnverified" name="filter_unverified">
-                    <label class="form-check-label" for="filterUnverified">
-                        Show only unverified products
-                    </label>
+            <div class="products-list-sticky__panel">
+            <div id="productCatalogFilters" class="product-list-filters">
+                <div class="product-list-filters__grid">
+                    <div class="product-list-filters__field">
+                        <label for="filterBrand">Brand</label>
+                        <select id="filterBrand" class="form-control"></select>
+                    </div>
+                    <div class="product-list-filters__field">
+                        <label for="filterCategory">Category</label>
+                        <select id="filterCategory" class="form-control"></select>
+                    </div>
+                    <div class="product-list-filters__field">
+                        <label for="filterSubCategory">Sub Category</label>
+                        <select id="filterSubCategory" class="form-control"></select>
+                    </div>
+                    <div class="product-list-filters__actions">
+                        <button type="button" id="clearProductFilters" class="btn btn-default">
+                            <i class="fas fa-times"></i><span>Clear Filters</span>
+                        </button>
+                    </div>
                 </div>
+                <label class="product-list-filters__check" for="filterUnverified">
+                    <input type="checkbox" id="filterUnverified" name="filter_unverified">
+                    <span>Show only unverified products</span>
+                </label>
             </div>
             <div id="selectedProductsSummary" class="alert alert-info py-2" style="display: none;">
                 <strong id="selectedProductsSummaryText"></strong>
             </div>
+            </div>
+        </div>
+        <div class="card-body products-list-table">
             <table id="productsTable" class="table table-bordered table-striped">
                 <thead>
                     <tr>
@@ -279,6 +302,163 @@
             width: 3rem;
             height: 3rem;
         }
+
+        #productCatalogFilters.product-list-filters {
+            margin-bottom: 0.75rem;
+            padding: 0.85rem 1rem 0.7rem;
+            background: #f8f9fb;
+            border: 1px solid #e4e7eb;
+            border-radius: 0.35rem;
+        }
+
+        #productCatalogFilters .product-list-filters__grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+            gap: 0.75rem 1rem;
+            align-items: end;
+        }
+
+        #productCatalogFilters .product-list-filters__field {
+            min-width: 0;
+        }
+
+        #productCatalogFilters .product-list-filters__field label {
+            display: block;
+            margin-bottom: 0.3rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            color: #6c757d;
+        }
+
+        #productCatalogFilters .product-list-filters__actions .btn {
+            height: calc(2.25rem + 2px);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            white-space: nowrap;
+            padding-left: 0.9rem;
+            padding-right: 0.9rem;
+        }
+
+        #productCatalogFilters .product-list-filters__check {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            margin: 0.75rem 0 0;
+            padding-top: 0.65rem;
+            border-top: 1px solid #e4e7eb;
+            width: 100%;
+            font-weight: 400;
+            color: #495057;
+            cursor: pointer;
+        }
+
+        #productCatalogFilters .product-list-filters__check input {
+            margin: 0;
+            flex: 0 0 auto;
+        }
+
+        #productCatalogFilters .select2-container {
+            width: 100% !important;
+        }
+
+        #productCatalogFilters .select2-container--default .select2-selection--single {
+            height: calc(2.25rem + 2px);
+            border: 1px solid #ced4da;
+            border-radius: 0.25rem;
+            background-color: #fff;
+        }
+
+        #productCatalogFilters .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: calc(2.25rem + 2px);
+            padding-left: 0.75rem;
+            padding-right: 2.5rem;
+            color: #495057;
+        }
+
+        #productCatalogFilters .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: calc(2.25rem + 2px);
+        }
+
+        #productCatalogFilters .select2-container--default .select2-selection--single .select2-selection__clear {
+            height: calc(2.25rem + 2px);
+            line-height: calc(2.25rem + 2px);
+            margin-right: 1.15rem;
+        }
+
+        @media (max-width: 991.98px) {
+            #productCatalogFilters .product-list-filters__grid {
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            }
+
+            #productCatalogFilters .product-list-filters__actions .btn {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 575.98px) {
+            #productCatalogFilters.product-list-filters {
+                padding: 0.75rem;
+            }
+
+            #productCatalogFilters .product-list-filters__grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+
+        .products-list-sticky {
+            position: sticky;
+            top: 0;
+            z-index: 30;
+            background: #fff;
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+        }
+
+        body.layout-navbar-fixed .products-list-sticky {
+            top: 3.5rem;
+        }
+
+        .products-list-sticky > .card-header {
+            border-top-left-radius: 0.25rem;
+            border-top-right-radius: 0.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .products-list-sticky > .card-header .card-tools {
+            float: none;
+            margin-left: auto;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+        }
+
+        .products-list-sticky > .card-header .card-tools .btn {
+            margin-right: 0 !important;
+        }
+
+        .products-list-sticky__panel {
+            padding: 0.75rem 1.25rem 0.75rem;
+            background: #fff;
+        }
+
+        .products-list-sticky #productCatalogFilters.product-list-filters {
+            margin-bottom: 0;
+        }
+
+        .products-list-sticky #selectedProductsSummary {
+            margin: 0.75rem 0 0;
+        }
+
+        .products-list-table {
+            padding-top: 0.75rem;
+        }
     </style>
 @stop
 
@@ -298,7 +478,7 @@
                 $('#productsLoaderTitle').text(title);
                 $('#productsLoaderMessage').text(message);
                 $('#productsPageLoader').addClass('is-active');
-                $('#bulkEditBtn, #bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified').prop('disabled', true);
+                $('#bulkEditBtn, #bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified, #filterBrand, #filterCategory, #filterSubCategory, #clearProductFilters').prop('disabled', true);
                 $('#productsTable .row-checkbox, #productsTable .enrich-product-btn').prop('disabled', true);
                 $('a[href="{{ route('admin.products.create') }}"]').addClass('disabled').attr('aria-disabled', 'true');
             }
@@ -306,7 +486,7 @@
             function hideProductsLoader() {
                 pageLoaderActive = false;
                 $('#productsPageLoader').removeClass('is-active');
-                $('#bulkEditBtn, #bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified').prop('disabled', false);
+                $('#bulkEditBtn, #bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified, #filterBrand, #filterCategory, #filterSubCategory, #clearProductFilters').prop('disabled', false);
                 $('#productsTable .row-checkbox, #productsTable .enrich-product-btn').prop('disabled', false);
                 $('a[href="{{ route('admin.products.create') }}"]').removeClass('disabled').removeAttr('aria-disabled');
             }
@@ -316,6 +496,87 @@
             if (savedUnverified === '1') {
                 $('#filterUnverified').prop('checked', true);
             }
+
+            var savedBrand = localStorage.getItem('products_filter_brand') || '';
+            var savedCategory = localStorage.getItem('products_filter_category') || '';
+            var savedSubCategory = localStorage.getItem('products_filter_subcategory') || '';
+            var applyingProductFilters = false;
+            var productFiltersTouched = false;
+            var unsetCatalogValue = 'none';
+
+            function storeProductFilter(key, value) {
+                if (value) {
+                    localStorage.setItem(key, value);
+                } else {
+                    localStorage.removeItem(key);
+                }
+            }
+
+            function persistProductCatalogFilters() {
+                storeProductFilter('products_filter_brand', $('#filterBrand').val() || '');
+                storeProductFilter('products_filter_category', $('#filterCategory').val() || '');
+                storeProductFilter('products_filter_subcategory', $('#filterSubCategory').val() || '');
+            }
+
+            function populateCatalogFilterOptions($select, items, selectedId) {
+                var selected = selectedId === undefined || selectedId === null ? '' : String(selectedId);
+                $select.empty();
+                $select.append($('<option>', { value: '', text: '' }));
+                $.each(items, function(_, item) {
+                    $select.append($('<option>', { value: item.id, text: item.name }));
+                });
+                $select.append($('<option>', { value: unsetCatalogValue, text: 'Not Set (-)' }));
+                if (selected !== '' && $select.find('option[value="' + selected + '"]').length) {
+                    $select.val(selected);
+                } else {
+                    $select.val('');
+                }
+                if ($select.data('select2')) {
+                    $select.trigger('change.select2');
+                }
+            }
+
+            function subCategoryFilterItems(categoryId) {
+                var items = [];
+                $.each(bulkEditSubCategories, function(_, subCategory) {
+                    if (categoryId && categoryId !== unsetCatalogValue && String(subCategory.category_id) !== String(categoryId)) {
+                        return;
+                    }
+                    var label = subCategory.name;
+                    if ((!categoryId || categoryId === unsetCatalogValue) && subCategory.category_name) {
+                        label += ' (' + subCategory.category_name + ')';
+                    }
+                    items.push({ id: subCategory.id, name: label });
+                });
+                return items;
+            }
+
+            function populateSubCategoryFilter(selectedId) {
+                populateCatalogFilterOptions(
+                    $('#filterSubCategory'),
+                    subCategoryFilterItems($('#filterCategory').val() || ''),
+                    selectedId
+                );
+            }
+
+            function initCatalogFilterSelect($select, placeholder) {
+                if (!$.fn.select2) {
+                    return;
+                }
+                $select.select2({
+                    placeholder: placeholder,
+                    allowClear: true,
+                    width: '100%'
+                });
+            }
+
+            populateCatalogFilterOptions($('#filterBrand'), bulkEditBrands, savedBrand);
+            populateCatalogFilterOptions($('#filterCategory'), bulkEditCategories, savedCategory);
+            populateSubCategoryFilter(savedSubCategory);
+            persistProductCatalogFilters();
+            initCatalogFilterSelect($('#filterBrand'), 'All Brands');
+            initCatalogFilterSelect($('#filterCategory'), 'All Categories');
+            initCatalogFilterSelect($('#filterSubCategory'), 'All Sub Categories');
 
             var productsTable = initResponsiveDataTable('productsTable', {
                 "processing": true,
@@ -333,6 +594,18 @@
                     "type": "GET",
                     "data": function(d) {
                         d.unverified_only = $('#filterUnverified').is(':checked') ? '1' : '0';
+                        var brandId = $('#filterBrand').val();
+                        var categoryId = $('#filterCategory').val();
+                        var subCategoryId = $('#filterSubCategory').val();
+                        if (brandId) {
+                            d.brand_id = brandId;
+                        }
+                        if (categoryId) {
+                            d.category_id = categoryId;
+                        }
+                        if (subCategoryId) {
+                            d.sub_category_id = subCategoryId;
+                        }
                     },
                     "error": function(xhr, error, thrown) {
                         console.error('DataTables AJAX error:', error, thrown);
@@ -479,9 +752,10 @@
                     needsRedraw = true;
                 }
 
-                // Restore pagination and trigger single draw with all restored state
-                if (needsRedraw || savedPage) {
-                    if (savedPage) {
+                // Restore pagination and trigger single draw with all restored state.
+                // Skip the saved page when a catalog filter already reset paging.
+                if (needsRedraw || (savedPage && !productFiltersTouched)) {
+                    if (savedPage && !productFiltersTouched) {
                         productsTable.page(parseInt(savedPage));
                     }
                     productsTable.draw(false); // false = don't reset paging
@@ -495,6 +769,46 @@
                 // Reset to first page when filter changes
                 localStorage.setItem('products_filter_page', '0');
                 productsTable.ajax.reload();
+            });
+
+            function reloadProductListForFilters() {
+                productFiltersTouched = true;
+                persistProductCatalogFilters();
+                localStorage.setItem('products_filter_page', '0');
+                productsTable.ajax.reload();
+            }
+
+            $('#filterBrand').on('change', function() {
+                if (applyingProductFilters) {
+                    return;
+                }
+                reloadProductListForFilters();
+            });
+
+            $('#filterCategory').on('change', function() {
+                if (applyingProductFilters) {
+                    return;
+                }
+                applyingProductFilters = true;
+                populateSubCategoryFilter($('#filterSubCategory').val());
+                applyingProductFilters = false;
+                reloadProductListForFilters();
+            });
+
+            $('#filterSubCategory').on('change', function() {
+                if (applyingProductFilters) {
+                    return;
+                }
+                reloadProductListForFilters();
+            });
+
+            $('#clearProductFilters').on('click', function() {
+                applyingProductFilters = true;
+                $('#filterBrand').val('').trigger('change');
+                $('#filterCategory').val('').trigger('change');
+                populateSubCategoryFilter('');
+                applyingProductFilters = false;
+                reloadProductListForFilters();
             });
 
             // Save search filter to localStorage
