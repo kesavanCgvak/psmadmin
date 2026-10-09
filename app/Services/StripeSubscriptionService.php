@@ -10,6 +10,7 @@ use Stripe\Stripe;
 use Stripe\Customer;
 use Stripe\Subscription as StripeSubscription;
 use Stripe\PaymentMethod;
+use Stripe\SetupIntent;
 use Stripe\Exception\ApiErrorException;
 
 class StripeSubscriptionService
@@ -41,6 +42,39 @@ class StripeSubscriptionService
             Log::error('Failed to create Stripe customer', [
                 'error' => $e->getMessage(),
                 'data' => $data,
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Create a SetupIntent so the browser can save a card, Apple Pay, or Google Pay
+     * for a later off-session subscription charge.
+     */
+    public function createSetupIntent(?string $customerId = null): SetupIntent
+    {
+        try {
+            $payload = [
+                'usage' => 'off_session',
+                'payment_method_types' => ['card'],
+            ];
+
+            if ($customerId) {
+                $payload['customer'] = $customerId;
+            }
+
+            $setupIntent = SetupIntent::create($payload);
+
+            Log::info('Stripe setup intent created', [
+                'setup_intent_id' => $setupIntent->id,
+                'customer_id' => $customerId,
+            ]);
+
+            return $setupIntent;
+        } catch (ApiErrorException $e) {
+            Log::error('Failed to create Stripe setup intent', [
+                'customer_id' => $customerId,
+                'error' => $e->getMessage(),
             ]);
             throw $e;
         }
