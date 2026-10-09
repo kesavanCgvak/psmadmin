@@ -26,6 +26,26 @@ class PaymentStatusController extends Controller
     }
 
     /**
+     * Publishable Stripe key for the customer app. The secret key stays on the server.
+     */
+    public function publicKey()
+    {
+        $key = (string) config('services.stripe.key');
+
+        if ($key === '' || !str_starts_with($key, 'pk_')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Stripe publishable key is not configured.',
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'public_key' => $key,
+        ]);
+    }
+
+    /**
      * Create a SetupIntent for registration, before the visitor has an account.
      */
     public function setupIntent(StripeSubscriptionService $subscriptionService)

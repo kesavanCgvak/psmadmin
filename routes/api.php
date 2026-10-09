@@ -81,6 +81,7 @@ Route::post('/mail/test', [MailTestController::class, 'testEmail']);
 
 // Payment status check (public endpoint for frontend)
 Route::get('/payment/status', [PaymentStatusController::class, 'status']);
+Route::match(['get', 'post'], '/stripe/public-key', [PaymentStatusController::class, 'publicKey']);
 Route::post('/payment/setup-intent', [PaymentStatusController::class, 'setupIntent'])
     ->middleware('throttle:30,1');
 
