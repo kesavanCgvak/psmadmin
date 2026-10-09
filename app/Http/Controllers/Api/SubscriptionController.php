@@ -364,6 +364,37 @@ class SubscriptionController extends Controller
     }
 
     /**
+     * Create a SetupIntent for an authenticated account updating a card or starting a subscription.
+     */
+    public function setupIntent(Request $request)
+    {
+        $paymentCheck = $this->checkPaymentEnabled();
+        if ($paymentCheck) {
+            return $paymentCheck;
+        }
+
+        try {
+            JWTAuth::parseToken()->authenticate();
+
+            $setupIntent = $this->subscriptionService->createSetupIntent();
+
+            return response()->json([
+                'success' => true,
+                'client_secret' => $setupIntent->client_secret,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to create subscription SetupIntent', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not start payment setup. Please try again.',
+            ], 500);
+        }
+    }
+
+    /**
      * Update payment method
      */
     public function updatePaymentMethod(Request $request)
@@ -680,6 +711,7 @@ class SubscriptionController extends Controller
                     'last4' => $card->last4 ?? null,
                     'exp_month' => $card->exp_month ?? null,
                     'exp_year' => $card->exp_year ?? null,
+                    'wallet' => $card->wallet->type ?? null,
                     'funding' => $card->funding ?? null,
                     'country' => $card->country ?? null,
                 ],

@@ -81,6 +81,8 @@ Route::post('/mail/test', [MailTestController::class, 'testEmail']);
 
 // Payment status check (public endpoint for frontend)
 Route::get('/payment/status', [PaymentStatusController::class, 'status']);
+Route::post('/payment/setup-intent', [PaymentStatusController::class, 'setupIntent'])
+    ->middleware('throttle:30,1');
 
 // Company user limit (public endpoint for frontend)
 Route::get('/company-user-limit', [CompanyUserLimitController::class, 'getLimit']);
@@ -443,6 +445,7 @@ Route::middleware('jwt.verify')->group(function () {
     Route::get('/subscriptions/trial-incentive', [SubscriptionController::class, 'trialIncentive']);
     Route::post('/subscriptions/cancel', [SubscriptionController::class, 'cancel']);
     Route::post('/subscriptions/update-payment', [SubscriptionController::class, 'updatePaymentMethod']);
+    Route::post('/subscriptions/setup-intent', [SubscriptionController::class, 'setupIntent']);
     Route::get('/subscription/payment-method', [SubscriptionController::class, 'getPaymentMethod']);
     Route::post('/subscriptions/create', [SubscriptionController::class, 'create']);
 
