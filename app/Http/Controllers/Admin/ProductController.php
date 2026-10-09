@@ -55,7 +55,35 @@ class ProductController extends Controller
 
         $products = $query->orderBy($sortBy, $sortOrder)->paginate(25);
 
-        return view('admin.products.products.index', compact('products'));
+        $bulkEditCategories = Cache::remember('categories_list', 3600, function () {
+            return Category::select(['id', 'name'])->orderBy('name')->get();
+        });
+
+        $bulkEditBrands = Cache::remember('brands_list', 3600, function () {
+            return Brand::select(['id', 'name'])->orderBy('name')->get();
+        });
+
+        $bulkEditSubCategories = SubCategory::query()
+            ->select(['id', 'name', 'category_id'])
+            ->with('category:id,name')
+            ->orderBy('name')
+            ->get()
+            ->map(function (SubCategory $subCategory) {
+                return [
+                    'id' => $subCategory->id,
+                    'name' => $subCategory->name,
+                    'category_id' => $subCategory->category_id,
+                    'category_name' => $subCategory->category->name ?? '',
+                ];
+            })
+            ->values();
+
+        return view('admin.products.products.index', compact(
+            'products',
+            'bulkEditCategories',
+            'bulkEditBrands',
+            'bulkEditSubCategories'
+        ));
     }
 
     /**
@@ -100,6 +128,16 @@ class ProductController extends Controller
             // Apply unverified filter if requested
             if ($request->has('unverified_only') && $request->get('unverified_only') == '1') {
                 $query->where('is_verified', 0);
+            }
+
+            // Brand, category, and sub-category filters combine with AND, search, and pagination.
+            // "none" matches a missing relation: null, unassigned, or an id the list renders as a dash.
+            foreach ([
+                'brand_id' => 'brand',
+                'category_id' => 'category',
+                'sub_category_id' => 'subCategory',
+            ] as $filterColumn => $relation) {
+                $this->applyProductCatalogFilter($query, $request->input($filterColumn), $filterColumn, $relation);
             }
 
             // Apply search filter (AND across whitespace-separated keywords; OR across fields)
@@ -160,6 +198,33 @@ class ProductController extends Controller
     }
 
     /**
+     * Optional catalog filter. A positive id matches that record. "none" matches products
+     * whose relation is missing, which is what the products list renders as a dash.
+     */
+    private function applyProductCatalogFilter($query, mixed $value, string $column, string $relation): void
+    {
+        if (! is_string($value) && ! is_int($value)) {
+            return;
+        }
+
+        $value = trim((string) $value);
+        if ($value === '') {
+            return;
+        }
+
+        if ($value === 'none') {
+            $query->whereDoesntHave($relation);
+
+            return;
+        }
+
+        $filterId = filter_var($value, FILTER_VALIDATE_INT);
+        if ($filterId !== false && $filterId > 0) {
+            $query->where('inventory_master.'.$column, $filterId);
+        }
+    }
+
+    /**
      * Apply DataTables column sort to the products query (works with or without an active search).
      */
     private function applyProductsTableOrder($query, string $orderColumnName, string $orderDir): void
@@ -205,17 +270,21 @@ class ProductController extends Controller
 
         $productName = htmlspecialchars((string) ($product->model ?? ''), ENT_QUOTES, 'UTF-8');
 
-        return '
+        $actions = '
             <div class="btn-group">
                 <a href="' . $viewUrl . '" class="btn btn-info btn-sm" title="View">
                     <i class="fas fa-eye"></i>
                 </a>
                 <a href="' . $editUrl . '" class="btn btn-warning btn-sm" title="Edit">
                     <i class="fas fa-edit"></i>
-                </a>
-                <button type="button" class="btn btn-primary btn-sm enrich-product-btn" title="AI Enrichment" data-product-id="' . $product->id . '" data-product-name="' . $productName . '">
-                    <i class="fas fa-robot"></i>
-                </button>
+                </a>';
+
+        $actions .= '
+            <button type="button" class="btn btn-primary btn-sm enrich-product-btn" title="AI Enrichment" data-product-id="' . $product->id . '" data-product-name="' . $productName . '">
+                <i class="fas fa-robot"></i>
+            </button>';
+
+        $actions .= '
                 <a href="' . $cloneUrl . '" class="btn btn-success btn-sm" title="Clone" onclick="return confirm(\'Are you sure you want to clone this product? A new product will be created with \' (clone)\' appended to the model name.\');">
                     <i class="fas fa-copy"></i>
                 </a>
@@ -231,6 +300,8 @@ class ProductController extends Controller
                 </form>
             </div>
         ';
+
+        return $actions;
     }
 
     /**
@@ -937,6 +1008,189 @@ class ProductController extends Controller
                 'message' => 'Error verifying products: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Bulk update category, sub-category, and/or brand for selected products.
+     * Only fields present in the request are changed.
+     */
+    public function bulkUpdate(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'product_ids' => 'required|array|min:1',
+            'product_ids.*' => 'integer|min:1',
+            'category_id' => 'sometimes|required|integer|exists:categories,id',
+            'sub_category_id' => 'sometimes|required|integer|exists:sub_categories,id',
+            'brand_id' => 'sometimes|required|integer|exists:brands,id',
+        ], [
+            'product_ids.required' => 'Select at least one product.',
+            'product_ids.array' => 'Select at least one product.',
+            'product_ids.min' => 'Select at least one product.',
+            'product_ids.*.integer' => 'One or more selected products are invalid.',
+            'category_id.required' => 'Select a category to update.',
+            'category_id.exists' => 'The selected category does not exist.',
+            'sub_category_id.required' => 'Select a sub-category to update.',
+            'sub_category_id.exists' => 'The selected sub-category does not exist.',
+            'brand_id.required' => 'Select a brand to update.',
+            'brand_id.exists' => 'The selected brand does not exist.',
+        ]);
+
+        $validator->after(function ($validator) use ($request) {
+            if (! $request->exists('category_id') && ! $request->exists('sub_category_id') && ! $request->exists('brand_id')) {
+                $validator->errors()->add('fields', 'Select at least one field to update.');
+            }
+        });
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $productIds = array_values(array_unique(array_map('intval', $request->input('product_ids'))));
+        $products = Product::query()
+            ->whereIn('id', $productIds)
+            ->get(['id', 'category_id', 'sub_category_id', 'brand_id']);
+
+        if ($products->count() !== count($productIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'One or more selected products could not be found.',
+            ], 422);
+        }
+
+        $relationshipError = $this->validateBulkCategoryRelationship($products, $request);
+        if ($relationshipError !== null) {
+            return response()->json([
+                'success' => false,
+                'message' => $relationshipError,
+            ], 422);
+        }
+
+        $updates = [];
+        if ($request->exists('category_id')) {
+            $updates['category_id'] = (int) $request->input('category_id');
+        }
+        if ($request->exists('sub_category_id')) {
+            $updates['sub_category_id'] = (int) $request->input('sub_category_id');
+        }
+        if ($request->exists('brand_id')) {
+            $updates['brand_id'] = (int) $request->input('brand_id');
+        }
+
+        try {
+            $updated = DB::transaction(function () use ($productIds, $updates) {
+                if (array_key_exists('brand_id', $updates)) {
+                    $brand = Brand::query()->findOrFail($updates['brand_id']);
+                    $updatedCount = 0;
+
+                    Product::query()
+                        ->whereIn('id', $productIds)
+                        ->chunkById(200, function ($chunk) use ($updates, $brand, &$updatedCount) {
+                            foreach ($chunk as $product) {
+                                $product->fill($updates);
+                                $product->setRelation('brand', $brand);
+                                $product->save();
+                                $updatedCount++;
+                            }
+                        });
+
+                    if ($updatedCount !== count($productIds)) {
+                        throw new \RuntimeException('One or more selected products could not be updated.');
+                    }
+
+                    return $updatedCount;
+                }
+
+                $updates['updated_at'] = now();
+                $updatedCount = Product::query()->whereIn('id', $productIds)->update($updates);
+
+                if ($updatedCount !== count($productIds)) {
+                    throw new \RuntimeException('One or more selected products could not be updated.');
+                }
+
+                return $updatedCount;
+            });
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Bulk product update error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error updating products. No changes were saved.',
+            ], 500);
+        }
+
+        $message = $updated === 1
+            ? '1 product updated successfully.'
+            : "{$updated} products updated successfully.";
+
+        return response()->json([
+            'success' => true,
+            'message' => $message,
+            'updated_count' => $updated,
+        ]);
+    }
+
+    /**
+     * Ensure a bulk category/sub-category change stays consistent with the category relationship.
+     */
+    private function validateBulkCategoryRelationship($products, Request $request): ?string
+    {
+        $updatingCategory = $request->exists('category_id');
+        $updatingSubCategory = $request->exists('sub_category_id');
+
+        if (! $updatingCategory && ! $updatingSubCategory) {
+            return null;
+        }
+
+        if ($updatingCategory && $updatingSubCategory) {
+            $subCategory = SubCategory::query()->find($request->input('sub_category_id'));
+            if (! $subCategory || (int) $subCategory->category_id !== (int) $request->input('category_id')) {
+                return 'The selected sub-category does not belong to the selected category.';
+            }
+
+            return null;
+        }
+
+        if ($updatingSubCategory) {
+            $subCategory = SubCategory::query()->find($request->input('sub_category_id'));
+            if (! $subCategory) {
+                return 'The selected sub-category does not exist.';
+            }
+
+            $mismatch = $products->contains(function (Product $product) use ($subCategory) {
+                return (int) $product->category_id !== (int) $subCategory->category_id;
+            });
+
+            if ($mismatch) {
+                return 'The selected sub-category does not belong to the category of every selected product. Update the category as well, or select products that already use this category.';
+            }
+
+            return null;
+        }
+
+        $subCategoryIds = $products->pluck('sub_category_id')->filter()->unique()->values();
+        if ($subCategoryIds->isEmpty()) {
+            return null;
+        }
+
+        $invalid = SubCategory::query()
+            ->whereIn('id', $subCategoryIds)
+            ->where('category_id', '!=', (int) $request->input('category_id'))
+            ->exists();
+
+        if ($invalid) {
+            return 'Some selected products have a sub-category that does not belong to the chosen category. Choose a sub-category as well so those products stay consistent.';
+        }
+
+        return null;
     }
 
     /**

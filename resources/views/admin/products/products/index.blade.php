@@ -2,6 +2,8 @@
 
 @section('title', 'Products')
 
+@section('plugins.Select2', true)
+
 @section('content_header')
     <h1>Products Management</h1>
 @stop
@@ -22,9 +24,13 @@
     @endif
 
     <div class="card">
+        <div class="products-list-sticky">
         <div class="card-header">
             <h3 class="card-title">All Products</h3>
             <div class="card-tools">
+                <button type="button" id="bulkEditBtn" class="btn btn-warning btn-sm" style="display: none; margin-right: 5px;">
+                    <i class="fas fa-edit"></i> <span class="d-none d-lg-inline">Multi-Edit</span><span class="d-lg-none">Edit</span>
+                </button>
                 <button type="button" id="bulkVerifyBtn" class="btn btn-success btn-sm" style="display: none; margin-right: 5px;">
                     <i class="fas fa-check-circle"></i> <span class="d-none d-lg-inline">Verify Selected</span><span class="d-lg-none">Verify</span>
                 </button>
@@ -39,15 +45,38 @@
                 </a>
             </div>
         </div>
-        <div class="card-body">
-            <div class="mb-3">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="filterUnverified" name="filter_unverified">
-                    <label class="form-check-label" for="filterUnverified">
-                        Show only unverified products
-                    </label>
+            <div class="products-list-sticky__panel">
+            <div id="productCatalogFilters" class="product-list-filters">
+                <div class="product-list-filters__grid">
+                    <div class="product-list-filters__field">
+                        <label for="filterBrand">Brand</label>
+                        <select id="filterBrand" class="form-control"></select>
+                    </div>
+                    <div class="product-list-filters__field">
+                        <label for="filterCategory">Category</label>
+                        <select id="filterCategory" class="form-control"></select>
+                    </div>
+                    <div class="product-list-filters__field">
+                        <label for="filterSubCategory">Sub Category</label>
+                        <select id="filterSubCategory" class="form-control"></select>
+                    </div>
+                    <div class="product-list-filters__actions">
+                        <button type="button" id="clearProductFilters" class="btn btn-default">
+                            <i class="fas fa-times"></i><span>Clear Filters</span>
+                        </button>
+                    </div>
                 </div>
+                <label class="product-list-filters__check" for="filterUnverified">
+                    <input type="checkbox" id="filterUnverified" name="filter_unverified">
+                    <span>Show only unverified products</span>
+                </label>
             </div>
+            <div id="selectedProductsSummary" class="alert alert-info py-2" style="display: none;">
+                <strong id="selectedProductsSummaryText"></strong>
+            </div>
+            </div>
+        </div>
+        <div class="card-body products-list-table">
             <table id="productsTable" class="table table-bordered table-striped">
                 <thead>
                     <tr>
@@ -103,6 +132,69 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Edit Modal -->
+    <div class="modal fade" id="bulkEditModal" tabindex="-1" role="dialog" aria-labelledby="bulkEditModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="bulkEditModalLabel">Bulk Edit</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div id="bulkEditFormStep">
+                        <p class="mb-3">
+                            These changes will be applied to all <strong id="bulkEditCount">0</strong> selected products.
+                            Only fields you choose to change will be updated.
+                        </p>
+                        <div class="form-group">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="bulkEditChangeCategory">
+                                <label class="form-check-label" for="bulkEditChangeCategory">Change Category</label>
+                            </div>
+                            <select class="form-control" id="bulkEditCategory" disabled>
+                                <option value="">-- Select Category --</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="bulkEditChangeSubCategory">
+                                <label class="form-check-label" for="bulkEditChangeSubCategory">Change Sub-Category</label>
+                            </div>
+                            <select class="form-control" id="bulkEditSubCategory" disabled>
+                                <option value="">-- Select Sub-Category --</option>
+                            </select>
+                            <small class="form-text text-muted">Sub-categories follow the selected category when Category is being changed.</small>
+                        </div>
+                        <div class="form-group mb-0">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="bulkEditChangeBrand">
+                                <label class="form-check-label" for="bulkEditChangeBrand">Change Brand</label>
+                            </div>
+                            <select class="form-control" id="bulkEditBrand" disabled>
+                                <option value="">-- Select Brand --</option>
+                            </select>
+                        </div>
+                        <div id="bulkEditFormError" class="alert alert-danger mt-3 mb-0" style="display: none;"></div>
+                    </div>
+                    <div id="bulkEditConfirmStep" style="display: none;">
+                        <p class="mb-2"><strong id="bulkEditConfirmQuestion"></strong></p>
+                        <p>The selected changes will be applied to all selected products.</p>
+                        <ul id="bulkEditConfirmSummary" class="mb-0"></ul>
+                        <div id="bulkEditConfirmError" class="alert alert-danger mt-3 mb-0" style="display: none;"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary" id="bulkEditBackBtn" style="display: none;">Back</button>
+                    <button type="button" class="btn btn-primary" id="bulkEditReviewBtn">Continue</button>
+                    <button type="button" class="btn btn-primary" id="bulkEditApplyBtn" style="display: none;">Apply Changes</button>
                 </div>
             </div>
         </div>
@@ -210,6 +302,163 @@
             width: 3rem;
             height: 3rem;
         }
+
+        #productCatalogFilters.product-list-filters {
+            margin-bottom: 0.75rem;
+            padding: 0.85rem 1rem 0.7rem;
+            background: #f8f9fb;
+            border: 1px solid #e4e7eb;
+            border-radius: 0.35rem;
+        }
+
+        #productCatalogFilters .product-list-filters__grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+            gap: 0.75rem 1rem;
+            align-items: end;
+        }
+
+        #productCatalogFilters .product-list-filters__field {
+            min-width: 0;
+        }
+
+        #productCatalogFilters .product-list-filters__field label {
+            display: block;
+            margin-bottom: 0.3rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            color: #6c757d;
+        }
+
+        #productCatalogFilters .product-list-filters__actions .btn {
+            height: calc(2.25rem + 2px);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            white-space: nowrap;
+            padding-left: 0.9rem;
+            padding-right: 0.9rem;
+        }
+
+        #productCatalogFilters .product-list-filters__check {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            margin: 0.75rem 0 0;
+            padding-top: 0.65rem;
+            border-top: 1px solid #e4e7eb;
+            width: 100%;
+            font-weight: 400;
+            color: #495057;
+            cursor: pointer;
+        }
+
+        #productCatalogFilters .product-list-filters__check input {
+            margin: 0;
+            flex: 0 0 auto;
+        }
+
+        #productCatalogFilters .select2-container {
+            width: 100% !important;
+        }
+
+        #productCatalogFilters .select2-container--default .select2-selection--single {
+            height: calc(2.25rem + 2px);
+            border: 1px solid #ced4da;
+            border-radius: 0.25rem;
+            background-color: #fff;
+        }
+
+        #productCatalogFilters .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: calc(2.25rem + 2px);
+            padding-left: 0.75rem;
+            padding-right: 2.5rem;
+            color: #495057;
+        }
+
+        #productCatalogFilters .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: calc(2.25rem + 2px);
+        }
+
+        #productCatalogFilters .select2-container--default .select2-selection--single .select2-selection__clear {
+            height: calc(2.25rem + 2px);
+            line-height: calc(2.25rem + 2px);
+            margin-right: 1.15rem;
+        }
+
+        @media (max-width: 991.98px) {
+            #productCatalogFilters .product-list-filters__grid {
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            }
+
+            #productCatalogFilters .product-list-filters__actions .btn {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 575.98px) {
+            #productCatalogFilters.product-list-filters {
+                padding: 0.75rem;
+            }
+
+            #productCatalogFilters .product-list-filters__grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+
+        .products-list-sticky {
+            position: sticky;
+            top: 0;
+            z-index: 30;
+            background: #fff;
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+        }
+
+        body.layout-navbar-fixed .products-list-sticky {
+            top: 3.5rem;
+        }
+
+        .products-list-sticky > .card-header {
+            border-top-left-radius: 0.25rem;
+            border-top-right-radius: 0.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .products-list-sticky > .card-header .card-tools {
+            float: none;
+            margin-left: auto;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+        }
+
+        .products-list-sticky > .card-header .card-tools .btn {
+            margin-right: 0 !important;
+        }
+
+        .products-list-sticky__panel {
+            padding: 0.75rem 1.25rem 0.75rem;
+            background: #fff;
+        }
+
+        .products-list-sticky #productCatalogFilters.product-list-filters {
+            margin-bottom: 0;
+        }
+
+        .products-list-sticky #selectedProductsSummary {
+            margin: 0.75rem 0 0;
+        }
+
+        .products-list-table {
+            padding-top: 0.75rem;
+        }
     </style>
 @stop
 
@@ -218,6 +467,9 @@
     <script>
         $(document).ready(function() {
             var maxSyncEnrich = {{ (int) config('inventory_ai.max_sync_product_enrich', 100) }};
+            var bulkEditCategories = @json($bulkEditCategories);
+            var bulkEditSubCategories = @json($bulkEditSubCategories);
+            var bulkEditBrands = @json($bulkEditBrands);
             var pageLoaderActive = false;
             var enrichRequestActive = false;
 
@@ -226,7 +478,7 @@
                 $('#productsLoaderTitle').text(title);
                 $('#productsLoaderMessage').text(message);
                 $('#productsPageLoader').addClass('is-active');
-                $('#bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified').prop('disabled', true);
+                $('#bulkEditBtn, #bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified, #filterBrand, #filterCategory, #filterSubCategory, #clearProductFilters').prop('disabled', true);
                 $('#productsTable .row-checkbox, #productsTable .enrich-product-btn').prop('disabled', true);
                 $('a[href="{{ route('admin.products.create') }}"]').addClass('disabled').attr('aria-disabled', 'true');
             }
@@ -234,7 +486,7 @@
             function hideProductsLoader() {
                 pageLoaderActive = false;
                 $('#productsPageLoader').removeClass('is-active');
-                $('#bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified').prop('disabled', false);
+                $('#bulkEditBtn, #bulkVerifyBtn, #bulkEnrichBtn, #bulkDeleteBtn, #selectAll, #filterUnverified, #filterBrand, #filterCategory, #filterSubCategory, #clearProductFilters').prop('disabled', false);
                 $('#productsTable .row-checkbox, #productsTable .enrich-product-btn').prop('disabled', false);
                 $('a[href="{{ route('admin.products.create') }}"]').removeClass('disabled').removeAttr('aria-disabled');
             }
@@ -244,6 +496,87 @@
             if (savedUnverified === '1') {
                 $('#filterUnverified').prop('checked', true);
             }
+
+            var savedBrand = localStorage.getItem('products_filter_brand') || '';
+            var savedCategory = localStorage.getItem('products_filter_category') || '';
+            var savedSubCategory = localStorage.getItem('products_filter_subcategory') || '';
+            var applyingProductFilters = false;
+            var productFiltersTouched = false;
+            var unsetCatalogValue = 'none';
+
+            function storeProductFilter(key, value) {
+                if (value) {
+                    localStorage.setItem(key, value);
+                } else {
+                    localStorage.removeItem(key);
+                }
+            }
+
+            function persistProductCatalogFilters() {
+                storeProductFilter('products_filter_brand', $('#filterBrand').val() || '');
+                storeProductFilter('products_filter_category', $('#filterCategory').val() || '');
+                storeProductFilter('products_filter_subcategory', $('#filterSubCategory').val() || '');
+            }
+
+            function populateCatalogFilterOptions($select, items, selectedId) {
+                var selected = selectedId === undefined || selectedId === null ? '' : String(selectedId);
+                $select.empty();
+                $select.append($('<option>', { value: '', text: '' }));
+                $.each(items, function(_, item) {
+                    $select.append($('<option>', { value: item.id, text: item.name }));
+                });
+                $select.append($('<option>', { value: unsetCatalogValue, text: 'Not Set (-)' }));
+                if (selected !== '' && $select.find('option[value="' + selected + '"]').length) {
+                    $select.val(selected);
+                } else {
+                    $select.val('');
+                }
+                if ($select.data('select2')) {
+                    $select.trigger('change.select2');
+                }
+            }
+
+            function subCategoryFilterItems(categoryId) {
+                var items = [];
+                $.each(bulkEditSubCategories, function(_, subCategory) {
+                    if (categoryId && categoryId !== unsetCatalogValue && String(subCategory.category_id) !== String(categoryId)) {
+                        return;
+                    }
+                    var label = subCategory.name;
+                    if ((!categoryId || categoryId === unsetCatalogValue) && subCategory.category_name) {
+                        label += ' (' + subCategory.category_name + ')';
+                    }
+                    items.push({ id: subCategory.id, name: label });
+                });
+                return items;
+            }
+
+            function populateSubCategoryFilter(selectedId) {
+                populateCatalogFilterOptions(
+                    $('#filterSubCategory'),
+                    subCategoryFilterItems($('#filterCategory').val() || ''),
+                    selectedId
+                );
+            }
+
+            function initCatalogFilterSelect($select, placeholder) {
+                if (!$.fn.select2) {
+                    return;
+                }
+                $select.select2({
+                    placeholder: placeholder,
+                    allowClear: true,
+                    width: '100%'
+                });
+            }
+
+            populateCatalogFilterOptions($('#filterBrand'), bulkEditBrands, savedBrand);
+            populateCatalogFilterOptions($('#filterCategory'), bulkEditCategories, savedCategory);
+            populateSubCategoryFilter(savedSubCategory);
+            persistProductCatalogFilters();
+            initCatalogFilterSelect($('#filterBrand'), 'All Brands');
+            initCatalogFilterSelect($('#filterCategory'), 'All Categories');
+            initCatalogFilterSelect($('#filterSubCategory'), 'All Sub Categories');
 
             var productsTable = initResponsiveDataTable('productsTable', {
                 "processing": true,
@@ -261,6 +594,18 @@
                     "type": "GET",
                     "data": function(d) {
                         d.unverified_only = $('#filterUnverified').is(':checked') ? '1' : '0';
+                        var brandId = $('#filterBrand').val();
+                        var categoryId = $('#filterCategory').val();
+                        var subCategoryId = $('#filterSubCategory').val();
+                        if (brandId) {
+                            d.brand_id = brandId;
+                        }
+                        if (categoryId) {
+                            d.category_id = categoryId;
+                        }
+                        if (subCategoryId) {
+                            d.sub_category_id = subCategoryId;
+                        }
                     },
                     "error": function(xhr, error, thrown) {
                         console.error('DataTables AJAX error:', error, thrown);
@@ -407,9 +752,10 @@
                     needsRedraw = true;
                 }
 
-                // Restore pagination and trigger single draw with all restored state
-                if (needsRedraw || savedPage) {
-                    if (savedPage) {
+                // Restore pagination and trigger single draw with all restored state.
+                // Skip the saved page when a catalog filter already reset paging.
+                if (needsRedraw || (savedPage && !productFiltersTouched)) {
+                    if (savedPage && !productFiltersTouched) {
                         productsTable.page(parseInt(savedPage));
                     }
                     productsTable.draw(false); // false = don't reset paging
@@ -423,6 +769,46 @@
                 // Reset to first page when filter changes
                 localStorage.setItem('products_filter_page', '0');
                 productsTable.ajax.reload();
+            });
+
+            function reloadProductListForFilters() {
+                productFiltersTouched = true;
+                persistProductCatalogFilters();
+                localStorage.setItem('products_filter_page', '0');
+                productsTable.ajax.reload();
+            }
+
+            $('#filterBrand').on('change', function() {
+                if (applyingProductFilters) {
+                    return;
+                }
+                reloadProductListForFilters();
+            });
+
+            $('#filterCategory').on('change', function() {
+                if (applyingProductFilters) {
+                    return;
+                }
+                applyingProductFilters = true;
+                populateSubCategoryFilter($('#filterSubCategory').val());
+                applyingProductFilters = false;
+                reloadProductListForFilters();
+            });
+
+            $('#filterSubCategory').on('change', function() {
+                if (applyingProductFilters) {
+                    return;
+                }
+                reloadProductListForFilters();
+            });
+
+            $('#clearProductFilters').on('click', function() {
+                applyingProductFilters = true;
+                $('#filterBrand').val('').trigger('change');
+                $('#filterCategory').val('').trigger('change');
+                populateSubCategoryFilter('');
+                applyingProductFilters = false;
+                reloadProductListForFilters();
             });
 
             // Save search filter to localStorage
@@ -455,31 +841,12 @@
 
             // Bulk actions for server-side DataTable
             $('#selectAll').on('change', function() {
-                var shouldCheck = $(this).is(':checked');
-                var selected = 0;
-                $('#productsTable .row-checkbox').each(function() {
-                    if (shouldCheck && selected >= maxSyncEnrich) {
-                        $(this).prop('checked', false);
-                        return;
-                    }
-                    $(this).prop('checked', shouldCheck);
-                    if (shouldCheck) {
-                        selected++;
-                    }
-                });
-                if (shouldCheck && $('#productsTable .row-checkbox').length > maxSyncEnrich) {
-                    alert('Only the first ' + maxSyncEnrich + ' products on this page were selected.');
-                }
+                $('#productsTable .row-checkbox').prop('checked', $(this).is(':checked'));
                 updateBulkButtons();
             });
 
             $(document).on('change', '.row-checkbox', function(e) {
                 e.stopPropagation();
-                if ($(this).is(':checked') && $('#productsTable .row-checkbox:checked').length > maxSyncEnrich) {
-                    $(this).prop('checked', false);
-                    alert('You can select at most ' + maxSyncEnrich + ' products for AI enrichment.');
-                    return;
-                }
                 updateBulkButtons();
                 var totalCheckboxes = $('#productsTable .row-checkbox').length;
                 var checkedCheckboxes = $('#productsTable .row-checkbox:checked').length;
@@ -499,6 +866,10 @@
                 var checkedCount = checked.length;
 
                 if (checkedCount > 0) {
+                    var selectedLabel = checkedCount === 1 ? '1 product selected' : checkedCount + ' products selected';
+                    $('#selectedProductsSummaryText').text(selectedLabel);
+                    $('#selectedProductsSummary').show();
+                    $('#bulkEditBtn').show().html('<i class="fas fa-edit"></i> <span class="d-none d-lg-inline">Multi-Edit (' + checkedCount + ')</span><span class="d-lg-none">Edit</span>');
                     $('#bulkDeleteBtn').show().html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected (' + checkedCount + ')</span><span class="d-lg-none">Delete</span>');
                     $('#bulkEnrichBtn').show().html('<i class="fas fa-robot"></i> <span class="d-none d-lg-inline">AI Enrich Selected (' + checkedCount + ')</span><span class="d-lg-none">AI Enrich</span>');
 
@@ -517,6 +888,8 @@
                         $('#bulkVerifyBtn').hide();
                     }
                 } else {
+                    $('#selectedProductsSummary').hide();
+                    $('#bulkEditBtn').hide();
                     $('#bulkDeleteBtn').hide();
                     $('#bulkVerifyBtn').hide();
                     $('#bulkEnrichBtn').hide();
@@ -848,6 +1221,233 @@
                         }
                     });
                 }
+            });
+
+            function populateBulkEditSelect($select, items, placeholder) {
+                var current = $select.val();
+                $select.empty();
+                $select.append($('<option>', { value: '', text: placeholder }));
+                $.each(items, function(_, item) {
+                    $select.append($('<option>', { value: item.id, text: item.name }));
+                });
+                if (current && $select.find('option[value="' + current + '"]').length) {
+                    $select.val(current);
+                }
+            }
+
+            function populateBulkEditSubCategories() {
+                var $select = $('#bulkEditSubCategory');
+                var previous = $select.val();
+                var limitToCategory = $('#bulkEditChangeCategory').is(':checked') && $('#bulkEditCategory').val();
+                var categoryId = limitToCategory ? String($('#bulkEditCategory').val()) : '';
+
+                $select.empty();
+                $select.append($('<option>', { value: '', text: '-- Select Sub-Category --' }));
+
+                $.each(bulkEditSubCategories, function(_, subCategory) {
+                    if (categoryId && String(subCategory.category_id) !== categoryId) {
+                        return;
+                    }
+                    var label = subCategory.name;
+                    if (!categoryId && subCategory.category_name) {
+                        label += ' (' + subCategory.category_name + ')';
+                    }
+                    $select.append($('<option>', { value: subCategory.id, text: label }));
+                });
+
+                if (previous && $select.find('option[value="' + previous + '"]').length) {
+                    $select.val(previous);
+                }
+            }
+
+            function resetBulkEditModal() {
+                $('#bulkEditChangeCategory, #bulkEditChangeSubCategory, #bulkEditChangeBrand').prop('checked', false);
+                $('#bulkEditCategory, #bulkEditSubCategory, #bulkEditBrand').prop('disabled', true).val('');
+                populateBulkEditSelect($('#bulkEditCategory'), bulkEditCategories, '-- Select Category --');
+                populateBulkEditSelect($('#bulkEditBrand'), bulkEditBrands, '-- Select Brand --');
+                populateBulkEditSubCategories();
+                $('#bulkEditFormError, #bulkEditConfirmError').hide().text('');
+                $('#bulkEditConfirmSummary').empty();
+                $('#bulkEditModal').removeData('payload');
+                showBulkEditFormStep();
+            }
+
+            function showBulkEditFormStep() {
+                $('#bulkEditFormStep').show();
+                $('#bulkEditConfirmStep').hide();
+                $('#bulkEditReviewBtn').show();
+                $('#bulkEditBackBtn, #bulkEditApplyBtn').hide();
+            }
+
+            function selectedProductIds() {
+                var selectedIds = [];
+                $('#productsTable .row-checkbox:checked').each(function() {
+                    selectedIds.push($(this).val());
+                });
+                return selectedIds;
+            }
+
+            function collectBulkEditChanges(selectedIds) {
+                var payload = { product_ids: selectedIds };
+                var changes = [];
+
+                if ($('#bulkEditChangeCategory').is(':checked')) {
+                    var categoryId = $('#bulkEditCategory').val();
+                    if (!categoryId) {
+                        return { error: 'Select a category, or turn off Category.' };
+                    }
+                    payload.category_id = categoryId;
+                    changes.push('Category: ' + $('#bulkEditCategory option:selected').text());
+                }
+
+                if ($('#bulkEditChangeSubCategory').is(':checked')) {
+                    var subCategoryId = $('#bulkEditSubCategory').val();
+                    if (!subCategoryId) {
+                        return { error: 'Select a sub-category, or turn off Sub-Category.' };
+                    }
+                    payload.sub_category_id = subCategoryId;
+                    changes.push('Sub-Category: ' + $('#bulkEditSubCategory option:selected').text());
+                }
+
+                if ($('#bulkEditChangeBrand').is(':checked')) {
+                    var brandId = $('#bulkEditBrand').val();
+                    if (!brandId) {
+                        return { error: 'Select a brand, or turn off Brand.' };
+                    }
+                    payload.brand_id = brandId;
+                    changes.push('Brand: ' + $('#bulkEditBrand option:selected').text());
+                }
+
+                if (changes.length === 0) {
+                    return { error: 'Choose at least one field to update.' };
+                }
+
+                return { payload: payload, changes: changes };
+            }
+
+            populateBulkEditSelect($('#bulkEditCategory'), bulkEditCategories, '-- Select Category --');
+            populateBulkEditSelect($('#bulkEditBrand'), bulkEditBrands, '-- Select Brand --');
+            populateBulkEditSubCategories();
+
+            $('#bulkEditChangeCategory').on('change', function() {
+                var enabled = $(this).is(':checked');
+                $('#bulkEditCategory').prop('disabled', !enabled);
+                if (!enabled) {
+                    $('#bulkEditCategory').val('');
+                }
+                populateBulkEditSubCategories();
+            });
+
+            $('#bulkEditCategory').on('change', function() {
+                populateBulkEditSubCategories();
+            });
+
+            $('#bulkEditChangeSubCategory').on('change', function() {
+                var enabled = $(this).is(':checked');
+                $('#bulkEditSubCategory').prop('disabled', !enabled);
+                if (!enabled) {
+                    $('#bulkEditSubCategory').val('');
+                }
+            });
+
+            $('#bulkEditChangeBrand').on('change', function() {
+                var enabled = $(this).is(':checked');
+                $('#bulkEditBrand').prop('disabled', !enabled);
+                if (!enabled) {
+                    $('#bulkEditBrand').val('');
+                }
+            });
+
+            $('#bulkEditBtn').on('click', function() {
+                var selectedIds = selectedProductIds();
+                if (selectedIds.length === 0) {
+                    alert('Please select at least one product to edit.');
+                    return;
+                }
+
+                resetBulkEditModal();
+                var countLabel = selectedIds.length === 1 ? '1 Product' : selectedIds.length + ' Products';
+                $('#bulkEditModalLabel').text('Bulk Edit ' + countLabel);
+                $('#bulkEditCount').text(selectedIds.length);
+                $('#bulkEditModal').data('selectedIds', selectedIds);
+                $('#bulkEditModal').modal('show');
+            });
+
+            $('#bulkEditReviewBtn').on('click', function() {
+                var selectedIds = $('#bulkEditModal').data('selectedIds') || selectedProductIds();
+                var result = collectBulkEditChanges(selectedIds);
+                $('#bulkEditFormError, #bulkEditConfirmError').hide().text('');
+
+                if (result.error) {
+                    $('#bulkEditFormError').text(result.error).show();
+                    return;
+                }
+
+                var countText = selectedIds.length === 1 ? '1 product' : selectedIds.length + ' products';
+                $('#bulkEditConfirmQuestion').text('Are you sure you want to update ' + countText + '?');
+                var $summary = $('#bulkEditConfirmSummary').empty();
+                $.each(result.changes, function(_, change) {
+                    $summary.append($('<li>').text(change));
+                });
+                $('#bulkEditModal').data('payload', result.payload);
+                $('#bulkEditFormStep').hide();
+                $('#bulkEditConfirmStep').show();
+                $('#bulkEditReviewBtn').hide();
+                $('#bulkEditBackBtn, #bulkEditApplyBtn').show();
+            });
+
+            $('#bulkEditBackBtn').on('click', function() {
+                $('#bulkEditConfirmError').hide().text('');
+                showBulkEditFormStep();
+            });
+
+            $('#bulkEditModal').on('hidden.bs.modal', function() {
+                resetBulkEditModal();
+            });
+
+            $('#bulkEditApplyBtn').on('click', function() {
+                var payload = $('#bulkEditModal').data('payload');
+                if (!payload || !payload.product_ids || payload.product_ids.length === 0) {
+                    $('#bulkEditConfirmError').text('Select at least one product.').show();
+                    return;
+                }
+
+                var $btn = $(this);
+                showProductsLoader(
+                    'Updating Products',
+                    'Updating ' + payload.product_ids.length + ' selected product(s). Please wait...'
+                );
+                $btn.prop('disabled', true);
+
+                $.ajax({
+                    url: '{{ route("admin.products.bulk-update") }}',
+                    method: 'POST',
+                    data: $.extend({ _token: '{{ csrf_token() }}' }, payload),
+                    success: function(response) {
+                        if (response.success) {
+                            $('#bulkEditModal').modal('hide');
+                            alert(response.message || 'Products updated successfully.');
+                            productsTable.ajax.reload(function() {
+                                $('#selectAll').prop('checked', false);
+                                updateBulkButtons();
+                            }, false);
+                        } else {
+                            $('#bulkEditConfirmError').text(response.message || 'Failed to update products.').show();
+                        }
+                    },
+                    error: function(xhr) {
+                        var message = 'An error occurred while updating products.';
+                        if (xhr.responseJSON && xhr.responseJSON.message) {
+                            message = xhr.responseJSON.message;
+                        }
+                        $('#bulkEditConfirmError').text(message).show();
+                    },
+                    complete: function() {
+                        hideProductsLoader();
+                        $btn.prop('disabled', false);
+                        updateBulkButtons();
+                    }
+                });
             });
 
             // Merge product functionality
