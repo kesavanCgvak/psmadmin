@@ -141,6 +141,8 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('products.merge');
     Route::post('/products/bulk-verify', [ProductController::class, 'bulkVerify'])
         ->name('products.bulk-verify');
+    Route::post('/products/bulk-update', [ProductController::class, 'bulkUpdate'])
+        ->name('products.bulk-update');
     Route::post('/products/bulk-enrich-specifications', [ProductController::class, 'bulkEnrichSpecifications'])
         ->name('products.bulk-enrich-specifications');
     Route::post('/products/{product}/enrich-specifications', [ProductController::class, 'enrichSpecification'])
