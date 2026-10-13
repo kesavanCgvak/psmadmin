@@ -41,4 +41,17 @@ return [
         'sms_notifications_enabled' => false,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Partner inbound chat
+    |--------------------------------------------------------------------------
+    |
+    | External systems that may establish a conversation mapping. The sender
+    | company always comes from the API key, not from this list.
+    |
+    */
+    'partner_external_systems' => ['rentman', 'flex'],
+
+    'partner_rate_limit_per_minute' => max(1, (int) env('CHAT_PARTNER_RATE_LIMIT', 60)),
+
 ];

@@ -6,6 +6,15 @@ use Illuminate\Database\Eloquent\Model;
 
 class ProviderApiKey extends Model
 {
+    public const SCOPE_PRODUCTS = 'products';
+
+    public const SCOPE_CHAT = 'chat';
+
+    public const SCOPES = [
+        self::SCOPE_PRODUCTS,
+        self::SCOPE_CHAT,
+    ];
+
     protected $fillable = [
         'provider_user_id',
         'name',
@@ -16,6 +25,7 @@ class ProviderApiKey extends Model
         'last_used_at',
         'expires_at',
         'revoked_at',
+        'scopes',
     ];
 
     protected $casts = [
@@ -23,6 +33,7 @@ class ProviderApiKey extends Model
         'last_used_at' => 'datetime',
         'expires_at' => 'datetime',
         'revoked_at' => 'datetime',
+        'scopes' => 'array',
     ];
 
     protected $hidden = [
@@ -34,5 +45,27 @@ class ProviderApiKey extends Model
     {
         return $this->belongsTo(User::class, 'provider_user_id');
     }
-}
 
+    /**
+     * Legacy keys (null scopes) keep product access only.
+     * Chat requires an explicit chat scope.
+     *
+     * @return list<string>
+     */
+    public function grantedScopes(): array
+    {
+        if ($this->scopes === null) {
+            return [self::SCOPE_PRODUCTS];
+        }
+
+        return array_values(array_filter(
+            $this->scopes,
+            fn ($scope) => is_string($scope) && $scope !== ''
+        ));
+    }
+
+    public function allows(string $scope): bool
+    {
+        return in_array($scope, $this->grantedScopes(), true);
+    }
+}

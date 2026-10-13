@@ -10,14 +10,19 @@ use OpenApi\Attributes as OA;
         title: 'PSM Partner Open API',
         version: '1.0.0',
         description: <<<'DESC'
-Partner APIs for provider companies to search and retrieve product inventory via API key authentication.
+Partner APIs for provider companies.
 
 **Getting started**
-1. Log in to the provider dashboard and generate an API key (`psm_pk_...`).
-2. Ensure your company has **Open API Access** enabled by an administrator.
+1. Log in as a provider user and generate an API key (`psm_pk_...`).
+2. Ensure the company has **Open API Access** enabled by an administrator.
 3. Send the API key on each request using `Authorization: Bearer {api_key}` (preferred) or `X-API-KEY: {api_key}`.
 
-Results are scoped to the provider company linked to the API key.
+**Scopes**
+Keys created before scopes existed, and keys generated without a `scopes` value, can call product endpoints only.
+Chat endpoints require a key whose scopes include `chat`. Generate one with `POST /api/provider/api-keys/generate` and `"scopes": ["chat"]` or `"scopes": ["products", "chat"]`.
+Generating a key revokes the previous active key for that user. Include every scope the new key should keep.
+
+Product results and chat conversations are limited to the provider company linked to the API key.
 DESC
     ),
     servers: [
@@ -32,6 +37,10 @@ DESC
             name: 'Partner Products',
             description: 'Search and retrieve provider-scoped product inventory.'
         ),
+        new OA\Tag(
+            name: 'Partner Chat',
+            description: 'Submit inbound company-to-company chat messages and list conversations the authenticated company can map.'
+        ),
     ],
     components: new OA\Components(
         securitySchemes: [
@@ -40,7 +49,7 @@ DESC
                 type: 'http',
                 scheme: 'bearer',
                 bearerFormat: 'API Key',
-                description: 'Provider API key from the dashboard. Format: `psm_pk_...`. Alternative header: `X-API-KEY`.'
+                description: 'Provider API key. Format: `psm_pk_...`. Chat routes require the `chat` scope. Product routes accept legacy keys and keys that include the `products` scope. Alternative header: `X-API-KEY`.'
             ),
         ],
         schemas: [
@@ -106,6 +115,58 @@ DESC
                 ]
             ),
             new OA\Schema(
+                schema: 'PartnerChatMessageRequest',
+                type: 'object',
+                required: ['external_system', 'external_message_id', 'external_conversation_id', 'body'],
+                properties: [
+                    new OA\Property(property: 'external_system', type: 'string', example: 'rentman', description: 'Stable system slug. Allowed values: rentman, flex.'),
+                    new OA\Property(property: 'external_message_id', type: 'string', maxLength: 191, example: 'external-message-123'),
+                    new OA\Property(property: 'external_conversation_id', type: 'string', maxLength: 191, example: 'external-conversation-456'),
+                    new OA\Property(property: 'psm_conversation_id', type: 'integer', nullable: true, example: 123, description: 'Required until this external conversation id is mapped. Must be a conversation the authenticated company belongs to.'),
+                    new OA\Property(property: 'body', type: 'string', minLength: 1, maxLength: 2000, example: 'Hello, we have received your rental request.'),
+                    new OA\Property(property: 'external_created_at', type: 'string', format: 'date-time', nullable: true, example: '2026-10-12T10:30:00Z', description: 'Stored on the external message link. Unread state uses the PSM message timestamp.'),
+                ]
+            ),
+            new OA\Schema(
+                schema: 'PartnerChatMessage',
+                type: 'object',
+                properties: [
+                    new OA\Property(property: 'id', type: 'integer', example: 55, description: 'PSM chat message id.'),
+                    new OA\Property(property: 'conversation_id', type: 'integer', example: 123),
+                    new OA\Property(property: 'external_system', type: 'string', example: 'rentman'),
+                    new OA\Property(property: 'external_message_id', type: 'string', example: 'external-message-123'),
+                    new OA\Property(property: 'external_conversation_id', type: 'string', example: 'external-conversation-456'),
+                    new OA\Property(property: 'created_at', type: 'string', format: 'date-time', example: '2026-10-12T10:30:05+00:00'),
+                ]
+            ),
+            new OA\Schema(
+                schema: 'PartnerChatConversation',
+                type: 'object',
+                properties: [
+                    new OA\Property(property: 'id', type: 'integer', example: 123),
+                    new OA\Property(property: 'counterparty_company_id', type: 'integer', example: 45),
+                    new OA\Property(property: 'counterparty_company_name', type: 'string', example: 'Northwind Rentals'),
+                    new OA\Property(property: 'rental_job_id', type: 'integer', nullable: true, example: null),
+                    new OA\Property(property: 'updated_at', type: 'string', format: 'date-time'),
+                ]
+            ),
+            new OA\Schema(
+                schema: 'ValidationError',
+                type: 'object',
+                properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: false),
+                    new OA\Property(property: 'message', type: 'string', example: 'Validation error'),
+                    new OA\Property(
+                        property: 'errors',
+                        type: 'object',
+                        additionalProperties: new OA\AdditionalProperties(
+                            type: 'array',
+                            items: new OA\Items(type: 'string')
+                        )
+                    ),
+                ]
+            ),
+            new OA\Schema(
                 schema: 'PaginationMeta',
                 type: 'object',
                 properties: [
@@ -118,6 +179,4 @@ DESC
         ]
     )
 )]
-class OpenApiDefinition
-{
-}
+class OpenApiDefinition {}

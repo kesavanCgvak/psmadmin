@@ -5,9 +5,9 @@ use App\Http\Controllers\Api\AuthController;
 // Duplicate import removed during formatting cleanup
 use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\ChatbotController as ApiChatbotController;
 use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\CityController;
-use App\Http\Controllers\Api\ChatbotController as ApiChatbotController;
 use App\Http\Controllers\Api\CmsPageController as ApiCmsPageController;
 use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\CompanyController;
@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\JobNegotiationController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MailTestController;
 use App\Http\Controllers\Api\MeasurementUnitController;
+use App\Http\Controllers\Api\PartnerChatController;
 use App\Http\Controllers\Api\PartnerProductController;
 use App\Http\Controllers\Api\PaymentStatusController;
 use App\Http\Controllers\Api\PricingSchemeController;
@@ -285,10 +286,17 @@ Route::middleware(['jwt.verify', 'throttle:12,1'])->prefix('provider/api-keys')-
     Route::post('/{id}/revoke', [ProviderApiKeyController::class, 'revoke'])->whereNumber('id');
 });
 
-Route::prefix('v1/partner')->middleware(['provider.api.key', 'throttle:60,1'])->group(function () {
-    Route::get('/products/search', [PartnerProductController::class, 'search']);
-    Route::get('/products', [PartnerProductController::class, 'list']);
-    Route::get('/products/{product_id}', [PartnerProductController::class, 'details'])->whereNumber('product_id');
+Route::prefix('v1/partner')->group(function () {
+    Route::middleware(['provider.api.key:products', 'throttle:60,1'])->group(function () {
+        Route::get('/products/search', [PartnerProductController::class, 'search']);
+        Route::get('/products', [PartnerProductController::class, 'list']);
+        Route::get('/products/{product_id}', [PartnerProductController::class, 'details'])->whereNumber('product_id');
+    });
+
+    Route::middleware(['provider.api.key:chat', 'throttle:partner-chat'])->prefix('chat')->group(function () {
+        Route::get('/conversations', [PartnerChatController::class, 'conversations']);
+        Route::post('/messages', [PartnerChatController::class, 'store']);
+    });
 });
 
 // Flex Rental Solutions inventory import (company-specific credentials)

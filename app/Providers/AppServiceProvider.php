@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Contracts\SmsProvider;
+use App\Http\Middleware\ProviderApiKeyMiddleware;
 use App\Listeners\LogEmailSending;
 use App\Listeners\LogEmailSent;
 use App\Models\ChatConversation;
@@ -13,11 +14,14 @@ use App\Policies\ChatConversationPolicy;
 use App\Policies\ChatMessagePolicy;
 use App\Services\TextMagicService;
 use App\Services\TwilioService;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -50,5 +54,21 @@ class AppServiceProvider extends ServiceProvider
 
         Event::listen(MessageSending::class, LogEmailSending::class);
         Event::listen(MessageSent::class, LogEmailSent::class);
+
+        RateLimiter::for('partner-chat', function (Request $request) {
+            $limit = max(1, (int) config('chat.partner_rate_limit_per_minute', 60));
+            $company = $request->attributes->get('provider_company');
+            $companyId = $company?->id ?? ProviderApiKeyMiddleware::providerCompanyId($request);
+            $bucket = $companyId
+                ? 'partner-chat:company:'.$companyId
+                : 'partner-chat:ip:'.$request->ip();
+
+            return Limit::perMinute($limit)->by($bucket)->response(function (Request $request, array $headers) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Too many requests.',
+                ], 429, $headers);
+            });
+        });
     }
 }

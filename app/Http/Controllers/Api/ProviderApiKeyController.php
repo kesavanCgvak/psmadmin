@@ -7,11 +7,12 @@ use App\Http\Controllers\Controller;
 use App\Models\ProviderApiKey;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
 class ProviderApiKeyController extends Controller
@@ -20,7 +21,7 @@ class ProviderApiKeyController extends Controller
     {
         try {
             $user = JWTAuth::parseToken()->authenticate();
-            if (!$this->isProviderUser($user)) {
+            if (! $this->isProviderUser($user)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Only provider users can manage API keys.',
@@ -40,6 +41,7 @@ class ProviderApiKeyController extends Controller
                         'last_used_at' => $key->last_used_at,
                         'expires_at' => $key->expires_at,
                         'revoked_at' => $key->revoked_at,
+                        'scopes' => $key->grantedScopes(),
                     ];
                 });
 
@@ -87,7 +89,7 @@ class ProviderApiKeyController extends Controller
 
         try {
             $user = JWTAuth::parseToken()->authenticate();
-            if (!$this->isProviderUser($user)) {
+            if (! $this->isProviderUser($user)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Only provider company users can request Open API access.',
@@ -138,7 +140,7 @@ class ProviderApiKeyController extends Controller
                 ]);
             }
 
-            if (!$emailSent) {
+            if (! $emailSent) {
                 Log::warning('Open API access request: email not sent (disabled template or send failure)', [
                     'user_id' => $user->id,
                     'company_id' => $company->id,
@@ -176,6 +178,8 @@ class ProviderApiKeyController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'nullable|string|max:100',
+            'scopes' => 'nullable|array|min:1',
+            'scopes.*' => ['string', 'distinct', Rule::in(ProviderApiKey::SCOPES)],
         ]);
 
         if ($validator->fails()) {
@@ -188,19 +192,22 @@ class ProviderApiKeyController extends Controller
 
         try {
             $user = JWTAuth::parseToken()->authenticate();
-            if (!$this->isProviderUser($user)) {
+            if (! $this->isProviderUser($user)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Only provider users can generate API keys.',
                 ], 403);
             }
 
-            $plainApiKey = 'psm_pk_' . Str::random(48);
+            $plainApiKey = 'psm_pk_'.Str::random(48);
             $hash = hash('sha256', $plainApiKey);
             $keyPrefix = substr($plainApiKey, 0, 14);
             $name = $request->input('name') ?: 'Default key';
+            $scopes = $request->exists('scopes')
+                ? array_values($request->input('scopes'))
+                : null;
 
-            DB::transaction(function () use ($user, $hash, $keyPrefix, $name, $plainApiKey) {
+            DB::transaction(function () use ($user, $hash, $keyPrefix, $name, $plainApiKey, $scopes) {
                 ProviderApiKey::where('provider_user_id', $user->id)
                     ->where('is_active', true)
                     ->update([
@@ -215,8 +222,13 @@ class ProviderApiKeyController extends Controller
                     'key_hash' => $hash,
                     'encrypted_key' => Crypt::encryptString($plainApiKey),
                     'is_active' => true,
+                    'scopes' => $scopes,
                 ]);
             });
+
+            $grantedScopes = $scopes === null
+                ? [ProviderApiKey::SCOPE_PRODUCTS]
+                : $scopes;
 
             return response()->json([
                 'success' => true,
@@ -224,6 +236,7 @@ class ProviderApiKeyController extends Controller
                 'data' => [
                     'api_key' => $plainApiKey,
                     'key_prefix' => $keyPrefix,
+                    'scopes' => $grantedScopes,
                 ],
             ], 201);
         } catch (\Exception $e) {
@@ -242,7 +255,7 @@ class ProviderApiKeyController extends Controller
     {
         try {
             $user = JWTAuth::parseToken()->authenticate();
-            if (!$this->isProviderUser($user)) {
+            if (! $this->isProviderUser($user)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Only provider users can revoke API keys.',
@@ -250,14 +263,14 @@ class ProviderApiKeyController extends Controller
             }
 
             $apiKey = ProviderApiKey::where('provider_user_id', $user->id)->find($id);
-            if (!$apiKey) {
+            if (! $apiKey) {
                 return response()->json([
                     'success' => false,
                     'message' => 'API key not found.',
                 ], 404);
             }
 
-            if (!$apiKey->is_active) {
+            if (! $apiKey->is_active) {
                 return response()->json([
                     'success' => true,
                     'message' => 'API key is already inactive.',
@@ -289,7 +302,7 @@ class ProviderApiKeyController extends Controller
     {
         try {
             $user = JWTAuth::parseToken()->authenticate();
-            if (!$this->isProviderUser($user)) {
+            if (! $this->isProviderUser($user)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Only provider users can reveal API keys.',
@@ -297,7 +310,7 @@ class ProviderApiKeyController extends Controller
             }
 
             $apiKey = ProviderApiKey::where('provider_user_id', $user->id)->find($id);
-            if (!$apiKey) {
+            if (! $apiKey) {
                 return response()->json([
                     'success' => false,
                     'message' => 'API key not found.',
@@ -334,12 +347,12 @@ class ProviderApiKeyController extends Controller
 
     private function isProviderUser($user): bool
     {
-        if (!$user) {
+        if (! $user) {
             return false;
         }
 
         $user->loadMissing('company');
-        if (!$user->company) {
+        if (! $user->company) {
             return false;
         }
 
@@ -388,4 +401,3 @@ class ProviderApiKeyController extends Controller
         return [];
     }
 }
-
