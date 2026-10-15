@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryMasterAiRejection;
 use App\Services\InventoryAi\InventorySpecificationEnrichmentService;
+use App\Support\AdminListLength;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -32,7 +33,10 @@ class InventoryAiRejectedProductController extends Controller
         try {
             $draw = (int) $request->get('draw', 1);
             $start = (int) $request->get('start', 0);
-            $length = (int) $request->get('length', 25);
+            $length = AdminListLength::resolve($request);
+            if ($length instanceof JsonResponse) {
+                return $length;
+            }
             $searchValue = trim((string) data_get($request->get('search'), 'value', ''));
             $categoryFilter = $request->get('category_filter', '');
             $orderDir = data_get($request->get('order'), '0.dir', 'desc') === 'asc' ? 'asc' : 'desc';

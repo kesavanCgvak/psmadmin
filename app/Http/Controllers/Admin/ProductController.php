@@ -14,10 +14,12 @@ use App\Models\WeightUnit;
 use App\Services\BulkDeletionService;
 use App\Services\InventoryAi\AiProviderFactory;
 use App\Services\InventoryAi\InventorySpecificationEnrichmentService;
+use App\Support\AdminListLength;
 use App\Support\InventoryImageManagementService;
 use App\Support\InventoryImageSyncService;
 use App\Support\InventoryProductSearch;
 use App\Support\ProductNameNormalizer;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
@@ -26,6 +28,11 @@ use Illuminate\Support\Facades\Schema;
 
 class ProductController extends Controller
 {
+    /**
+     * Largest page the products DataTable may load in one response.
+     * "All" is browsed in batches of this size when the filtered total is larger.
+     */
+    public const PRODUCT_LIST_MAX_PAGE_SIZE = AdminListLength::MAX_PAGE_SIZE;
     /**
      * Display a listing of the products.
      */
@@ -106,8 +113,11 @@ class ProductController extends Controller
 
             // Handle DataTables parameters
             $draw = $request->get('draw');
-            $start = $request->get('start', 0);
-            $length = $request->get('length', 25);
+            $start = max(0, (int) $request->input('start', 0));
+            $length = AdminListLength::resolve($request);
+            if ($length instanceof JsonResponse) {
+                return $length;
+            }
             $search = $request->get('search', []);
             $searchValue = is_array($search) && isset($search['value']) ? trim((string) $search['value']) : '';
             $order = $request->get('order', []);

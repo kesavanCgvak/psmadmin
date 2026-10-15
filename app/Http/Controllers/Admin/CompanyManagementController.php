@@ -16,6 +16,8 @@ use App\Models\StateProvince;
 use App\Models\City;
 use App\Models\User;
 use App\Models\CompanyRating;
+use App\Support\AdminListLength;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
@@ -490,7 +492,10 @@ class CompanyManagementController extends Controller
         try {
             $draw = (int) $request->get('draw', 1);
             $start = (int) $request->get('start', 0);
-            $length = min((int) $request->get('length', 25), 100);
+            $length = AdminListLength::resolve($request);
+            if ($length instanceof JsonResponse) {
+                return $length;
+            }
             $search = $request->get('search', []);
             $searchValue = is_array($search) && isset($search['value']) ? trim((string) $search['value']) : '';
             $order = $request->get('order', []);

@@ -1,11 +1,11 @@
 @extends('adminlte::page')
 
-@section('title', 'Products')
+@section('title', 'Equipments')
 
 @section('plugins.Select2', true)
 
 @section('content_header')
-    <h1>Products Management</h1>
+    <h1>Equipments Management</h1>
 @stop
 
 @section('content')
@@ -26,7 +26,7 @@
     <div class="card">
         <div class="products-list-sticky">
         <div class="card-header">
-            <h3 class="card-title">All Products</h3>
+            <h3 class="card-title">All Equipments</h3>
             <div class="card-tools">
                 <button type="button" id="bulkEditBtn" class="btn btn-warning btn-sm" style="display: none; margin-right: 5px;">
                     <i class="fas fa-edit"></i> <span class="d-none d-lg-inline">Multi-Edit</span><span class="d-lg-none">Edit</span>
@@ -77,6 +77,27 @@
             </div>
         </div>
         <div class="card-body products-list-table">
+            <div id="productsAllBrowser" class="products-all-browser" style="display: none;" aria-live="polite">
+                <p id="productsAllStatus" class="mb-2"></p>
+                <div class="products-all-browser__controls">
+                    <button type="button" class="btn btn-default btn-sm" id="productsAllFirst">First</button>
+                    <button type="button" class="btn btn-default btn-sm" id="productsAllPrev">Previous 100</button>
+                    <button type="button" class="btn btn-default btn-sm" id="productsAllNext">Next 100</button>
+                    <button type="button" class="btn btn-default btn-sm" id="productsAllLast">Last</button>
+                    <label class="mb-0" for="productsAllJump">Jump to row
+                        <input type="number" id="productsAllJump" class="form-control form-control-sm d-inline-block" min="1" step="100" style="width: 7rem;">
+                    </label>
+                    <button type="button" class="btn btn-default btn-sm" id="productsAllGo">Go</button>
+                </div>
+                <p class="text-muted mb-0 mt-2">
+                    <small>Search, filters, and sorting apply to the full catalog. When more than {{ (int) \App\Http\Controllers\Admin\ProductController::PRODUCT_LIST_MAX_PAGE_SIZE }} products match, All loads them {{ (int) \App\Http\Controllers\Admin\ProductController::PRODUCT_LIST_MAX_PAGE_SIZE }} at a time. Lists of that size or smaller load in one request. Products you check stay selected while you move between batches, and bulk actions use that selection.</small>
+                </p>
+            </div>
+            <div id="productsListError" class="alert alert-danger" style="display: none;" role="alert">
+                <span id="productsListErrorMessage">Error loading products data.</span>
+                <button type="button" class="btn btn-sm btn-outline-danger ml-2" id="productsListRetry">Retry</button>
+            </div>
+            <div id="productsTableScroll">
             <table id="productsTable" class="table table-bordered table-striped">
                 <thead>
                     <tr>
@@ -100,6 +121,8 @@
                     <!-- Data will be loaded via AJAX -->
                 </tbody>
             </table>
+            <div id="productsAllSentinel" style="display: none;" aria-hidden="true"></div>
+            </div>
         </div>
     </div>
 
@@ -389,6 +412,43 @@
             margin-right: 1.15rem;
         }
 
+        #bulkEditModal .select2-container {
+            width: 100% !important;
+            max-width: 100%;
+        }
+
+        #bulkEditModal .select2-container--default .select2-selection--single {
+            height: calc(2.25rem + 2px);
+            border: 1px solid #ced4da;
+            border-radius: 0.25rem;
+            background-color: #fff;
+        }
+
+        #bulkEditModal .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: calc(2.25rem + 2px);
+            padding-left: 0.75rem;
+            padding-right: 1.5rem;
+            color: #495057;
+            text-overflow: ellipsis;
+        }
+
+        #bulkEditModal .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: calc(2.25rem + 2px);
+        }
+
+        #bulkEditModal .select2-container--default.select2-container--disabled .select2-selection--single {
+            background-color: #e9ecef;
+            cursor: not-allowed;
+        }
+
+        #bulkEditModal .select2-dropdown {
+            z-index: 1060;
+        }
+
+        #bulkEditModal .select2-search--dropdown .select2-search__field {
+            width: 100% !important;
+        }
+
         @media (max-width: 991.98px) {
             #productCatalogFilters .product-list-filters__grid {
                 grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -458,6 +518,29 @@
 
         .products-list-table {
             padding-top: 0.75rem;
+        }
+
+        .products-all-browser {
+            margin-bottom: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: #f8f9fa;
+            border: 1px solid #e3e6ea;
+            border-radius: 0.25rem;
+        }
+
+        .products-all-browser__controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .products-list-table.is-view-all .dataTables_paginate {
+            display: none;
+        }
+
+        #productsAllSentinel {
+            height: 1px;
         }
     </style>
 @stop
@@ -578,7 +661,141 @@
             initCatalogFilterSelect($('#filterCategory'), 'All Categories');
             initCatalogFilterSelect($('#filterSubCategory'), 'All Sub Categories');
 
+            var PRODUCT_LIST_BATCH = {{ (int) \App\Http\Controllers\Admin\ProductController::PRODUCT_LIST_MAX_PAGE_SIZE }};
+            var productsViewAll = false;
+            var productsViewAllStart = 0;
+            var productsViewAllTotal = 0;
+            var productsViewAllLoading = false;
+            var productsViewAllClamping = false;
+            var productsAllUserScrolled = false;
+            var productsSelected = {};
+            $('#productsAllPrev').text('Previous ' + PRODUCT_LIST_BATCH);
+            $('#productsAllNext').text('Next ' + PRODUCT_LIST_BATCH);
+            $('#productsAllJump').attr('step', PRODUCT_LIST_BATCH);
+
+            function rememberProductCheckbox(checkbox) {
+                var $box = $(checkbox);
+                var id = String($box.val());
+                if ($box.is(':checked')) {
+                    productsSelected[id] = {
+                        name: $box.data('name') || '',
+                        verified: String($box.data('verified'))
+                    };
+                } else {
+                    delete productsSelected[id];
+                }
+            }
+
+            function currentBulkSelection() {
+                if (productsViewAll) {
+                    var storedIds = [];
+                    var storedNames = [];
+                    var storedHasUnverified = false;
+                    Object.keys(productsSelected).forEach(function(id) {
+                        storedIds.push(id);
+                        storedNames.push(productsSelected[id].name || '');
+                        if (String(productsSelected[id].verified) === '0') {
+                            storedHasUnverified = true;
+                        }
+                    });
+                    return { ids: storedIds, names: storedNames, hasUnverified: storedHasUnverified };
+                }
+
+                var ids = [];
+                var names = [];
+                var hasUnverified = false;
+                $('#productsTable .row-checkbox:checked').each(function() {
+                    ids.push($(this).val());
+                    names.push($(this).data('name'));
+                    if (String($(this).data('verified')) === '0') {
+                        hasUnverified = true;
+                    }
+                });
+                return { ids: ids, names: names, hasUnverified: hasUnverified };
+            }
+
+            function clearProductSelection() {
+                productsSelected = {};
+                $('#selectAll, #productsTable .row-checkbox').prop('checked', false);
+            }
+
+            function updateProductsAllBrowser(settings) {
+                var $list = $('#productsTable').closest('.products-list-table');
+            if (!productsViewAll) {
+                $('#productsAllBrowser, #productsAllSentinel').hide();
+                $('#productsAllStatus').text('');
+                $list.removeClass('is-view-all');
+                $('#selectAll').attr('title', 'Select all rows on this page');
+                return;
+            }
+
+                $list.addClass('is-view-all');
+
+                var json = (settings && settings.json) ? settings.json : {};
+                var total = typeof json.recordsFiltered === 'number' ? json.recordsFiltered : 0;
+                productsViewAllTotal = total;
+                var shown = json.data ? json.data.length : 0;
+
+                if (total > 0 && productsViewAllStart >= total && !productsViewAllClamping) {
+                    productsViewAllClamping = true;
+                    productsViewAllStart = Math.floor((total - 1) / PRODUCT_LIST_BATCH) * PRODUCT_LIST_BATCH;
+                    productsTable.ajax.reload(function() {
+                        productsViewAllClamping = false;
+                    }, false);
+                    return;
+                }
+
+                if (total <= PRODUCT_LIST_BATCH) {
+                    $('#productsAllBrowser, #productsAllSentinel').hide();
+                    $('#productsAllStatus').text('');
+                    $('#selectAll').attr('title', 'Select all rows');
+                    return;
+                }
+
+                $('#productsAllBrowser, #productsAllSentinel').show();
+                $('#selectAll').attr('title', 'Select all rows in this batch');
+
+                var from = total === 0 || shown === 0 ? 0 : productsViewAllStart + 1;
+                var to = shown === 0 ? 0 : productsViewAllStart + shown;
+                var batchCount = total === 0 ? 0 : Math.ceil(total / PRODUCT_LIST_BATCH);
+                var batchNumber = total === 0 ? 0 : Math.floor(productsViewAllStart / PRODUCT_LIST_BATCH) + 1;
+                $('#productsAllStatus').text(
+                    total === 0
+                        ? 'No products match the current search and filters.'
+                        : 'Showing products ' + from + '–' + to + ' of ' + total + ' (batch ' + batchNumber + ' of ' + batchCount + ').'
+                );
+                $('#productsAllJump').attr('max', Math.max(total, 1));
+                $('#productsAllFirst, #productsAllPrev').prop('disabled', productsViewAllStart <= 0);
+                $('#productsAllNext, #productsAllLast').prop('disabled', total === 0 || productsViewAllStart + PRODUCT_LIST_BATCH >= total);
+                $('#productsAllGo').prop('disabled', false);
+            }
+
+            function moveProductsAllWindow(nextStart) {
+                if (!productsViewAll || productsViewAllLoading) {
+                    return;
+                }
+                if (nextStart < 0) {
+                    nextStart = 0;
+                }
+                if (productsViewAllTotal > 0 && nextStart >= productsViewAllTotal) {
+                    return;
+                }
+                if (nextStart === productsViewAllStart) {
+                    return;
+                }
+                productsViewAllStart = nextStart;
+                productsAllUserScrolled = false;
+                productsViewAllLoading = true;
+                $('#productsAllFirst, #productsAllPrev, #productsAllNext, #productsAllLast, #productsAllGo').prop('disabled', true);
+                var allBrowser = document.getElementById('productsAllBrowser');
+                if (allBrowser && allBrowser.scrollIntoView) {
+                    allBrowser.scrollIntoView({ block: 'start' });
+                }
+                productsTable.ajax.reload(null, false);
+            }
+
             var productsTable = initResponsiveDataTable('productsTable', {
+                skipLargeAllMode: true,
                 "processing": true,
                 "serverSide": true,
                 "stateSave": false, // Disable state saving to show all records by default
@@ -608,8 +825,18 @@
                         }
                     },
                     "error": function(xhr, error, thrown) {
+                        productsViewAllLoading = false;
+                        if (error === 'abort') {
+                            return;
+                        }
                         console.error('DataTables AJAX error:', error, thrown);
-                        alert('Error loading products data. Please refresh the page.');
+                        var message = 'Error loading products data. Please try again.';
+                        if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
+                            message = xhr.responseJSON.error;
+                        }
+                        $('#productsListErrorMessage').text(message);
+                        $('#productsListError').show();
+                        $('#productsAllFirst, #productsAllPrev, #productsAllNext, #productsAllLast, #productsAllGo').prop('disabled', false);
                     }
                 },
                 "columns": [
@@ -704,13 +931,110 @@
                 "lengthMenu": [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
                 "stateSave": false, // Disable state saving to prevent search filter persistence
                 "stateDuration": -1, // Don't save state
+                "infoCallback": function(settings, start, end, max, total, pre) {
+                    if (!productsViewAll) {
+                        return pre;
+                    }
+                    if (!total) {
+                        return 'Showing 0 products';
+                    }
+                    var shown = settings.json && settings.json.data ? settings.json.data.length : 0;
+                    var from = shown === 0 ? 0 : productsViewAllStart + 1;
+                    var to = shown === 0 ? 0 : productsViewAllStart + shown;
+                    return 'Showing ' + from + ' to ' + to + ' of ' + total + ' products';
+                },
                 "drawCallback": function(settings) {
-                    updateBulkButtons();
+                    productsViewAllLoading = false;
+                    if (settings.json && !settings.json.error) {
+                        $('#productsListError').hide();
+                    }
+                    if (productsViewAll) {
+                        $('#productsTable .row-checkbox').each(function() {
+                            var id = String($(this).val());
+                            $(this).prop('checked', Object.prototype.hasOwnProperty.call(productsSelected, id));
+                        });
+                    }
                     var totalCheckboxes = $('#productsTable .row-checkbox').length;
                     var checkedCheckboxes = $('#productsTable .row-checkbox:checked').length;
                     $('#selectAll').prop('checked', totalCheckboxes > 0 && totalCheckboxes === checkedCheckboxes);
+                    updateProductsAllBrowser(settings);
+                    updateBulkButtons();
                 }
             });
+
+            productsTable.on('preXhr.dt', function(e, settings, data) {
+                if (Number(data.length) === -1) {
+                    productsViewAll = true;
+                    data.length = PRODUCT_LIST_BATCH;
+                    data.start = productsViewAllStart;
+                }
+            });
+
+            $('#productsListRetry').on('click', function() {
+                $('#productsListError').hide();
+                productsTable.ajax.reload(null, false);
+            });
+
+            $('#productsAllFirst').on('click', function() {
+                moveProductsAllWindow(0);
+            });
+            $('#productsAllPrev').on('click', function() {
+                moveProductsAllWindow(productsViewAllStart - PRODUCT_LIST_BATCH);
+            });
+            $('#productsAllNext').on('click', function() {
+                moveProductsAllWindow(productsViewAllStart + PRODUCT_LIST_BATCH);
+            });
+            $('#productsAllLast').on('click', function() {
+                if (productsViewAllTotal < 1) {
+                    return;
+                }
+                moveProductsAllWindow(Math.floor((productsViewAllTotal - 1) / PRODUCT_LIST_BATCH) * PRODUCT_LIST_BATCH);
+            });
+            function jumpProductsAllWindow() {
+                var raw = parseInt($('#productsAllJump').val(), 10);
+                if (!raw || raw < 1) {
+                    raw = 1;
+                }
+                if (productsViewAllTotal > 0 && raw > productsViewAllTotal) {
+                    raw = productsViewAllTotal;
+                }
+                moveProductsAllWindow(Math.floor((raw - 1) / PRODUCT_LIST_BATCH) * PRODUCT_LIST_BATCH);
+            }
+            $('#productsAllGo').on('click', jumpProductsAllWindow);
+            $('#productsAllJump').on('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    jumpProductsAllWindow();
+                }
+            });
+
+            if (window.IntersectionObserver) {
+                var productsAllLastScroll = window.scrollY || 0;
+                $(window).on('scroll.productsAll', function() {
+                    var currentScroll = window.scrollY || 0;
+                    if (currentScroll > productsAllLastScroll + 8) {
+                        productsAllUserScrolled = true;
+                    }
+                    productsAllLastScroll = currentScroll;
+                });
+                var productsAllSentinel = document.getElementById('productsAllSentinel');
+                if (productsAllSentinel) {
+                    var productsAllObserver = new IntersectionObserver(function(entries) {
+                        if (!productsViewAll || productsViewAllLoading || !productsAllUserScrolled) {
+                            return;
+                        }
+                        if (!entries.some(function(entry) { return entry.isIntersecting; })) {
+                            return;
+                        }
+                        if (productsViewAllTotal < 1 || productsViewAllStart + PRODUCT_LIST_BATCH >= productsViewAllTotal) {
+                            return;
+                        }
+                        productsAllUserScrolled = false;
+                        moveProductsAllWindow(productsViewAllStart + PRODUCT_LIST_BATCH);
+                    }, { threshold: 0.6 });
+                    productsAllObserver.observe(productsAllSentinel);
+                }
+            }
 
             // Clear any saved state from localStorage for this table (DataTables default)
             localStorage.removeItem('DataTables_productsTable');
@@ -775,6 +1099,10 @@
                 productFiltersTouched = true;
                 persistProductCatalogFilters();
                 localStorage.setItem('products_filter_page', '0');
+                if (productsViewAll) {
+                    productsViewAllStart = 0;
+                    productsSelected = {};
+                }
                 productsTable.ajax.reload();
             }
 
@@ -811,7 +1139,8 @@
                 reloadProductListForFilters();
             });
 
-            // Save search filter to localStorage
+            // DataTables also emits search on ordinary reloads. Reset All only when the text changes.
+            var lastProductSearch = productsTable.search();
             productsTable.on('search.dt', function() {
                 var searchValue = productsTable.search();
                 if (searchValue) {
@@ -821,6 +1150,13 @@
                 }
                 // Reset to first page when search changes
                 localStorage.setItem('products_filter_page', '0');
+                if (searchValue !== lastProductSearch) {
+                    lastProductSearch = searchValue;
+                    if (productsViewAll) {
+                        productsViewAllStart = 0;
+                        productsSelected = {};
+                    }
+                }
             });
 
             // Save pagination state to localStorage
@@ -829,24 +1165,47 @@
             });
 
             productsTable.on('length.dt', function(e, settings, len) {
+                var nextAll = parseInt(len, 10) === -1;
+                if (nextAll !== productsViewAll) {
+                    clearProductSelection();
+                }
+                productsViewAll = nextAll;
+                productsViewAllStart = 0;
                 localStorage.setItem('products_filter_pageLength', len);
                 localStorage.setItem('products_filter_page', '0'); // Reset to first page when page length changes
             });
 
-            // Save sorting state to localStorage
+            // DataTables also emits order on ordinary reloads. Reset All only when the sort changes.
+            var lastProductOrder = JSON.stringify(productsTable.order());
             productsTable.on('order.dt', function() {
                 var order = productsTable.order();
-                localStorage.setItem('products_filter_order', JSON.stringify(order));
+                var serializedOrder = JSON.stringify(order);
+                localStorage.setItem('products_filter_order', serializedOrder);
+                if (serializedOrder !== lastProductOrder) {
+                    lastProductOrder = serializedOrder;
+                    if (productsViewAll) {
+                        productsViewAllStart = 0;
+                    }
+                }
             });
 
             // Bulk actions for server-side DataTable
             $('#selectAll').on('change', function() {
-                $('#productsTable .row-checkbox').prop('checked', $(this).is(':checked'));
+                var checked = $(this).is(':checked');
+                $('#productsTable .row-checkbox').each(function() {
+                    $(this).prop('checked', checked);
+                    if (productsViewAll) {
+                        rememberProductCheckbox(this);
+                    }
+                });
                 updateBulkButtons();
             });
 
             $(document).on('change', '.row-checkbox', function(e) {
                 e.stopPropagation();
+                if (productsViewAll) {
+                    rememberProductCheckbox(this);
+                }
                 updateBulkButtons();
                 var totalCheckboxes = $('#productsTable .row-checkbox').length;
                 var checkedCheckboxes = $('#productsTable .row-checkbox:checked').length;
@@ -862,8 +1221,8 @@
                     return;
                 }
 
-                var checked = $('#productsTable .row-checkbox:checked');
-                var checkedCount = checked.length;
+                var selected = currentBulkSelection();
+                var checkedCount = selected.ids.length;
 
                 if (checkedCount > 0) {
                     var selectedLabel = checkedCount === 1 ? '1 product selected' : checkedCount + ' products selected';
@@ -873,13 +1232,7 @@
                     $('#bulkDeleteBtn').show().html('<i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected (' + checkedCount + ')</span><span class="d-lg-none">Delete</span>');
                     $('#bulkEnrichBtn').show().html('<i class="fas fa-robot"></i> <span class="d-none d-lg-inline">AI Enrich Selected (' + checkedCount + ')</span><span class="d-lg-none">AI Enrich</span>');
 
-                    var hasUnverified = false;
-                    checked.each(function() {
-                        if ($(this).data('verified') == '0') {
-                            hasUnverified = true;
-                            return false; // break loop
-                        }
-                    });
+                    var hasUnverified = selected.hasUnverified;
 
                     // Only show verify button if there are unverified products selected
                     if (hasUnverified) {
@@ -897,10 +1250,7 @@
             }
 
             $('#bulkEnrichBtn').on('click', function() {
-                var selectedIds = [];
-                $('#productsTable .row-checkbox:checked').each(function() {
-                    selectedIds.push($(this).val());
-                });
+                var selectedIds = currentBulkSelection().ids;
 
                 if (selectedIds.length === 0) {
                     alert('Please select at least one product to enrich.');
@@ -958,6 +1308,7 @@
                             $('#enrichResultsBody').html(rowsHtml);
                             $('#enrichResultsModal').modal('show');
 
+                            clearProductSelection();
                             productsTable.ajax.reload(function() {
                                 $('#selectAll').prop('checked', false);
                                 updateBulkButtons();
@@ -1100,12 +1451,9 @@
             });
 
             $('#bulkDeleteBtn').on('click', function() {
-                var selectedIds = [];
-                var selectedNames = [];
-                $('#productsTable .row-checkbox:checked').each(function() {
-                    selectedIds.push($(this).val());
-                    selectedNames.push($(this).data('name'));
-                });
+                var selected = currentBulkSelection();
+                var selectedIds = selected.ids;
+                var selectedNames = selected.names;
 
                 if (selectedIds.length === 0) {
                     alert('Please select at least one product to delete.');
@@ -1138,6 +1486,7 @@
                             if (response.success) {
                                 alert('Successfully deleted ' + response.deleted_count + ' product/products.');
                                 // Refresh DataTable
+                                clearProductSelection();
                                 productsTable.ajax.reload(function() {
                                     // Reset select all checkbox and hide buttons after reload
                                     $('#selectAll').prop('checked', false);
@@ -1165,12 +1514,7 @@
 
             // Bulk verify functionality
             $('#bulkVerifyBtn').on('click', function() {
-                var selectedIds = [];
-                var selectedNames = [];
-                $('#productsTable .row-checkbox:checked').each(function() {
-                    selectedIds.push($(this).val());
-                    selectedNames.push($(this).data('name'));
-                });
+                var selectedIds = currentBulkSelection().ids;
 
                 if (selectedIds.length === 0) {
                     alert('Please select at least one product to verify.');
@@ -1198,6 +1542,7 @@
                             if (response.success) {
                                 alert('Successfully verified ' + response.updated_count + ' product/products.');
                                 // Refresh DataTable
+                                clearProductSelection();
                                 productsTable.ajax.reload(function() {
                                     // Reset select all checkbox and hide buttons after reload
                                     $('#selectAll').prop('checked', false);
@@ -1223,6 +1568,54 @@
                 }
             });
 
+            var syncingBulkEditSelect = false;
+
+            function syncBulkEditSelect($select) {
+                if (!$select.data('select2')) {
+                    return;
+                }
+                syncingBulkEditSelect = true;
+                $select.trigger('change.select2');
+                syncingBulkEditSelect = false;
+            }
+
+            function setBulkEditSelectEnabled($select, enabled) {
+                if (enabled) {
+                    $select.prop('disabled', false).removeAttr('disabled');
+                } else {
+                    $select.prop('disabled', true).attr('disabled', 'disabled').val('');
+                }
+                syncBulkEditSelect($select);
+            }
+
+            function registerBulkEditSelectLanguage() {
+                if (!$.fn.select2 || !$.fn.select2.amd || registerBulkEditSelectLanguage.done) {
+                    return;
+                }
+                $.fn.select2.amd.define('select2/i18n/psm-bulk-edit', [], function() {
+                    return {
+                        noResults: function() {
+                            return 'No matching options found';
+                        }
+                    };
+                });
+                registerBulkEditSelectLanguage.done = true;
+            }
+
+            function initBulkEditSelect($select, placeholder) {
+                if (!$.fn.select2 || $select.data('select2')) {
+                    return;
+                }
+                registerBulkEditSelectLanguage();
+                $select.select2({
+                    dropdownParent: $('#bulkEditModal'),
+                    width: '100%',
+                    placeholder: placeholder,
+                    minimumResultsForSearch: 0,
+                    language: 'psm-bulk-edit'
+                });
+            }
+
             function populateBulkEditSelect($select, items, placeholder) {
                 var current = $select.val();
                 $select.empty();
@@ -1233,6 +1626,7 @@
                 if (current && $select.find('option[value="' + current + '"]').length) {
                     $select.val(current);
                 }
+                syncBulkEditSelect($select);
             }
 
             function populateBulkEditSubCategories() {
@@ -1258,11 +1652,14 @@
                 if (previous && $select.find('option[value="' + previous + '"]').length) {
                     $select.val(previous);
                 }
+                syncBulkEditSelect($select);
             }
 
             function resetBulkEditModal() {
                 $('#bulkEditChangeCategory, #bulkEditChangeSubCategory, #bulkEditChangeBrand').prop('checked', false);
-                $('#bulkEditCategory, #bulkEditSubCategory, #bulkEditBrand').prop('disabled', true).val('');
+                setBulkEditSelectEnabled($('#bulkEditCategory'), false);
+                setBulkEditSelectEnabled($('#bulkEditSubCategory'), false);
+                setBulkEditSelectEnabled($('#bulkEditBrand'), false);
                 populateBulkEditSelect($('#bulkEditCategory'), bulkEditCategories, '-- Select Category --');
                 populateBulkEditSelect($('#bulkEditBrand'), bulkEditBrands, '-- Select Brand --');
                 populateBulkEditSubCategories();
@@ -1280,11 +1677,7 @@
             }
 
             function selectedProductIds() {
-                var selectedIds = [];
-                $('#productsTable .row-checkbox:checked').each(function() {
-                    selectedIds.push($(this).val());
-                });
-                return selectedIds;
+                return currentBulkSelection().ids;
             }
 
             function collectBulkEditChanges(selectedIds) {
@@ -1328,34 +1721,28 @@
             populateBulkEditSelect($('#bulkEditCategory'), bulkEditCategories, '-- Select Category --');
             populateBulkEditSelect($('#bulkEditBrand'), bulkEditBrands, '-- Select Brand --');
             populateBulkEditSubCategories();
+            initBulkEditSelect($('#bulkEditCategory'), '-- Select Category --');
+            initBulkEditSelect($('#bulkEditSubCategory'), '-- Select Sub-Category --');
+            initBulkEditSelect($('#bulkEditBrand'), '-- Select Brand --');
 
             $('#bulkEditChangeCategory').on('change', function() {
-                var enabled = $(this).is(':checked');
-                $('#bulkEditCategory').prop('disabled', !enabled);
-                if (!enabled) {
-                    $('#bulkEditCategory').val('');
-                }
+                setBulkEditSelectEnabled($('#bulkEditCategory'), $(this).is(':checked'));
                 populateBulkEditSubCategories();
             });
 
             $('#bulkEditCategory').on('change', function() {
+                if (syncingBulkEditSelect) {
+                    return;
+                }
                 populateBulkEditSubCategories();
             });
 
             $('#bulkEditChangeSubCategory').on('change', function() {
-                var enabled = $(this).is(':checked');
-                $('#bulkEditSubCategory').prop('disabled', !enabled);
-                if (!enabled) {
-                    $('#bulkEditSubCategory').val('');
-                }
+                setBulkEditSelectEnabled($('#bulkEditSubCategory'), $(this).is(':checked'));
             });
 
             $('#bulkEditChangeBrand').on('change', function() {
-                var enabled = $(this).is(':checked');
-                $('#bulkEditBrand').prop('disabled', !enabled);
-                if (!enabled) {
-                    $('#bulkEditBrand').val('');
-                }
+                setBulkEditSelectEnabled($('#bulkEditBrand'), $(this).is(':checked'));
             });
 
             $('#bulkEditBtn').on('click', function() {
@@ -1402,6 +1789,12 @@
             });
 
             $('#bulkEditModal').on('hidden.bs.modal', function() {
+                $('#bulkEditCategory, #bulkEditSubCategory, #bulkEditBrand').each(function() {
+                    var $select = $(this);
+                    if ($select.data('select2')) {
+                        $select.select2('close');
+                    }
+                });
                 resetBulkEditModal();
             });
 
@@ -1427,6 +1820,7 @@
                         if (response.success) {
                             $('#bulkEditModal').modal('hide');
                             alert(response.message || 'Products updated successfully.');
+                            clearProductSelection();
                             productsTable.ajax.reload(function() {
                                 $('#selectAll').prop('checked', false);
                                 updateBulkButtons();

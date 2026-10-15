@@ -558,6 +558,7 @@
 @stop
 
 @section('js')
+    @include('partials.admin-all-batches-js')
     <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap4.min.js"></script>
     <script src="https://cdn.datatables.net/responsive/2.3.0/js/dataTables.responsive.min.js"></script>
@@ -617,8 +618,16 @@
                     localStorage.setItem('DataTables_users-table', JSON.stringify(data));
                 },
                 "stateLoadCallback": function (settings) {
-                    var state = localStorage.getItem('DataTables_users-table');
-                    return state ? JSON.parse(state) : null;
+                    var raw = localStorage.getItem('DataTables_users-table');
+                    if (!raw) {
+                        return null;
+                    }
+                    var state = JSON.parse(raw);
+                    if (state && Number(state.length) === -1) {
+                        $(settings.nTable).data('adminRestoreAll', true);
+                        state.length = 25;
+                    }
+                    return state;
                 },
                 "drawCallback": function() {
                     // Ensure buttons are properly aligned
@@ -647,6 +656,7 @@
                     }
                 }
             });
+            attachAdminAllBatches(table);
 
             // Company name → company detail with return context (page + global search)
             $('#users-table tbody').on('click', 'a.js-users-company-link', function(e) {

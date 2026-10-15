@@ -64,6 +64,104 @@ class ProductListFilterTest extends TestCase
         $response->assertSee('Not Set (-)', false);
         $response->assertSee("var unsetCatalogValue = 'none';", false);
         $response->assertSee('categoryId !== unsetCatalogValue', false);
+        $response->assertSee('Equipments Management', false);
+        $response->assertSee('All Equipments', false);
+        $response->assertSee('Companies Inventory', false);
+        $response->assertSee('id="productsAllBrowser"', false);
+        $response->assertSee('id="productsListRetry"', false);
+        $response->assertSee('Number(data.length) === -1', false);
+        $response->assertSee('data.length = PRODUCT_LIST_BATCH', false);
+        $response->assertSee('total <= PRODUCT_LIST_BATCH', false);
+        $response->assertSee('skipLargeAllMode', false);
+        $response->assertSee('[[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]]', false);
+        $response->assertSee('currentBulkSelection', false);
+        $response->assertDontSee('>Products<', false);
+        $response->assertDontSee('All Equipment<', false);
+    }
+
+    public function test_page_sizes_stay_bounded_and_all_is_rejected_as_one_request(): void
+    {
+        $admin = $this->admin();
+        $catalog = $this->catalog();
+        $token = 'PageSize'.uniqid();
+        $created = [];
+
+        for ($i = 0; $i < 30; $i++) {
+            $created[] = $this->catalogProduct(
+                $catalog['cameras'],
+                $catalog['cinema'],
+                $catalog['sony'],
+                $token.'-'.str_pad((string) $i, 2, '0', STR_PAD_LEFT)
+            );
+        }
+
+        $this->actingAs($admin);
+
+        $filters = [
+            'search' => ['value' => $token],
+            'order' => [['column' => 3, 'dir' => 'asc']],
+        ];
+
+        foreach ([10 => 10, 25 => 25, 50 => 30, 100 => 30, 101 => 30, 500 => 30] as $length => $expectedCount) {
+            $page = $this->fetchProducts($filters, 0, $length);
+            $page->assertOk();
+            $page->assertJsonMissingPath('error');
+            $this->assertSame(30, $page->json('recordsFiltered'));
+            $this->assertCount($expectedCount, $page->json('data'));
+        }
+
+        $batches = [];
+        for ($start = 0; $start < 30; $start += 10) {
+            $batch = $this->fetchProducts($filters, $start, 10);
+            $batch->assertOk();
+            $this->assertSame(30, $batch->json('recordsFiltered'));
+            $batches[] = array_map('intval', array_column($batch->json('data'), 'id'));
+        }
+
+        $this->assertSame(
+            array_map(fn (Product $product) => (int) $product->id, $created),
+            array_merge(...$batches)
+        );
+        $this->assertSame((int) $created[0]->id, $batches[0][0]);
+        $this->assertSame((int) $created[29]->id, $batches[2][9]);
+
+        foreach ([-1, 0, \App\Support\AdminListLength::MAX_PAGE_SIZE + 1] as $length) {
+            $rejected = $this->fetchProducts($filters, 0, $length);
+            $rejected->assertStatus(422);
+            $rejected->assertJsonPath('data', []);
+            $this->assertNotSame('', (string) $rejected->json('error'));
+        }
+    }
+
+    public function test_admin_navigation_labels_for_equipments_and_company_inventory(): void
+    {
+        $menu = collect(config('adminlte.menu'));
+
+        $this->assertTrue($menu->contains(fn ($item) => ($item['text'] ?? null) === 'Equipments'
+            && ($item['route'] ?? null) === 'admin.products.index'));
+        $this->assertTrue($menu->contains(fn ($item) => ($item['text'] ?? null) === 'Companies Inventory'
+            && ($item['route'] ?? null) === 'admin.equipment.index'));
+        $this->assertFalse($menu->contains(fn ($item) => ($item['text'] ?? null) === 'Products'
+            && ($item['route'] ?? null) === 'admin.products.index'));
+        $this->assertFalse($menu->contains(fn ($item) => ($item['text'] ?? null) === 'All Equipment'));
+
+        $equipmentIndex = file_get_contents(resource_path('views/admin/companies/equipment/index.blade.php'));
+        $this->assertIsString($equipmentIndex);
+        $this->assertStringContainsString('Companies Inventory', $equipmentIndex);
+        $this->assertStringNotContainsString('All Equipment', $equipmentIndex);
+
+        $usersIndex = file_get_contents(resource_path('views/admin/users/index.blade.php'));
+        $this->assertIsString($usersIndex);
+        $this->assertStringContainsString('[[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]]', $usersIndex);
+        $this->assertStringNotContainsString('productsViewAll', $usersIndex);
+        $this->assertStringContainsString('attachAdminAllBatches(table)', $usersIndex);
+
+        $batches = file_get_contents(resource_path('views/partials/admin-all-batches-js.blade.php'));
+        $this->assertIsString($batches);
+        $this->assertStringContainsString('var ADMIN_LIST_BATCH = 500;', $batches);
+        $responsiveJs = file_get_contents(resource_path('views/partials/responsive-js.blade.php'));
+        $this->assertIsString($responsiveJs);
+        $this->assertStringContainsString('attachAdminAllBatches(table)', $responsiveJs);
     }
 
     public function test_not_set_filters_match_null_and_unassigned_relations(): void
