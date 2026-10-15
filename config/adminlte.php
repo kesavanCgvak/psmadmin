@@ -380,7 +380,7 @@ return [
             'icon_color' => 'success',
         ],
         [
-            'text' => 'Products',
+            'text' => 'Equipments',
             'route' => 'admin.products.index',
             'icon' => 'fas fa-fw fa-cubes',
             'icon_color' => 'warning',
@@ -460,7 +460,7 @@ return [
             'icon_color' => 'primary',
         ],
         [
-            'text' => 'All Equipment',
+            'text' => 'Companies Inventory',
             'route' => 'admin.equipment.index',
             'icon' => 'fas fa-fw fa-boxes',
             'icon_color' => 'warning',

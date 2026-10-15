@@ -2,7 +2,7 @@
     "openapi": "3.0.0",
     "info": {
         "title": "PSM Partner Open API",
-        "description": "Partner APIs for provider companies to search and retrieve product inventory via API key authentication.\r\n\r\n**Getting started**\r\n1. Log in to the provider dashboard and generate an API key (`psm_pk_...`).\r\n2. Ensure your company has **Open API Access** enabled by an administrator.\r\n3. Send the API key on each request using `Authorization: Bearer {api_key}` (preferred) or `X-API-KEY: {api_key}`.\r\n\r\nResults are scoped to the provider company linked to the API key.",
+        "description": "Partner APIs for provider companies.\n\n**Getting started**\n1. Log in as a provider user and generate an API key (`psm_pk_...`).\n2. Ensure the company has **Open API Access** enabled by an administrator.\n3. Send the API key on each request using `Authorization: Bearer {api_key}` (preferred) or `X-API-KEY: {api_key}`.\n\n**Scopes**\nKeys created before scopes existed, and keys generated without a `scopes` value, can call product endpoints only.\nChat endpoints require a key whose scopes include `chat`. Generate one with `POST /api/provider/api-keys/generate` and `\"scopes\": [\"chat\"]` or `\"scopes\": [\"products\", \"chat\"]`.\nGenerating a key revokes the previous active key for that user. Include every scope the new key should keep.\n\nProduct results and chat conversations are limited to the provider company linked to the API key.",
         "version": "1.0.0"
     },
     "servers": [
@@ -12,6 +12,250 @@
         }
     ],
     "paths": {
+        "/api/v1/partner/chat/messages": {
+            "post": {
+                "tags": [
+                    "Partner Chat"
+                ],
+                "summary": "Submit an inbound chat message",
+                "description": "Creates a PSM chat message in a company-to-company conversation, or returns the existing message when the same external id is retried.\n\nThe API key identifies the sending company. That company must be a participant in the conversation. The sender user is the company's default contact, who must belong to that company and must not be blocked. The request cannot name a different sending company.\n\n`external_conversation_id` is stored as a company-scoped mapping. The first request for an external conversation must include `psm_conversation_id`. Later requests may omit it. There is no matching by company name, contact name, or email.\n\nRetries with the same `external_system` and `external_message_id` for the same conversation and body return HTTP 200 and do not create another message, broadcast, or notification. A reused external message id with a different body or conversation returns HTTP 409.\n\n`external_created_at` is stored for reference. Unread counts use the PSM `created_at` of the chat message.\n\nRate limit: 60 requests per minute for the authenticated company.",
+                "operationId": "partnerChatStoreMessage",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PartnerChatMessageRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Message created. Existing chat broadcast and notification behavior runs for this new message.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Message sent."
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/PartnerChatMessage"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "Idempotent retry. The original PSM message id is returned and no duplicate message is created.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Existing message returned."
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/PartnerChatMessage"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API key. A revoked key is treated as invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Expired key, Open API disabled, non-provider account, missing chat scope, or the conversation belongs to other companies.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "PSM conversation was not found, or the external conversation has not been mapped yet.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The external message id was already used for a different body or conversation, or the external conversation id is mapped to a different PSM conversation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid fields, or the authenticated company has no valid default contact to use as the sender.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (rate limit: 60 requests per minute per company).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "partnerApiKey": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/partner/chat/conversations": {
+            "get": {
+                "tags": [
+                    "Partner Chat"
+                ],
+                "summary": "List conversations for mapping",
+                "description": "Returns conversations that include the authenticated company, so an integrator can choose `psm_conversation_id` for the first message mapping.\n\nThe payload is limited to the conversation id, counterparty company id and name, rental job id, and updated time. Message history is not included. Conversations that do not include the authenticated company are omitted.\n\nRequires the chat scope. Rate limit: 60 requests per minute for the authenticated company.",
+                "operationId": "partnerChatListConversations",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "example": 1,
+                            "default": 1,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "example": 25,
+                            "default": 25,
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Conversations fetched successfully.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Conversations fetched successfully."
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/PartnerChatConversation"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/PaginationMeta"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API key.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Open API disabled, expired key, invalid provider context, or missing chat scope.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid pagination parameters.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationError"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (rate limit: 60 requests per minute per company).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiError"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "partnerApiKey": []
+                    }
+                ]
+            }
+        },
         "/api/v1/partner/products/search": {
             "get": {
                 "tags": [
@@ -513,6 +757,130 @@
                     }
                 ]
             },
+            "PartnerChatMessageRequest": {
+                "required": [
+                    "external_system",
+                    "external_message_id",
+                    "external_conversation_id",
+                    "body"
+                ],
+                "properties": {
+                    "external_system": {
+                        "description": "Stable system slug. Allowed values: rentman, flex.",
+                        "type": "string",
+                        "example": "rentman"
+                    },
+                    "external_message_id": {
+                        "type": "string",
+                        "example": "external-message-123",
+                        "maxLength": 191
+                    },
+                    "external_conversation_id": {
+                        "type": "string",
+                        "example": "external-conversation-456",
+                        "maxLength": 191
+                    },
+                    "psm_conversation_id": {
+                        "description": "Required until this external conversation id is mapped. Must be a conversation the authenticated company belongs to.",
+                        "type": "integer",
+                        "example": 123,
+                        "nullable": true
+                    },
+                    "body": {
+                        "type": "string",
+                        "example": "Hello, we have received your rental request.",
+                        "maxLength": 2000,
+                        "minLength": 1
+                    },
+                    "external_created_at": {
+                        "description": "Stored on the external message link. Unread state uses the PSM message timestamp.",
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2026-10-12T10:30:00Z",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "PartnerChatMessage": {
+                "properties": {
+                    "id": {
+                        "description": "PSM chat message id.",
+                        "type": "integer",
+                        "example": 55
+                    },
+                    "conversation_id": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "external_system": {
+                        "type": "string",
+                        "example": "rentman"
+                    },
+                    "external_message_id": {
+                        "type": "string",
+                        "example": "external-message-123"
+                    },
+                    "external_conversation_id": {
+                        "type": "string",
+                        "example": "external-conversation-456"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2026-10-12T10:30:05+00:00"
+                    }
+                },
+                "type": "object"
+            },
+            "PartnerChatConversation": {
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "counterparty_company_id": {
+                        "type": "integer",
+                        "example": 45
+                    },
+                    "counterparty_company_name": {
+                        "type": "string",
+                        "example": "Northwind Rentals"
+                    },
+                    "rental_job_id": {
+                        "type": "integer",
+                        "example": null,
+                        "nullable": true
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "type": "object"
+            },
+            "ValidationError": {
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "message": {
+                        "type": "string",
+                        "example": "Validation error"
+                    },
+                    "errors": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "type": "object"
+            },
             "PaginationMeta": {
                 "properties": {
                     "page": {
@@ -538,7 +906,7 @@
         "securitySchemes": {
             "partnerApiKey": {
                 "type": "http",
-                "description": "Provider API key from the dashboard. Format: `psm_pk_...`. Alternative header: `X-API-KEY`.",
+                "description": "Provider API key. Format: `psm_pk_...`. Chat routes require the `chat` scope. Product routes accept legacy keys and keys that include the `products` scope. Alternative header: `X-API-KEY`.",
                 "bearerFormat": "API Key",
                 "scheme": "bearer"
             }
@@ -553,6 +921,10 @@
         {
             "name": "Partner Products",
             "description": "Search and retrieve provider-scoped product inventory."
+        },
+        {
+            "name": "Partner Chat",
+            "description": "Submit inbound company-to-company chat messages and list conversations the authenticated company can map."
         }
     ]
 }

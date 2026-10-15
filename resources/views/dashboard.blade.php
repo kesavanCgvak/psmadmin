@@ -60,7 +60,7 @@
             <div class="small-box bg-danger">
                 <div class="inner">
                     <h3>{{ \App\Models\Equipment::count() }}</h3>
-                    <p>All Equipment</p>
+                    <p>Companies Inventory</p>
                 </div>
                 <div class="icon">
                     <i class="fas fa-boxes"></i>

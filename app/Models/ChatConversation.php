@@ -42,6 +42,11 @@ class ChatConversation extends Model
         return $this->hasMany(ChatMessage::class, 'conversation_id');
     }
 
+    public function externalConversations(): HasMany
+    {
+        return $this->hasMany(ChatExternalConversation::class, 'conversation_id');
+    }
+
     public function userStates(): HasMany
     {
         return $this->hasMany(ChatConversationUserState::class, 'conversation_id');

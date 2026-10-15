@@ -9,6 +9,7 @@ use App\Models\LinearUnit;
 use App\Models\PsmProductSubmission;
 use App\Models\WeightUnit;
 use App\Services\PsmProductSubmissionService;
+use App\Support\AdminListLength;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -42,7 +43,10 @@ class PsmProductSubmissionController extends Controller
         try {
             $draw = (int) $request->get('draw', 1);
             $start = (int) $request->get('start', 0);
-            $length = (int) $request->get('length', 25);
+            $length = AdminListLength::resolve($request);
+            if ($length instanceof JsonResponse) {
+                return $length;
+            }
             $searchValue = trim((string) data_get($request->get('search'), 'value', ''));
             $statusFilter = $request->get('status_filter', PsmProductSubmission::STATUS_PENDING);
             $order = $request->get('order', []);

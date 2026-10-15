@@ -8,6 +8,7 @@ use App\Models\InventoryMasterAiSpec;
 use App\Models\LinearUnit;
 use App\Models\WeightUnit;
 use App\Services\InventoryAi\InventorySpecificationEnrichmentService;
+use App\Support\AdminListLength;
 use App\Support\InventoryAiSpecPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -38,7 +39,10 @@ class InventoryAiSpecificationController extends Controller
         try {
             $draw = (int) $request->get('draw', 1);
             $start = (int) $request->get('start', 0);
-            $length = (int) $request->get('length', 25);
+            $length = AdminListLength::resolve($request);
+            if ($length instanceof JsonResponse) {
+                return $length;
+            }
             $searchValue = trim((string) data_get($request->get('search'), 'value', ''));
             $statusFilter = $request->get('status_filter', InventoryMasterAiSpec::STATUS_PENDING);
             $order = $request->get('order', []);
@@ -272,7 +276,10 @@ class InventoryAiSpecificationController extends Controller
         try {
             $draw = (int) $request->get('draw', 1);
             $start = (int) $request->get('start', 0);
-            $length = (int) $request->get('length', 25);
+            $length = AdminListLength::resolve($request);
+            if ($length instanceof JsonResponse) {
+                return $length;
+            }
             $searchValue = trim((string) data_get($request->get('search'), 'value', ''));
             $updatedByFilter = $request->get('updated_by_filter', '');
             $orderDir = data_get($request->get('order'), '0.dir', 'desc') === 'asc' ? 'asc' : 'desc';

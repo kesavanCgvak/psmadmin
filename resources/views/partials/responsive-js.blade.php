@@ -2,6 +2,7 @@
 <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap4.min.js"></script>
 <script src="https://cdn.datatables.net/responsive/2.3.0/js/dataTables.responsive.min.js"></script>
 <script src="https://cdn.datatables.net/responsive/2.3.0/js/responsive.bootstrap4.min.js"></script>
+@include('partials.admin-all-batches-js')
 <script>
 // Responsive DataTable initialization function
 function initResponsiveDataTable(tableId, options = {}) {
@@ -34,9 +35,16 @@ function initResponsiveDataTable(tableId, options = {}) {
             localStorage.setItem('DataTables_' + settings.nTable.id, JSON.stringify(data));
         },
         "stateLoadCallback": function (settings) {
-            // Load the state from localStorage
-            var state = localStorage.getItem('DataTables_' + settings.nTable.id);
-            return state ? JSON.parse(state) : null;
+            var raw = localStorage.getItem('DataTables_' + settings.nTable.id);
+            if (!raw) {
+                return null;
+            }
+            var state = JSON.parse(raw);
+            if (state && Number(state.length) === -1) {
+                $(settings.nTable).data('adminRestoreAll', true);
+                state.length = 25;
+            }
+            return state;
         },
         "drawCallback": function() {
             // Ensure buttons are properly aligned
@@ -46,11 +54,20 @@ function initResponsiveDataTable(tableId, options = {}) {
         }
     };
 
+    var skipLargeAllMode = !!(options && options.skipLargeAllMode);
+    if (options && options.skipLargeAllMode) {
+        delete options.skipLargeAllMode;
+    }
+
     // Merge user options with defaults
     const mergedOptions = $.extend(true, {}, defaultOptions, options);
 
     // Initialize DataTable
     const table = $('#' + tableId).DataTable(mergedOptions);
+
+    if (!skipLargeAllMode && typeof attachAdminAllBatches === 'function') {
+        attachAdminAllBatches(table);
+    }
 
     // Add responsive behavior for window resize
     $(window).on('resize', function() {

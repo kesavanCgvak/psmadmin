@@ -1,9 +1,9 @@
 @extends('adminlte::page')
 
-@section('title', 'All Equipment')
+@section('title', 'Companies Inventory')
 
 @section('content_header')
-    <h1>Equipment Management</h1>
+    <h1>Companies Inventory</h1>
 @stop
 
 @section('css')
@@ -27,7 +27,7 @@
 
     <div class="card">
         <div class="card-header">
-            <h3 class="card-title">All Equipment</h3>
+            <h3 class="card-title">Companies Inventory</h3>
             <div class="card-tools">
                 <button type="button" id="bulkDeleteBtn" class="btn btn-danger btn-sm" style="display: none; margin-right: 5px;">
                     <i class="fas fa-trash"></i> <span class="d-none d-lg-inline">Delete Selected</span><span class="d-lg-none">Delete</span>

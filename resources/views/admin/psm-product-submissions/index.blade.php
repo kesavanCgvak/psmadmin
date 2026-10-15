@@ -66,12 +66,14 @@
 @stop
 
 @section('js')
+    @include('partials.admin-all-batches-js')
     <script>
         $(function () {
             var table = $('#psmSubmissionsTable').DataTable({
                 processing: true,
                 serverSide: true,
                 pageLength: 25,
+                lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
                 order: [[5, 'desc']],
                 ajax: {
                     url: @json(route('admin.psm-product-submissions.data')),
@@ -89,6 +91,7 @@
                     { data: 'actions', name: 'actions', orderable: false, searchable: false }
                 ]
             });
+            attachAdminAllBatches(table);
 
             $('#statusFilter').on('change', function () {
                 table.ajax.reload();
