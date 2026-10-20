@@ -298,7 +298,7 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "http://psmadmin.test"
+      "value": "https://prosubmarket.cgstagingsite.com"
     },
     {
       "key": "provider_jwt_token",

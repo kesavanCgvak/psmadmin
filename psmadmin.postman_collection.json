@@ -4,7 +4,7 @@
         "name": "psmadmin",
         "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json",
         "_exporter_id": "3671839",
-        "description": "PSM HTTP API collection generated from the Laravel routes in this repository.\n\nSet collection variables before sending requests:\n- base_url: API origin, without a trailing slash. .env.example uses http://localhost. Existing requests may still use {{Localhost}} or http://psmadmin.test.\n- jwt_token: bearer token returned by Login as `token`. The Login request stores it here and in localToken.\n- partner_api_key: provider key from Generate Provider API Key (`data.api_key`). Partner routes also accept the same value in the X-API-KEY header.\n\nJWT routes use Authorization: Bearer {{jwt_token}}.\nPartner routes use Authorization: Bearer {{partner_api_key}}.\nPublic routes send no credential.\nAdmin company-referral routes use the web admin session (auth, verified, admin.access), not the mobile JWT.\n\nSample bodies come from FormRequest rules or controller validate()/Validator::make() calls. Fields that could not be confirmed are called out in the request description. Example responses are illustrative, not captured production payloads.\n\nDo not put real passwords, API keys, or customer data in this collection."
+        "description": "PSM HTTP API collection generated from the Laravel routes in this repository.\n\nSet collection variables before sending requests:\n- base_url: API origin, without a trailing slash. .env.example uses http://localhost. Existing requests may still use {{Localhost}} or https://prosubmarket.cgstagingsite.com.\n- jwt_token: bearer token returned by Login as `token`. The Login request stores it here and in localToken.\n- partner_api_key: provider key from Generate Provider API Key (`data.api_key`). Partner routes also accept the same value in the X-API-KEY header.\n\nJWT routes use Authorization: Bearer {{jwt_token}}.\nPartner routes use Authorization: Bearer {{partner_api_key}}.\nPublic routes send no credential.\nAdmin company-referral routes use the web admin session (auth, verified, admin.access), not the mobile JWT.\n\nSample bodies come from FormRequest rules or controller validate()/Validator::make() calls. Fields that could not be confirmed are called out in the request description. Example responses are illustrative, not captured production payloads.\n\nDo not put real passwords, API keys, or customer data in this collection."
     },
     "item": [
         {
@@ -381,7 +381,7 @@
                                 }
                             }
                         },
-                        "url": "http://psmadmin.test/api/profile/change-password",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/profile/change-password",
                         "description": "Preserved sample from the previous collection.\n\nChange Password — Profile Change Password.\n\nMethod and path: POST /api/profile/change-password\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\UserProfileController@changePassword\n\nRequired inputs (from this action's validation rules):\n- current_password — required\n- new_password — required|min:6|confirmed\n\nResponse messages found in this action: Current password is incorrect.; Password changed successfully.; Unable to change password..\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -406,7 +406,7 @@
                                 }
                             }
                         },
-                        "url": "http://psmadmin.test/api/profile/update-email",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/profile/update-email",
                         "description": "Preserved sample from the previous collection.\n\nUpdate Email — Profile Update Email.\n\nMethod and path: PATCH /api/profile/update-email\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\UserProfileController@updateEmail\n\nRequired inputs (from this action's validation rules):\n- email — required|email\n\nResponse messages found in this action: Validation failed; User profile not found; Email updated successfully. Please verify your new email address.; Unable to update email.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -431,7 +431,7 @@
                                 }
                             }
                         },
-                        "url": "http://psmadmin.test/api/profile/update-mobile",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/profile/update-mobile",
                         "description": "Preserved sample from the previous collection.\n\nUpdate Mobile — Profile Update Mobile.\n\nMethod and path: PATCH /api/profile/update-mobile\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\UserProfileController@updateMobile\n\nRequired inputs (from this action's validation rules):\n- mobile — required|string|max:20\n\nResponse messages found in this action: Validation failed; User profile not found; Mobile number updated successfully; Unable to update mobile number.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -456,7 +456,7 @@
                                 }
                             }
                         },
-                        "url": "http://psmadmin.test/api/profile/update-name",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/profile/update-name",
                         "description": "Preserved sample from the previous collection.\n\nUpdate Name — Profile Update Name.\n\nMethod and path: PATCH /api/profile/update-name\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\UserProfileController@updateName\n\nRequired inputs (from this action's validation rules):\n- first_name — required|string|max:255\n- last_name — required|string|max:255\n\nResponse messages found in this action: Validation failed; User profile not found; Name updated successfully; Unable to update name.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -526,7 +526,7 @@
                                 }
                             ]
                         },
-                        "url": "http://psmadmin.test/api/profile/upload-picture",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/profile/upload-picture",
                         "description": "Preserved sample from the previous collection.\n\nUpload Picture — Profile Upload Picture.\n\nMethod and path: POST /api/profile/upload-picture\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\UserProfileController@uploadPicture\n\nRequired inputs (from this action's validation rules):\n- profile_picture — required|image|mimes:jpeg,png,jpg|max:2048\n\nResponse messages found in this action: Profile picture updated successfully.; Unable to update profile picture..\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -1084,7 +1084,7 @@
                                 }
                             }
                         },
-                        "url": "http://psmadmin.test/api/company/info/update",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/company/info/update",
                         "description": "Preserved sample from the previous collection.\n\nUpdate — Company Info Update.\n\nMethod and path: PUT /api/company/info/update\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\CompanyController@updateCompanyInfo\n\nNo request body. Path and query values identify the resource.\n\nResponse messages found in this action: Company info updated; Unable to update company info.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -1464,7 +1464,7 @@
                         },
                         "method": "GET",
                         "header": [],
-                        "url": "http://psmadmin.test/api/brands",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/brands",
                         "description": "Preserved sample from the previous collection.\n\nList — Brands.\n\nMethod and path: GET /api/brands\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\BrandController@index\n\nNo request body. Path and query values identify the resource.\n\nResponse messages found in this action: Brands fetched successfully; Failed to fetch brands.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -1480,7 +1480,7 @@
                         },
                         "method": "GET",
                         "header": [],
-                        "url": "http://psmadmin.test/api/categories",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/categories",
                         "description": "Preserved sample from the previous collection.\n\nList — Categories.\n\nMethod and path: GET /api/categories\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\CategoryController@index\n\nNo request body. Path and query values identify the resource.\n\nResponse messages found in this action: Categories fetched successfully; Failed to fetch categories.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -1496,7 +1496,7 @@
                         },
                         "method": "GET",
                         "header": [],
-                        "url": "http://psmadmin.test/api/categories/14/sub-categories",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/categories/14/sub-categories",
                         "description": "Preserved sample from the previous collection.\n\nGet By Category — Categories Id Sub Categories.\n\nMethod and path: GET /api/categories/{id}/sub-categories\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\SubCategoryController@getByCategory\n\nNo request body. Path and query values identify the resource.\n\nResponse messages found in this action: No subcategories found for this category; Subcategories fetched successfully; Failed to fetch subcategories.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -1800,7 +1800,7 @@
                                 }
                             }
                         },
-                        "url": "http://psmadmin.test/api/products/create-or-attach",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/products/create-or-attach",
                         "description": "Preserved sample from the previous collection.\n\nCreate Or Attach — Products Create Or Attach.\n\nMethod and path: POST /api/products/create-or-attach\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\ProductController@createOrAttach\n\nRequired inputs (from this action's validation rules):\n- name — required|string|max:255\n- quantity — required|integer|min:1\n- rental_price — required|numeric|min:0\n- rental_software_code — required|string|max:255\n\nOptional inputs (from this action's validation rules):\n- category_id — nullable|integer|exists:categories,id\n- sub_category_id — nullable|integer|exists:sub_categories,id\n- brand_id — nullable|integer|exists:brands,id\n- category.is_new — nullable|boolean\n- category.name — required_if:category.is_new,true|string|max:255\n- sub_category.is_new — nullable|boolean\n- sub_category.name — required_if:sub_category.is_new,true|string|max:255\n- brand.is_new — nullable|boolean\n- brand.name — required_if:brand.is_new,true|string|max:255\n- psm_code — nullable|string|max:255|unique:inventory_master,psm_code\n\nResponse messages found in this action: User does not belong to any company.; Only provider accounts are allowed to perform this action.; Validation error; Product already exists; New product and equipment created successfully.; Failed to create product.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -1825,7 +1825,7 @@
                                 }
                             }
                         },
-                        "url": "http://psmadmin.test/api/products/create-or-attach",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/products/create-or-attach",
                         "description": "Preserved sample from the previous collection.\n\nCreate Or Attach — Products Create Or Attach.\n\nMethod and path: POST /api/products/create-or-attach\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\ProductController@createOrAttach\n\nRequired inputs (from this action's validation rules):\n- name — required|string|max:255\n- quantity — required|integer|min:1\n- rental_price — required|numeric|min:0\n- rental_software_code — required|string|max:255\n\nOptional inputs (from this action's validation rules):\n- category_id — nullable|integer|exists:categories,id\n- sub_category_id — nullable|integer|exists:sub_categories,id\n- brand_id — nullable|integer|exists:brands,id\n- category.is_new — nullable|boolean\n- category.name — required_if:category.is_new,true|string|max:255\n- sub_category.is_new — nullable|boolean\n- sub_category.name — required_if:sub_category.is_new,true|string|max:255\n- brand.is_new — nullable|boolean\n- brand.name — required_if:brand.is_new,true|string|max:255\n- psm_code — nullable|string|max:255|unique:inventory_master,psm_code\n\nResponse messages found in this action: User does not belong to any company.; Only provider accounts are allowed to perform this action.; Validation error; Product already exists; New product and equipment created successfully.; Failed to create product.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -2264,7 +2264,7 @@
                         },
                         "method": "GET",
                         "header": [],
-                        "url": "http://psmadmin.test/api/sub-categories",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/sub-categories",
                         "description": "Preserved sample from the previous collection.\n\nList — Sub Categories.\n\nMethod and path: GET /api/sub-categories\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\SubCategoryController@index\n\nNo request body. Path and query values identify the resource.\n\nResponse messages found in this action: No subcategories found; Subcategories fetched successfully; Failed to fetch subcategories.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -6659,7 +6659,7 @@
                         },
                         "method": "GET",
                         "header": [],
-                        "url": "http://psmadmin.test/api/currencies",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/currencies",
                         "description": "Preserved sample from the previous collection.\n\nList — Currencies.\n\nMethod and path: GET /api/currencies\nAuthentication: JWT bearer token for an authenticated user. Send Authorization: Bearer {{jwt_token}}.\nController: App\\Http\\Controllers\\Api\\CurrencyController@index\n\nNo request body. Path and query values identify the resource.\n\nResponse messages found in this action: Unable to fetch currencies..\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -6786,7 +6786,7 @@
                     "request": {
                         "method": "GET",
                         "header": [],
-                        "url": "http://psmadmin.test/api/regions",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/regions",
                         "description": "Preserved sample from the previous collection.\n\nGet Regions — Regions.\n\nMethod and path: GET /api/regions\nAuthentication: No authentication middleware on this route.\nController: App\\Http\\Controllers\\Api\\GeoController@getRegions\n\nNo request body. Path and query values identify the resource.\n\nResponse messages found in this action: Unable to fetch regions.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []
@@ -6796,7 +6796,7 @@
                     "request": {
                         "method": "GET",
                         "header": [],
-                        "url": "http://psmadmin.test/api/regions/5/countries",
+                        "url": "https://prosubmarket.cgstagingsite.com/api/regions/5/countries",
                         "description": "Preserved sample from the previous collection.\n\nGet Countries By Region — Regions Region_id Countries.\n\nMethod and path: GET /api/regions/{region_id}/countries\nAuthentication: No authentication middleware on this route.\nController: App\\Http\\Controllers\\Api\\GeoController@getCountriesByRegion\n\nNo request body. Path and query values identify the resource.\n\nResponse messages found in this action: Region not found; Unable to fetch Countries.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional."
                     },
                     "response": []

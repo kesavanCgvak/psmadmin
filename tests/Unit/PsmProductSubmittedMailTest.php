@@ -12,7 +12,7 @@ class PsmProductSubmittedMailTest extends TestCase
     public function test_review_and_logo_urls_use_public_admin_host_not_local_app_url(): void
     {
         config([
-            'app.url' => 'http://psmadmin.test',
+            'app.url' => 'https://prosubmarket.cgstagingsite.com',
             'mail.admin.panel_url' => 'https://prosubmarket.cgstagingsite.com/login',
             'mail.logo_url' => null,
             'mail.from.address' => 'noreply@prosubmarket.com',

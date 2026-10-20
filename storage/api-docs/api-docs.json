@@ -7,7 +7,7 @@
     },
     "servers": [
         {
-            "url": "http://psmadmin.test",
+            "url": "https://prosubmarket.cgstagingsite.com",
             "description": "API server"
         }
     ],
