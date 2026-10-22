@@ -68,10 +68,14 @@ class ActivityLogController extends Controller
             ActivityLog::ACTION_UPDATED,
             ActivityLog::ACTION_DELETED,
             ActivityLog::ACTION_RESTORED,
+            ActivityLog::ACTION_SUPPORT_STARTED,
+            ActivityLog::ACTION_SUPPORT_ENDED,
+            ActivityLog::ACTION_SUPPORT_BLOCKED,
         ];
         $entityTypes = [
             ActivityLog::ENTITY_COMPANY_INVENTORY => 'Company inventory',
             ActivityLog::ENTITY_COMPANY_INTEGRATION => 'Company integration',
+            ActivityLog::ENTITY_SUPPORT_SESSION => 'Support session',
         ];
 
         return view('admin.activity-logs.index', compact(

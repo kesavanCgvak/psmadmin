@@ -173,6 +173,19 @@ POST /admin/users/{user}/toggle-verification # Toggle verification status
 POST /admin/users/{user}/toggle-admin        # Toggle admin privileges
 ```
 
+### Assume Identity (super admin, read-only support session)
+
+```
+POST /admin/users/{user}/assume-identity
+POST /admin/support-sessions/{supportSession}/end
+GET  /api/support-sessions/current
+POST /api/support-sessions/current/end
+```
+
+`POST /admin/users/{user}/assume-identity` requires the signed-in super admin session. A successful response is `{ success, message, data }`. `data` contains `session_id`, `read_only` (always true), `status`, `expires_at`, `expires_in`, `token_type`, `access_token`, `administrator_id`, and `assumed_user` (`id`, `username`, `name`, `company`). The access token is a short-lived JWT for that user with `token_use=support`. It can read the user's API data and cannot change it. Ending the support session does not log the administrator out.
+
+Failure responses use `{ success: false, message }` with 401 (unauthenticated, expired, or revoked), 403 (not a super admin, or ending another administrator's session), 404 (unknown user), 422 (own identity or an ineligible account), 409 (the user already has an active session, or the session was already ended), and 429 (rate limit). Lifetime is `SUPPORT_SESSION_TTL` minutes (default 30, allowed range 5–120).
+
 ## Best Practices
 
 ### User Creation

@@ -167,8 +167,10 @@ return [
     */
 
     'persistent_claims' => [
-        // 'foo',
-        // 'bar',
+        // Kept if a support token is ever refreshed, so the restriction cannot be stripped.
+        'token_use',
+        'sid',
+        'aid',
     ],
 
     /*

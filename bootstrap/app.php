@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AdminMiddleware;
+use App\Http\Middleware\EnforceSupportSessionRestrictions;
 use App\Http\Middleware\JwtMiddleware;
 use App\Http\Middleware\ProviderApiKeyMiddleware;
 use App\Http\Middleware\RequireSubscription;
@@ -34,6 +35,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'provider.api.key' => ProviderApiKeyMiddleware::class,
             'require.subscription' => RequireSubscription::class,
             'admin.access' => AdminMiddleware::class,
+        ]);
+
+        // Run before route-model binding so a prohibited support request is
+        // rejected before a missing record can turn it into a 404.
+        $middleware->api(prepend: [
+            EnforceSupportSessionRestrictions::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

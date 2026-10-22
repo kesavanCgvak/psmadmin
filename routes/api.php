@@ -49,6 +49,7 @@ use App\Http\Controllers\Api\StateController;
 use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\SubCategoryController;
 use App\Http\Controllers\Api\SubscriptionController;
+use App\Http\Controllers\Api\SupportSessionController as ApiSupportSessionController;
 use App\Http\Controllers\Api\SupplyJobActionsController;
 use App\Http\Controllers\Api\SupplyJobController;
 use App\Http\Controllers\Api\SupportRequestController;
@@ -353,6 +354,12 @@ Route::middleware(['jwt.verify'])->group(function () {
 Route::middleware(['jwt.verify'])->group(function () {
     Route::get('profile', [AuthController::class, 'profile']);
     Route::post('logout', [AuthController::class, 'logout']);
+});
+
+Route::middleware(['jwt.verify'])->prefix('support-sessions')->group(function () {
+    Route::get('/current', [ApiSupportSessionController::class, 'current']);
+    Route::post('/current/end', [ApiSupportSessionController::class, 'end'])
+        ->middleware('throttle:support-session-end');
 });
 
 Route::middleware(['jwt.verify'])->group(function () {

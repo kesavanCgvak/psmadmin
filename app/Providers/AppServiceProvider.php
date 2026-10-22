@@ -55,6 +55,32 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(MessageSending::class, LogEmailSending::class);
         Event::listen(MessageSent::class, LogEmailSent::class);
 
+        RateLimiter::for('support-session-start', function (Request $request) {
+            $bucket = $request->user()?->id
+                ? 'support-session-start:user:'.$request->user()->id
+                : 'support-session-start:ip:'.$request->ip();
+
+            return Limit::perMinute(10)->by($bucket)->response(function (Request $request, array $headers) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Too many support session requests. Try again shortly.',
+                ], 429, $headers);
+            });
+        });
+
+        RateLimiter::for('support-session-end', function (Request $request) {
+            $bucket = $request->user()?->id
+                ? 'support-session-end:user:'.$request->user()->id
+                : 'support-session-end:ip:'.$request->ip();
+
+            return Limit::perMinute(30)->by($bucket)->response(function (Request $request, array $headers) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Too many support session requests. Try again shortly.',
+                ], 429, $headers);
+            });
+        });
+
         RateLimiter::for('partner-chat', function (Request $request) {
             $limit = max(1, (int) config('chat.partner_rate_limit_per_minute', 60));
             $company = $request->attributes->get('provider_company');

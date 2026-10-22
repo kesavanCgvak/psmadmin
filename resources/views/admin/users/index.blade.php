@@ -124,6 +124,17 @@
                                             <a href="{{ route('admin.users.edit', $user) }}" class="btn btn-warning btn-sm">
                                                 <i class="fas fa-edit"></i>
                                             </a>
+                                            @if(auth()->user()?->role === 'super_admin' && auth()->id() !== $user->id && $user->role !== 'super_admin' && ! $user->is_blocked)
+                                                <button type="button"
+                                                        class="btn btn-secondary btn-sm js-assume-identity"
+                                                        title="Assume Identity"
+                                                        aria-label="Assume Identity"
+                                                        data-user-name="{{ $user->profile?->full_name ?: $user->username }}"
+                                                        data-company-name="{{ $user->company?->name ?: 'No company on file' }}"
+                                                        data-url="{{ route('admin.users.assume-identity', $user) }}">
+                                                    <i class="fas fa-user-shield"></i>
+                                                </button>
+                                            @endif
                                             <form method="POST" action="{{ route('admin.users.destroy', $user) }}"
                                                   style="display: inline;"
                                                   onsubmit="return confirm('Are you sure you want to delete this user?')">
@@ -144,6 +155,31 @@
             </div>
         </div>
     </div>
+
+    @if(auth()->user()?->role === 'super_admin')
+        <div class="modal fade" id="assumeIdentityModal" tabindex="-1" role="dialog" aria-labelledby="assumeIdentityTitle" aria-hidden="true">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="assumeIdentityTitle">Assume Identity</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <p id="assumeIdentityPrompt" class="mb-2"></p>
+                        <p class="text-muted mb-0">This starts a read-only support session. It cannot change the user's data. The marketplace opens in a separate window, and the support credential is not put in the address.</p>
+                        <div id="assumeIdentityAlert" class="alert mt-3 mb-0" style="display: none;" role="alert"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="assumeIdentityConfirm">Start session</button>
+                        <button type="button" class="btn btn-danger" id="assumeIdentityEnd" style="display: none;">End session</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
 @stop
 
 @section('css')
@@ -771,6 +807,175 @@
                     });
                 }
             });
+
+            @if(auth()->user()?->role === 'super_admin')
+            @php
+                $frontendConfigured = (string) config('app.frontend_url');
+                $frontendWithoutHash = preg_replace('/#.*$/', '', $frontendConfigured) ?? $frontendConfigured;
+                $frontendWithoutHash = rtrim($frontendWithoutHash, '/');
+                $assumeIdentityUrl = $frontendWithoutHash.'/#/assume-identity';
+                $frontendParts = parse_url($assumeIdentityUrl);
+                $frontendOrigin = '';
+                if (is_array($frontendParts) && isset($frontendParts['scheme'], $frontendParts['host'])) {
+                    $frontendOrigin = $frontendParts['scheme'].'://'.$frontendParts['host'];
+                    if (! empty($frontendParts['port'])) {
+                        $frontendOrigin .= ':'.$frontendParts['port'];
+                    }
+                }
+            @endphp
+            var assumeUrl = null;
+            var assumeSessionId = null;
+            var assumeEndTemplate = @json(route('admin.support-sessions.end', ['supportSession' => '__ID__']));
+            var assumeCsrf = @json(csrf_token());
+            var assumeFrontendOrigin = @json($frontendOrigin);
+            var assumeIdentityUrl = @json($assumeIdentityUrl);
+            var assumeReturnUrl = @json(request()->getSchemeAndHttpHost().'/admin/users');
+            var assumeWindow = null;
+            var assumeGrant = null;
+
+            function clearAssumeGrant() {
+                assumeGrant = null;
+            }
+
+            window.addEventListener('message', function (event) {
+                if (!assumeFrontendOrigin || event.origin !== assumeFrontendOrigin) return;
+                if (!assumeWindow || event.source !== assumeWindow) return;
+                var data = event.data || {};
+                if (data.type !== 'psm-support-ready' || typeof data.nonce !== 'string') return;
+                if (!assumeGrant || typeof assumeGrant.token !== 'string') return;
+                assumeWindow.postMessage({
+                    type: 'psm-support-grant',
+                    nonce: data.nonce,
+                    access_token: assumeGrant.token,
+                    session_id: assumeGrant.sessionId,
+                    return_url: assumeReturnUrl
+                }, assumeFrontendOrigin);
+                clearAssumeGrant();
+            });
+
+            $(document).on('click', '.js-assume-identity', function () {
+                var button = $(this);
+                assumeUrl = button.attr('data-url');
+                assumeSessionId = null;
+                var name = button.attr('data-user-name') || 'this user';
+                var company = button.attr('data-company-name') || 'No company on file';
+                $('#assumeIdentityPrompt').text('Start a read-only support session as ' + name + ' (' + company + ')?');
+                $('#assumeIdentityAlert').hide().removeClass('alert-success alert-danger').text('');
+                $('#assumeIdentityConfirm').show().prop('disabled', false);
+                $('#assumeIdentityEnd').hide().prop('disabled', false);
+                $('#assumeIdentityModal').modal('show');
+            });
+
+            $('#assumeIdentityConfirm').on('click', function () {
+                if (!assumeUrl) {
+                    return;
+                }
+                if (!assumeFrontendOrigin) {
+                    $('#assumeIdentityAlert')
+                        .removeClass('alert-success')
+                        .addClass('alert-danger')
+                        .text('The marketplace address is not configured.')
+                        .show();
+                    return;
+                }
+                var popup = window.open(assumeIdentityUrl, 'psmAssumeIdentity');
+                if (!popup) {
+                    $('#assumeIdentityAlert')
+                        .removeClass('alert-success')
+                        .addClass('alert-danger')
+                        .text('Allow popups for this site, then start the session again.')
+                        .show();
+                    return;
+                }
+                assumeWindow = popup;
+                clearAssumeGrant();
+                var button = $(this);
+                button.prop('disabled', true);
+                $.ajax({
+                    url: assumeUrl,
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': assumeCsrf
+                    },
+                    data: { _token: assumeCsrf },
+                    success: function (response) {
+                        var assumed = response.data && response.data.assumed_user ? response.data.assumed_user : {};
+                        var when = response.data && response.data.expires_at ? response.data.expires_at : '';
+                        var token = response.data ? response.data.access_token : null;
+                        assumeSessionId = response.data ? response.data.session_id : null;
+                        if (typeof token === 'string' && assumeSessionId) {
+                            assumeGrant = { token: token, sessionId: assumeSessionId };
+                        }
+                        $('#assumeIdentityAlert')
+                            .removeClass('alert-danger')
+                            .addClass('alert-success')
+                            .text('Read-only support session started for ' + (assumed.name || 'the user') + ' at ' + (assumed.company || 'their company') + '. It expires at ' + when + '. The marketplace window is opening.')
+                            .show();
+                        button.hide();
+                        if (assumeSessionId) {
+                            $('#assumeIdentityEnd').show();
+                        }
+                    },
+                    error: function (xhr) {
+                        clearAssumeGrant();
+                        if (assumeWindow) {
+                            assumeWindow.close();
+                            assumeWindow = null;
+                        }
+                        var message = 'Unable to start the support session.';
+                        if (xhr.responseJSON && xhr.responseJSON.message) {
+                            message = xhr.responseJSON.message;
+                        }
+                        $('#assumeIdentityAlert')
+                            .removeClass('alert-success')
+                            .addClass('alert-danger')
+                            .text(message)
+                            .show();
+                        button.prop('disabled', false);
+                    }
+                });
+            });
+
+            $('#assumeIdentityEnd').on('click', function () {
+                if (!assumeSessionId) {
+                    return;
+                }
+                var button = $(this);
+                button.prop('disabled', true);
+                $.ajax({
+                    url: assumeEndTemplate.replace('__ID__', assumeSessionId),
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': assumeCsrf
+                    },
+                    data: { _token: assumeCsrf },
+                    success: function () {
+                        clearAssumeGrant();
+                        assumeSessionId = null;
+                        $('#assumeIdentityAlert')
+                            .removeClass('alert-danger')
+                            .addClass('alert-success')
+                            .text('Support session ended. Your administrator sign-in is unchanged.')
+                            .show();
+                        button.hide();
+                    },
+                    error: function (xhr) {
+                        var message = 'Unable to end the support session.';
+                        if (xhr.responseJSON && xhr.responseJSON.message) {
+                            message = xhr.responseJSON.message;
+                        }
+                        $('#assumeIdentityAlert')
+                            .removeClass('alert-success')
+                            .addClass('alert-danger')
+                            .text(message)
+                            .show();
+                        button.prop('disabled', false);
+                    }
+                });
+            });
+            @endif
         });
     </script>
 @stop

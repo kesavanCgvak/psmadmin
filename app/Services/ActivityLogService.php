@@ -446,4 +446,39 @@ class ActivityLogService
 
         return null;
     }
+
+    /**
+     * Record an audit entry that is not tied to an Eloquent model event.
+     *
+     * @param  array<string, mixed>|null  $oldValues
+     * @param  array<string, mixed>|null  $newValues
+     */
+    public function record(
+        string $action,
+        string $entityType,
+        int $entityId,
+        ?int $companyId,
+        ?int $userId,
+        ?array $oldValues,
+        ?array $newValues
+    ): void {
+        if (! $this->shouldRecord()) {
+            return;
+        }
+
+        $request = request();
+        $userAgent = $request?->userAgent();
+
+        ActivityLog::create([
+            'company_id' => $companyId,
+            'user_id' => $userId,
+            'action' => mb_substr($action, 0, 32),
+            'entity_type' => mb_substr($entityType, 0, 100),
+            'entity_id' => $entityId,
+            'old_values' => $oldValues === null ? null : $this->sanitizeArray($oldValues),
+            'new_values' => $newValues === null ? null : $this->sanitizeArray($newValues),
+            'ip_address' => $request?->ip(),
+            'user_agent' => $userAgent ? mb_substr($userAgent, 0, 2000) : null,
+        ]);
+    }
 };

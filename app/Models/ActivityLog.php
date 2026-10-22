@@ -15,9 +15,17 @@ class ActivityLog extends Model
 
     public const ACTION_RESTORED = 'restored';
 
+    public const ACTION_SUPPORT_STARTED = 'support_started';
+
+    public const ACTION_SUPPORT_ENDED = 'support_ended';
+
+    public const ACTION_SUPPORT_BLOCKED = 'support_blocked';
+
     public const ENTITY_COMPANY_INVENTORY = 'company_inventory';
 
     public const ENTITY_COMPANY_INTEGRATION = 'company_integrations';
+
+    public const ENTITY_SUPPORT_SESSION = 'support_sessions';
 
     protected $fillable = [
         'company_id',
@@ -51,6 +59,7 @@ class ActivityLog extends Model
         return match ($this->entity_type) {
             self::ENTITY_COMPANY_INVENTORY => 'Company inventory',
             self::ENTITY_COMPANY_INTEGRATION => 'Company integration',
+            self::ENTITY_SUPPORT_SESSION => 'Support session',
             default => str_replace('_', ' ', (string) $this->entity_type),
         };
     }

@@ -34,6 +34,7 @@ use App\Http\Controllers\Admin\RentalSoftwareCompanyLogoController;
 use App\Http\Controllers\Admin\RentalSoftwareManagementController;
 use App\Http\Controllers\Admin\SmsLogController;
 use App\Http\Controllers\Admin\StateProvinceController;
+use App\Http\Controllers\Admin\SupportSessionController;
 use App\Http\Controllers\Admin\SubCategoryController;
 use App\Http\Controllers\Admin\SubscriptionManagementController;
 use App\Http\Controllers\Admin\SupplyJobController;
@@ -269,6 +270,12 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
         ->name('users.toggle-verification');
     Route::post('/users/{user}/toggle-admin', [UserManagementController::class, 'toggleAdmin'])
         ->name('users.toggle-admin');
+    Route::post('/users/{user}/assume-identity', [SupportSessionController::class, 'start'])
+        ->middleware('throttle:support-session-start')
+        ->name('users.assume-identity');
+    Route::post('/support-sessions/{supportSession}/end', [SupportSessionController::class, 'end'])
+        ->middleware('throttle:support-session-end')
+        ->name('support-sessions.end');
 
     // Job Management (Read-only)
     Route::resource('rental-jobs', RentalJobController::class)->only(['index', 'show']);

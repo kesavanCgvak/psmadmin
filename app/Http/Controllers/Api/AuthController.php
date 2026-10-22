@@ -11,6 +11,7 @@ use App\Models\Company;
 use App\Models\CompanyRating;
 use App\Models\Setting;
 use App\Models\Subscription;
+use App\Models\SupportSession;
 use App\Models\User;
 use App\Services\AuthEventLogger;
 use App\Services\ReferralService;
@@ -940,6 +941,14 @@ class AuthController extends Controller
     public function refresh()
     {
         try {
+            $payload = JWTAuth::parseToken()->getPayload();
+            if ($payload->get(SupportSession::CLAIM_USE) === SupportSession::TOKEN_USE) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Support sessions cannot be refreshed.',
+                ], 403);
+            }
+
             $newToken = JWTAuth::parseToken()->refresh();
 
             return response()->json([

@@ -103,9 +103,12 @@ class UserHeartbeatTest extends TestCase
 
     private function createMinimalSchema(): void
     {
+        Schema::disableForeignKeyConstraints();
+        Schema::dropIfExists('support_sessions');
         Schema::dropIfExists('user_auth_events');
         Schema::dropIfExists('users');
         Schema::dropIfExists('companies');
+        Schema::enableForeignKeyConstraints();
 
         Schema::create('companies', function (Blueprint $table) {
             $table->id();
