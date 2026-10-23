@@ -159,14 +159,18 @@ class PartnerChatApiTest extends TestCase
         Bus::assertNotDispatched(ProcessChatMessageNotificationsJob::class);
     }
 
-    public function test_product_key_cannot_send_chat_and_chat_key_cannot_read_products(): void
+    public function test_product_key_can_call_chat_and_chat_key_cannot_read_products(): void
     {
         [$providerUser] = $this->providerWithChatKey();
         $productKey = $this->apiKeyFor($providerUser, null);
 
         $this->withToken($productKey)->postJson('/api/v1/partner/chat/messages', $this->payload(1))
-            ->assertForbidden()
-            ->assertJsonPath('message', 'API key is not authorized for this resource.');
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Conversation not found.');
+
+        $this->withToken($productKey)->getJson('/api/v1/partner/chat/conversations')
+            ->assertOk()
+            ->assertJsonPath('success', true);
 
         ProviderApiKey::query()->update(['is_active' => false, 'revoked_at' => now()]);
         $chatKey = $this->apiKeyFor($providerUser, [ProviderApiKey::SCOPE_CHAT]);
@@ -174,6 +178,10 @@ class PartnerChatApiTest extends TestCase
         $this->withToken($chatKey)->getJson('/api/v1/partner/products')
             ->assertForbidden()
             ->assertJsonPath('message', 'API key is not authorized for this resource.');
+
+        $this->withToken($chatKey)->getJson('/api/v1/partner/chat/conversations')
+            ->assertOk()
+            ->assertJsonPath('success', true);
 
         $this->assertSame(0, ChatMessage::query()->count());
     }
@@ -470,7 +478,7 @@ class PartnerChatApiTest extends TestCase
             ->assertJsonPath('message', 'Too many requests.');
     }
 
-    public function test_generate_without_scopes_stays_product_only_and_chat_scope_can_be_requested(): void
+    public function test_generate_without_scopes_authorizes_chat_and_chat_scope_can_still_be_requested(): void
     {
         [$providerUser] = $this->providerWithChatKey();
 
@@ -483,7 +491,8 @@ class PartnerChatApiTest extends TestCase
 
         $this->withToken($product->json('data.api_key'))
             ->postJson('/api/v1/partner/chat/messages', $this->payload(1))
-            ->assertForbidden();
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Conversation not found.');
 
         $chat = $this->withToken($this->tokenFor($providerUser))
             ->postJson('/api/provider/api-keys/generate', [
@@ -496,6 +505,16 @@ class PartnerChatApiTest extends TestCase
         $this->assertSame(1, ProviderApiKey::query()->where('is_active', true)->count());
         $this->assertNotNull($chat->json('data.api_key'));
         $this->assertStringStartsWith('psm_pk_', $chat->json('data.api_key'));
+
+        $this->withToken($chat->json('data.api_key'))
+            ->getJson('/api/v1/partner/chat/conversations')
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $this->withToken($chat->json('data.api_key'))
+            ->getJson('/api/v1/partner/products')
+            ->assertForbidden()
+            ->assertJsonPath('message', 'API key is not authorized for this resource.');
     }
 
     public function test_non_provider_account_cannot_use_the_inbound_api(): void
@@ -513,18 +532,18 @@ class PartnerChatApiTest extends TestCase
         $this->assertNoInboundSideEffects();
     }
 
-    public function test_explicit_products_scope_cannot_send_chat(): void
+    public function test_products_scope_authorizes_chat_like_the_other_partner_apis(): void
     {
         [$providerUser] = $this->providerWithChatKey();
         $key = $this->apiKeyFor($providerUser, [ProviderApiKey::SCOPE_PRODUCTS]);
 
         $this->withToken($key)->postJson('/api/v1/partner/chat/messages', $this->payload(1))
-            ->assertForbidden()
-            ->assertJsonPath('message', 'API key is not authorized for this resource.');
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Conversation not found.');
 
         $this->withToken($key)->getJson('/api/v1/partner/chat/conversations')
-            ->assertForbidden()
-            ->assertJsonPath('message', 'API key is not authorized for this resource.');
+            ->assertOk()
+            ->assertJsonPath('success', true);
 
         $this->assertNoInboundSideEffects();
     }
@@ -1050,9 +1069,10 @@ class PartnerChatApiTest extends TestCase
             ->assertUnauthorized()
             ->assertJsonPath('message', 'Invalid API key.');
 
-        $this->withToken($productKey)->getJson('/api/v1/partner/chat/conversations')
-            ->assertForbidden()
-            ->assertJsonPath('message', 'API key is not authorized for this resource.');
+        $this->withToken($productKey)->getJson('/api/v1/partner/chat/conversations?per_page=1&page=1')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $job->id)
+            ->assertJsonPath('meta.total', 2);
 
         $this->withToken($key)->getJson('/api/v1/partner/chat/conversations?per_page=101')
             ->assertStatus(422)
@@ -1062,6 +1082,125 @@ class PartnerChatApiTest extends TestCase
         $pageError->assertStatus(422)
             ->assertJsonPath('message', 'Validation error');
         $this->assertNotEmpty($pageError->json('errors.page'));
+    }
+
+    public function test_conversation_detail_returns_messages_for_the_authenticated_company(): void
+    {
+        [$renter, $renterCompany] = $this->createCompanyUsers('Renter Co', 'user', ['Rita Renter']);
+        [$providerUser, $providerCompany] = $this->providerWithChatKey();
+        [$outsiderA] = $this->createCompanyUsers('Outsider A', 'user', ['Ada Out']);
+        [$outsiderB, $outsiderCompany] = $this->createCompanyUsers('Outsider B', 'provider', ['Bea Out']);
+        $conversation = $this->conversationBetween($renter, $providerUser, 15);
+        $foreign = $this->conversationBetween($outsiderA, $outsiderB);
+        $key = $this->apiKeyFor($providerUser, null);
+
+        $older = ChatMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'sender_user_id' => $renter->id,
+            'sender_company_id' => $renterCompany->id,
+            'message' => 'Can you confirm the speakers?',
+            'message_type' => ChatMessage::TYPE_TEXT,
+        ]);
+        $older->forceFill(['created_at' => '2026-10-11 12:00:00'])->save();
+
+        $newer = ChatMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'sender_user_id' => $providerUser->id,
+            'sender_company_id' => $providerCompany->id,
+            'message' => 'The speakers are confirmed.',
+            'message_type' => ChatMessage::TYPE_TEXT,
+        ]);
+        $newer->forceFill(['created_at' => '2026-10-12 12:00:00'])->save();
+
+        ChatExternalMessage::query()->create([
+            'company_id' => $providerCompany->id,
+            'external_system' => 'rentman',
+            'external_message_id' => 'rentman-msg-10001',
+            'external_conversation_id' => 'rentman-conv-50001',
+            'conversation_id' => $conversation->id,
+            'message_id' => $newer->id,
+            'body_hash' => hash('sha256', 'The speakers are confirmed.'),
+        ]);
+        ChatExternalMessage::query()->create([
+            'company_id' => $outsiderCompany->id,
+            'external_system' => 'flex',
+            'external_message_id' => 'counterparty-secret-id',
+            'external_conversation_id' => 'counterparty-secret-thread',
+            'conversation_id' => $conversation->id,
+            'message_id' => $newer->id,
+            'body_hash' => hash('sha256', 'The speakers are confirmed.'),
+        ]);
+
+        $deleted = ChatMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'sender_user_id' => $providerUser->id,
+            'sender_company_id' => $providerCompany->id,
+            'message' => 'This deleted body must stay hidden',
+            'message_type' => ChatMessage::TYPE_TEXT,
+        ]);
+        $deleted->forceFill(['created_at' => '2026-10-13 12:00:00'])->save();
+        $deleted->delete();
+
+        $page = $this->withToken($key)->getJson("/api/v1/partner/chat/conversations/{$conversation->id}?per_page=1&page=1");
+        $page->assertOk()
+            ->assertJsonPath('message', 'Conversation fetched successfully.')
+            ->assertJsonPath('data.id', $conversation->id)
+            ->assertJsonPath('data.counterparty_company_id', $renterCompany->id)
+            ->assertJsonPath('data.counterparty_company_name', 'Renter Co')
+            ->assertJsonPath('data.rental_job_id', 15)
+            ->assertJsonPath('data.messages.0.id', $deleted->id)
+            ->assertJsonPath('data.messages.0.body', '')
+            ->assertJsonPath('data.messages.0.is_deleted', true)
+            ->assertJsonPath('data.messages.0.external_message_id', null)
+            ->assertJsonPath('meta.page', 1)
+            ->assertJsonPath('meta.per_page', 1)
+            ->assertJsonPath('meta.total', 3)
+            ->assertJsonPath('meta.total_pages', 3)
+            ->assertJsonCount(1, 'data.messages');
+        $this->assertStringNotContainsString('This deleted body must stay hidden', $page->getContent());
+        $this->assertStringNotContainsString('counterparty-secret-id', $page->getContent());
+        $this->assertResponseDoesNotLeak($page, $key);
+
+        $this->withToken($key)->getJson("/api/v1/partner/chat/conversations/{$conversation->id}?per_page=1&page=2")
+            ->assertOk()
+            ->assertJsonPath('data.messages.0.id', $newer->id)
+            ->assertJsonPath('data.messages.0.body', 'The speakers are confirmed.')
+            ->assertJsonPath('data.messages.0.sender_company_id', $providerCompany->id)
+            ->assertJsonPath('data.messages.0.sender_company_name', $providerCompany->name)
+            ->assertJsonPath('data.messages.0.sender_user_name', 'Pat Provider')
+            ->assertJsonPath('data.messages.0.external_system', 'rentman')
+            ->assertJsonPath('data.messages.0.external_message_id', 'rentman-msg-10001')
+            ->assertJsonPath('data.messages.0.external_conversation_id', 'rentman-conv-50001')
+            ->assertJsonPath('data.messages.0.is_deleted', false);
+
+        $this->withToken($key)->getJson("/api/v1/partner/chat/conversations/{$conversation->id}?per_page=1&page=3")
+            ->assertOk()
+            ->assertJsonPath('data.messages.0.id', $older->id)
+            ->assertJsonPath('data.messages.0.body', 'Can you confirm the speakers?')
+            ->assertJsonPath('data.messages.0.sender_company_id', $renterCompany->id)
+            ->assertJsonPath('data.messages.0.sender_user_name', 'Rita Renter')
+            ->assertJsonPath('data.messages.0.external_system', null);
+
+        $list = $this->withToken($key)->getJson('/api/v1/partner/chat/conversations');
+        $list->assertOk();
+        $this->assertStringNotContainsString('The speakers are confirmed.', $list->getContent());
+
+        $this->withToken($key)->getJson("/api/v1/partner/chat/conversations/{$foreign->id}")
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Unauthorized.');
+
+        $this->withToken($key)->getJson('/api/v1/partner/chat/conversations/999999')
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Conversation not found.');
+
+        $this->flushHeaders()
+            ->getJson("/api/v1/partner/chat/conversations/{$conversation->id}")
+            ->assertUnauthorized()
+            ->assertJsonPath('message', 'API key is required.');
+
+        $this->withToken($key)->getJson("/api/v1/partner/chat/conversations/{$conversation->id}?per_page=101")
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Validation error');
     }
 
     /**

@@ -17,9 +17,10 @@ Partner APIs for provider companies.
 2. Ensure the company has **Open API Access** enabled by an administrator.
 3. Send the API key on each request using `Authorization: Bearer {api_key}` (preferred) or `X-API-KEY: {api_key}`.
 
-**Scopes**
-Keys created before scopes existed, and keys generated without a `scopes` value, can call product endpoints only.
-Chat endpoints require a key whose scopes include `chat`. Generate one with `POST /api/provider/api-keys/generate` and `"scopes": ["chat"]` or `"scopes": ["products", "chat"]`.
+**Authentication**
+Product and chat endpoints use the same provider API key. Send `Authorization: Bearer {api_key}` or `X-API-KEY: {api_key}`.
+
+A legacy key, and a key whose scopes include `products`, can call both. A key whose scopes are only `chat` can call the chat endpoints and cannot call the product endpoints.
 Generating a key revokes the previous active key for that user. Include every scope the new key should keep.
 
 Product results and chat conversations are limited to the provider company linked to the API key.
@@ -49,7 +50,7 @@ DESC
                 type: 'http',
                 scheme: 'bearer',
                 bearerFormat: 'API Key',
-                description: 'Provider API key. Format: `psm_pk_...`. Chat routes require the `chat` scope. Product routes accept legacy keys and keys that include the `products` scope. Alternative header: `X-API-KEY`.'
+                description: 'Provider API key. Format: `psm_pk_...`. Product and chat routes accept this same key: legacy keys and keys that include the `products` scope. Chat also accepts a key that includes only the `chat` scope. Alternative header: `X-API-KEY`.'
             ),
         ],
         schemas: [
@@ -148,6 +149,41 @@ DESC
                     new OA\Property(property: 'counterparty_company_name', type: 'string', example: 'Northwind Rentals'),
                     new OA\Property(property: 'rental_job_id', type: 'integer', nullable: true, example: null),
                     new OA\Property(property: 'updated_at', type: 'string', format: 'date-time'),
+                ]
+            ),
+            new OA\Schema(
+                schema: 'PartnerChatHistoryMessage',
+                type: 'object',
+                properties: [
+                    new OA\Property(property: 'id', type: 'integer', example: 55),
+                    new OA\Property(property: 'conversation_id', type: 'integer', example: 123),
+                    new OA\Property(property: 'sender_company_id', type: 'integer', example: 10),
+                    new OA\Property(property: 'sender_company_name', type: 'string', nullable: true, example: 'Provider Co'),
+                    new OA\Property(property: 'sender_user_id', type: 'integer', example: 8),
+                    new OA\Property(property: 'sender_user_name', type: 'string', nullable: true, example: 'Pat Provider'),
+                    new OA\Property(property: 'body', type: 'string', example: 'The speakers are confirmed.'),
+                    new OA\Property(property: 'message_type', type: 'string', example: 'text'),
+                    new OA\Property(property: 'created_at', type: 'string', format: 'date-time'),
+                    new OA\Property(property: 'is_deleted', type: 'boolean', example: false),
+                    new OA\Property(property: 'external_system', type: 'string', nullable: true, example: 'rentman'),
+                    new OA\Property(property: 'external_message_id', type: 'string', nullable: true, example: 'external-message-123'),
+                    new OA\Property(property: 'external_conversation_id', type: 'string', nullable: true, example: 'external-conversation-456'),
+                ]
+            ),
+            new OA\Schema(
+                schema: 'PartnerChatConversationDetail',
+                type: 'object',
+                properties: [
+                    new OA\Property(property: 'id', type: 'integer', example: 123),
+                    new OA\Property(property: 'counterparty_company_id', type: 'integer', example: 45),
+                    new OA\Property(property: 'counterparty_company_name', type: 'string', example: 'Northwind Rentals'),
+                    new OA\Property(property: 'rental_job_id', type: 'integer', nullable: true, example: 15),
+                    new OA\Property(property: 'updated_at', type: 'string', format: 'date-time'),
+                    new OA\Property(
+                        property: 'messages',
+                        type: 'array',
+                        items: new OA\Items(ref: '#/components/schemas/PartnerChatHistoryMessage')
+                    ),
                 ]
             ),
             new OA\Schema(

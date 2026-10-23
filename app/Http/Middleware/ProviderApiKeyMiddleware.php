@@ -10,7 +10,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ProviderApiKeyMiddleware
 {
-    public function handle(Request $request, Closure $next, ?string $scope = null): Response
+    /**
+     * @param  string  ...$scopes  One required scope, or several alternatives. The key is authorized when it allows any of them. Partner chat passes products and chat so it accepts the same API key as the other public partner APIs, and keys already issued with only the chat scope.
+     */
+    public function handle(Request $request, Closure $next, string ...$scopes): Response
     {
         $rawKey = self::extractApiKey($request);
         if (! $rawKey) {
@@ -81,12 +84,17 @@ class ProviderApiKeyMiddleware
             ], 403);
         }
 
-        if ($scope !== null && ! $apiKey->allows($scope)) {
+        $scopes = array_values(array_filter(
+            $scopes,
+            fn (string $scope) => $scope !== ''
+        ));
+
+        if ($scopes !== [] && ! $this->keyAllowsAny($apiKey, $scopes)) {
             Log::warning('Partner API auth failed: API key missing required scope', [
                 'provider_user_id' => $providerUser->id,
                 'provider_company_id' => $providerUser->company->id,
                 'api_key_id' => $apiKey->id,
-                'required_scope' => $scope,
+                'required_scopes' => $scopes,
                 'ip' => $request->ip(),
                 'path' => $request->path(),
             ]);
@@ -171,5 +179,19 @@ class ProviderApiKeyMiddleware
         }
 
         return null;
+    }
+
+    /**
+     * @param  list<string>  $scopes
+     */
+    private function keyAllowsAny(ProviderApiKey $apiKey, array $scopes): bool
+    {
+        foreach ($scopes as $scope) {
+            if ($apiKey->allows($scope)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

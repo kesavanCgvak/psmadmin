@@ -65,7 +65,7 @@ DESC,
             ),
             new OA\Response(
                 response: 403,
-                description: 'Expired key, Open API disabled, non-provider account, missing chat scope, or the conversation belongs to other companies.',
+                description: 'Expired key, Open API disabled, non-provider account, API key not authorized for the partner APIs, or the conversation belongs to other companies.',
                 content: new OA\JsonContent(ref: '#/components/schemas/ApiError')
             ),
             new OA\Response(
@@ -99,9 +99,9 @@ DESC,
         description: <<<'DESC'
 Returns conversations that include the authenticated company, so an integrator can choose `psm_conversation_id` for the first message mapping.
 
-The payload is limited to the conversation id, counterparty company id and name, rental job id, and updated time. Message history is not included. Conversations that do not include the authenticated company are omitted.
+The payload is limited to the conversation id, counterparty company id and name, rental job id, and updated time. Message history is not included; use `GET /api/v1/partner/chat/conversations/{conversation}` for one conversation and its messages. Conversations that do not include the authenticated company are omitted.
 
-Requires the chat scope. Rate limit: 60 requests per minute for the authenticated company.
+Uses the same provider API key as the other partner public APIs. Rate limit: 60 requests per minute for the authenticated company.
 DESC,
         security: [['partnerApiKey' => []]],
         tags: ['Partner Chat'],
@@ -144,7 +144,7 @@ DESC,
             ),
             new OA\Response(
                 response: 403,
-                description: 'Open API disabled, expired key, invalid provider context, or missing chat scope.',
+                description: 'Open API disabled, expired key, invalid provider context, or an API key that is not authorized for the partner APIs.',
                 content: new OA\JsonContent(ref: '#/components/schemas/ApiError')
             ),
             new OA\Response(
@@ -160,4 +160,81 @@ DESC,
         ]
     )]
     public function conversations(): void {}
+
+    #[OA\Get(
+        path: '/api/v1/partner/chat/conversations/{conversation}',
+        operationId: 'partnerChatShowConversation',
+        summary: 'Get one conversation and its messages',
+        description: <<<'DESC'
+Returns one conversation that includes the authenticated company, together with that conversation's messages.
+
+Messages are newest first and paginated with `page` and `per_page`. A deleted message is included with an empty body and `is_deleted: true`. `external_system`, `external_message_id`, and `external_conversation_id` are present only when this company stored that link; another company's external ids are omitted.
+
+An unknown id returns 404. A conversation that does not include the authenticated company returns 403. Uses the same provider API key as the other partner public APIs. Rate limit: 60 requests per minute for the authenticated company.
+DESC,
+        security: [['partnerApiKey' => []]],
+        tags: ['Partner Chat'],
+        parameters: [
+            new OA\Parameter(
+                name: 'conversation',
+                in: 'path',
+                required: true,
+                description: 'PSM conversation id from the conversations list.',
+                schema: new OA\Schema(type: 'integer', minimum: 1, example: 123)
+            ),
+            new OA\Parameter(
+                name: 'page',
+                in: 'query',
+                required: false,
+                schema: new OA\Schema(type: 'integer', minimum: 1, default: 1, example: 1)
+            ),
+            new OA\Parameter(
+                name: 'per_page',
+                in: 'query',
+                required: false,
+                schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 100, default: 25, example: 25)
+            ),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Conversation fetched successfully.',
+                content: new OA\JsonContent(
+                    type: 'object',
+                    properties: [
+                        new OA\Property(property: 'success', type: 'boolean', example: true),
+                        new OA\Property(property: 'message', type: 'string', example: 'Conversation fetched successfully.'),
+                        new OA\Property(property: 'data', ref: '#/components/schemas/PartnerChatConversationDetail'),
+                        new OA\Property(property: 'meta', ref: '#/components/schemas/PaginationMeta'),
+                    ]
+                )
+            ),
+            new OA\Response(
+                response: 401,
+                description: 'Missing or invalid API key.',
+                content: new OA\JsonContent(ref: '#/components/schemas/ApiError')
+            ),
+            new OA\Response(
+                response: 403,
+                description: 'Open API disabled, expired key, invalid provider context, API key not authorized for the partner APIs, or the conversation belongs to other companies.',
+                content: new OA\JsonContent(ref: '#/components/schemas/ApiError')
+            ),
+            new OA\Response(
+                response: 404,
+                description: 'Conversation was not found.',
+                content: new OA\JsonContent(ref: '#/components/schemas/ApiError')
+            ),
+            new OA\Response(
+                response: 422,
+                description: 'Invalid pagination parameters.',
+                content: new OA\JsonContent(ref: '#/components/schemas/ValidationError')
+            ),
+            new OA\Response(
+                response: 429,
+                description: 'Too many requests (rate limit: 60 requests per minute per company).',
+                content: new OA\JsonContent(ref: '#/components/schemas/ApiError')
+            ),
+        ]
+    )]
+    public function show(): void {}
 }

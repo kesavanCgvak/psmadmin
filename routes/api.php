@@ -295,8 +295,9 @@ Route::prefix('v1/partner')->group(function () {
         Route::get('/products/{product_id}', [PartnerProductController::class, 'details'])->whereNumber('product_id');
     });
 
-    Route::middleware(['provider.api.key:chat', 'throttle:partner-chat'])->prefix('chat')->group(function () {
+    Route::middleware(['provider.api.key:products,chat', 'throttle:partner-chat'])->prefix('chat')->group(function () {
         Route::get('/conversations', [PartnerChatController::class, 'conversations']);
+        Route::get('/conversations/{conversation}', [PartnerChatController::class, 'show'])->whereNumber('conversation');
         Route::post('/messages', [PartnerChatController::class, 'store']);
     });
 });

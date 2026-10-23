@@ -47,8 +47,8 @@ class ProviderApiKey extends Model
     }
 
     /**
-     * Legacy keys (null scopes) keep product access only.
-     * Chat requires an explicit chat scope.
+     * Legacy keys (null scopes) grant product access.
+     * Partner chat accepts those keys, keys that include products, and keys that include chat.
      *
      * @return list<string>
      */

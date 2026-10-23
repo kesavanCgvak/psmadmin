@@ -33,6 +33,18 @@ class PartnerChatController extends Controller
     }
 
     /**
+     * GET /api/v1/partner/chat/conversations/{conversation}
+     */
+    public function show(ListPartnerChatConversationsRequest $request, int $conversation): JsonResponse
+    {
+        $company = $this->company($request);
+        $perPage = (int) ($request->validated()['per_page'] ?? config('app.admin_list_per_page', 25));
+        $result = $this->partnerChatService->showConversation($company, $conversation, $perPage);
+
+        return response()->json($result['body'], $result['status']);
+    }
+
+    /**
      * POST /api/v1/partner/chat/messages
      */
     public function store(StorePartnerChatMessageRequest $request): JsonResponse

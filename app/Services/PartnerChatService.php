@@ -9,8 +9,10 @@ use App\Models\ChatExternalMessage;
 use App\Models\ChatMessage;
 use App\Models\Company;
 use App\Models\User;
+use App\Support\ChatIdentity;
 use App\Support\ChatLog;
 use Carbon\Carbon;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -71,29 +73,92 @@ class PartnerChatService
             ->paginate($perPage);
 
         $data = $paginator->getCollection()
-            ->map(function (ChatConversation $conversation) use ($company) {
-                $counterparty = $conversation->otherCompany((int) $company->id);
-
-                return [
-                    'id' => $conversation->id,
-                    'counterparty_company_id' => $counterparty?->id,
-                    'counterparty_company_name' => $counterparty?->name,
-                    'rental_job_id' => $conversation->rental_job_id,
-                    'updated_at' => $conversation->updated_at?->toIso8601String(),
-                ];
-            })
+            ->map(fn (ChatConversation $conversation) => $this->conversationSummary($conversation, $company))
             ->values()
             ->all();
 
         return [
             'data' => $data,
-            'meta' => [
-                'page' => $paginator->currentPage(),
-                'per_page' => $paginator->perPage(),
-                'total' => $paginator->total(),
-                'total_pages' => $paginator->lastPage(),
-            ],
+            'meta' => $this->pageMeta($paginator),
         ];
+    }
+
+    /**
+     * Conversation summary plus that company's visible messages.
+     * Messages are newest first. External ids are only the authenticated company's own links.
+     *
+     * @return array{status: int, body: array<string, mixed>}
+     */
+    public function showConversation(Company $company, int $conversationId, int $perPage): array
+    {
+        try {
+            $conversation = ChatConversation::query()
+                ->with(['companyA:id,name', 'companyB:id,name'])
+                ->find($conversationId);
+
+            if (! $conversation) {
+                throw PartnerChatException::notFound('Conversation not found.');
+            }
+
+            if (! $conversation->involvesCompany((int) $company->id)) {
+                throw PartnerChatException::forbidden();
+            }
+
+            $paginator = ChatMessage::query()
+                ->withTrashed()
+                ->where('conversation_id', $conversation->id)
+                ->with('sender.profile')
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->paginate($perPage);
+
+            $messageIds = $paginator->getCollection()->modelKeys();
+            $links = $messageIds === []
+                ? collect()
+                : ChatExternalMessage::query()
+                    ->where('company_id', $company->id)
+                    ->whereIn('message_id', $messageIds)
+                    ->get()
+                    ->keyBy('message_id');
+
+            $messages = $paginator->getCollection()
+                ->map(function (ChatMessage $message) use ($conversation, $links) {
+                    $link = $links->get($message->id);
+                    $deleted = $message->trashed();
+
+                    return [
+                        'id' => $message->id,
+                        'conversation_id' => $message->conversation_id,
+                        'sender_company_id' => $message->sender_company_id,
+                        'sender_company_name' => $this->senderCompanyName($conversation, (int) $message->sender_company_id),
+                        'sender_user_id' => $message->sender_user_id,
+                        'sender_user_name' => $message->sender ? ChatIdentity::displayName($message->sender) : null,
+                        'body' => $deleted ? '' : $message->message,
+                        'message_type' => $message->message_type,
+                        'created_at' => $message->created_at?->toIso8601String(),
+                        'is_deleted' => $deleted,
+                        'external_system' => $link?->external_system,
+                        'external_message_id' => $link?->external_message_id,
+                        'external_conversation_id' => $link?->external_conversation_id,
+                    ];
+                })
+                ->values()
+                ->all();
+
+            return [
+                'status' => 200,
+                'body' => [
+                    'success' => true,
+                    'message' => 'Conversation fetched successfully.',
+                    'data' => $this->conversationSummary($conversation, $company) + [
+                        'messages' => $messages,
+                    ],
+                    'meta' => $this->pageMeta($paginator),
+                ],
+            ];
+        } catch (PartnerChatException $e) {
+            return $e->toResult();
+        }
     }
 
     /**
@@ -316,6 +381,49 @@ class PartnerChatService
         }
 
         return true;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function conversationSummary(ChatConversation $conversation, Company $company): array
+    {
+        $counterparty = $conversation->otherCompany((int) $company->id);
+
+        return [
+            'id' => $conversation->id,
+            'counterparty_company_id' => $counterparty?->id,
+            'counterparty_company_name' => $counterparty?->name,
+            'rental_job_id' => $conversation->rental_job_id,
+            'updated_at' => $conversation->updated_at?->toIso8601String(),
+        ];
+    }
+
+    private function senderCompanyName(ChatConversation $conversation, int $companyId): ?string
+    {
+        if ((int) $conversation->company_a_id === $companyId) {
+            return $conversation->companyA?->name;
+        }
+
+        if ((int) $conversation->company_b_id === $companyId) {
+            return $conversation->companyB?->name;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  LengthAwarePaginator<int, mixed>  $paginator
+     * @return array{page: int, per_page: int, total: int, total_pages: int}
+     */
+    private function pageMeta(LengthAwarePaginator $paginator): array
+    {
+        return [
+            'page' => $paginator->currentPage(),
+            'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(),
+            'total_pages' => $paginator->lastPage(),
+        ];
     }
 
     private function senderFor(Company $company): ?User

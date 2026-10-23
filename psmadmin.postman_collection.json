@@ -6261,7 +6261,7 @@
                 },
                 {
                     "name": "Partner Inbound Chat APIs",
-                    "description": "External systems (Rentman, Flex) submit messages into an existing PSM company-to-company conversation. Authenticate with a provider API key that has the chat scope. The company is taken from the key, not from the body. Limit: chat.partner_rate_limit_per_minute (default 60) per company. Missing or invalid keys are limited per IP. Bearer and X-API-KEY are both accepted; Bearer is preferred when both are sent.",
+                    "description": "External systems (Rentman, Flex) submit messages into an existing PSM company-to-company conversation. Authenticate with the same provider API key used by the other partner public APIs. The company is taken from the key, not from the body. Limit: chat.partner_rate_limit_per_minute (default 60) per company. Missing or invalid keys are limited per IP. Bearer and X-API-KEY are both accepted; Bearer is preferred when both are sent.",
                     "item": [
                         {
                             "name": "Partner Chat — List Conversations For Mapping",
@@ -6279,7 +6279,7 @@
                                         "value": "application/json"
                                     }
                                 ],
-                                "description": "Conversations — V1 Partner Chat Conversations.\n\nMethod and path: GET /api/v1/partner/chat/conversations\nAuthentication: Partner API key with the chat scope. Send Authorization: Bearer {{partner_api_key}}. X-API-KEY is also accepted.\nRate limit: partner-chat, default 60 requests per minute per authenticated company (config chat.partner_rate_limit_per_minute). Unauthenticated calls share an IP bucket.\nController: App\\Http\\Controllers\\Api\\PartnerChatController@conversations\n\nOptional inputs (from this action's validation rules):\n- page — nullable|integer|min:1\n- per_page — nullable|integer|min:1|max:100\n\nResponse messages found in this action: Conversations fetched successfully.; Validation error.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional.\n\nReturns conversations that include the authenticated provider company so an integrator can choose psm_conversation_id. Message history is not included. Other companies' conversations are omitted.\n\nQuery: page (integer, min 1) and per_page (integer, 1–100). Default per_page is config app.admin_list_per_page or 25.\n\nEach item has id, counterparty_company_id, counterparty_company_name, rental_job_id, and updated_at. Meta has page, per_page, total, and total_pages.",
+                                "description": "Conversations — V1 Partner Chat Conversations.\n\nMethod and path: GET /api/v1/partner/chat/conversations\nAuthentication: Same provider API key as the other partner public APIs. Send Authorization: Bearer {{partner_api_key}}. X-API-KEY is also accepted. Legacy keys and keys that include products are authorized. A key that includes only chat is still authorized for chat.\nRate limit: partner-chat, default 60 requests per minute per authenticated company (config chat.partner_rate_limit_per_minute). Unauthenticated calls share an IP bucket.\nController: App\\Http\\Controllers\\Api\\PartnerChatController@conversations\n\nOptional inputs (from this action's validation rules):\n- page — nullable|integer|min:1\n- per_page — nullable|integer|min:1|max:100\n\nResponse messages found in this action: Conversations fetched successfully.; Validation error.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional.\n\nReturns conversations that include the authenticated provider company so an integrator can choose psm_conversation_id. Message history is not included. Fetch one conversation and its messages with GET /api/v1/partner/chat/conversations/{conversation}. Other companies' conversations are omitted.\n\nQuery: page (integer, min 1) and per_page (integer, 1–100). Default per_page is config app.admin_list_per_page or 25.\n\nEach item has id, counterparty_company_id, counterparty_company_name, rental_job_id, and updated_at. Meta has page, per_page, total, and total_pages.",
                                 "url": {
                                     "raw": "{{base_url}}/api/v1/partner/chat/conversations?page=1&per_page=25",
                                     "host": [
@@ -6323,6 +6323,66 @@
                             ]
                         },
                         {
+                            "name": "Partner Chat — Get Conversation With Messages",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": {
+                                        "token": "{{partner_api_key}}"
+                                    }
+                                },
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "description": "Show — V1 Partner Chat Conversations.\n\nMethod and path: GET /api/v1/partner/chat/conversations/{conversation}\nAuthentication: Same provider API key as the other partner public APIs. Send Authorization: Bearer {{partner_api_key}}. X-API-KEY is also accepted. Legacy keys and keys that include products are authorized. A key that includes only chat is still authorized for chat.\nRate limit: partner-chat, default 60 requests per minute per authenticated company (config chat.partner_rate_limit_per_minute). Unauthenticated calls share an IP bucket.\nController: App\\Http\\Controllers\\Api\\PartnerChatController@show\n\nPath: conversation — PSM conversation id from the list.\n\nOptional inputs:\n- page — nullable|integer|min:1\n- per_page — nullable|integer|min:1|max:100\n\nReturns the conversation summary plus messages, newest first. Meta paginates the messages. A deleted message has an empty body and is_deleted true. external_system, external_message_id, and external_conversation_id are this company's links only.\n\n404 when the conversation does not exist. 403 Unauthorized when it belongs to other companies. 401 when the API key is missing or invalid. 422 for invalid pagination.",
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/partner/chat/conversations/123?page=1&per_page=25",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "partner",
+                                        "chat",
+                                        "conversations",
+                                        "123"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "page",
+                                            "value": "1",
+                                            "description": "nullable|integer|min:1"
+                                        },
+                                        {
+                                            "key": "per_page",
+                                            "value": "25",
+                                            "description": "nullable|integer|min:1|max:100"
+                                        }
+                                    ]
+                                }
+                            },
+                            "response": [
+                                {
+                                    "name": "200 Conversation with messages (illustrative)",
+                                    "status": "OK",
+                                    "code": 200,
+                                    "_postman_previewlanguage": "json",
+                                    "header": [
+                                        {
+                                            "key": "Content-Type",
+                                            "value": "application/json"
+                                        }
+                                    ],
+                                    "body": "{\n    \"success\": true,\n    \"message\": \"Conversation fetched successfully.\",\n    \"data\": {\n        \"id\": 123,\n        \"counterparty_company_id\": 45,\n        \"counterparty_company_name\": \"Example Renter Co\",\n        \"rental_job_id\": 77,\n        \"updated_at\": \"2026-10-13T10:30:00+00:00\",\n        \"messages\": [\n            {\n                \"id\": 501,\n                \"conversation_id\": 123,\n                \"sender_company_id\": 10,\n                \"sender_company_name\": \"Example Provider Co\",\n                \"sender_user_id\": 8,\n                \"sender_user_name\": \"Pat Provider\",\n                \"body\": \"The speakers are confirmed.\",\n                \"message_type\": \"text\",\n                \"created_at\": \"2026-10-13T10:30:00+00:00\",\n                \"is_deleted\": false,\n                \"external_system\": \"rentman\",\n                \"external_message_id\": \"rentman-msg-10001\",\n                \"external_conversation_id\": \"rentman-conv-50001\"\n            }\n        ]\n    },\n    \"meta\": {\n        \"page\": 1,\n        \"per_page\": 25,\n        \"total\": 1,\n        \"total_pages\": 1\n    }\n}"
+                                }
+                            ]
+                        },
+                        {
                             "name": "Partner Chat — Submit External Message",
                             "request": {
                                 "auth": {
@@ -6342,7 +6402,7 @@
                                         "value": "application/json"
                                     }
                                 ],
-                                "description": "Create — V1 Partner Chat Messages.\n\nMethod and path: POST /api/v1/partner/chat/messages\nAuthentication: Partner API key with the chat scope. Send Authorization: Bearer {{partner_api_key}}. X-API-KEY is also accepted.\nRate limit: partner-chat, default 60 requests per minute per authenticated company (config chat.partner_rate_limit_per_minute). Unauthenticated calls share an IP bucket.\nController: App\\Http\\Controllers\\Api\\PartnerChatController@store\n\nRequired inputs (from this action's validation rules):\n- external_system — required|string|max:32|Rule::in(config('chat.partner_external_systems', []))\n- external_message_id — required|string|min:1|max:191\n- external_conversation_id — required|string|min:1|max:191\n- body — required|string|min:1|max:2000\n\nOptional inputs (from this action's validation rules):\n- psm_conversation_id — nullable|integer|min:1\n- external_created_at — nullable|date\n\nResponse messages found in this action: Validation error.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional.\n\nInbound chat for Rentman and Flex.\n\nAuthentication: Authorization: Bearer {{partner_api_key}} or header X-API-KEY. The key must be active, unexpired, and unrevoked; the company and user must be provider accounts; Open API must be enabled; the key needs the chat scope. Legacy null scopes are products-only and cannot call this route.\n\nThe sending company is the company on the API key. Body fields such as company_id or sender_user_id are ignored. The sender user is that company's default_contact_id, who must belong to the company and must not be blocked.\n\nConversation mapping is stored per company, external_system, and external_conversation_id. The first message for a thread must include psm_conversation_id for a conversation that includes the authenticated company. Later messages may omit psm_conversation_id. There is no lookup by company name or email.\n\nexternal_system must be rentman or flex (case-insensitive; stored lowercase). body is trimmed and must be 1–2000 characters. external_message_id and external_conversation_id are trimmed and max 191 characters. external_created_at is stored on the link only; unread counts use the PSM message created_at.\n\nIdempotency key: company + external_system + external_message_id.\n- First accept: HTTP 201, message \"Message sent.\", data.id is the new PSM message id. One chat_messages row is created, ChatMessageSent is broadcast as chat.message.sent, and ProcessChatMessageNotificationsJob is queued.\n- Identical retry: HTTP 200, message \"Existing message returned.\", same data.id. No second message, broadcast, or notification.\n- Same id with a different body or external conversation: HTTP 409.\n- external_conversation_id already mapped to another PSM conversation: HTTP 409.\n\nOther errors: 401 missing/invalid/revoked key; 403 expired key, Open API disabled, non-provider account, missing chat scope, or a conversation the company is not in; 404 unknown conversation or missing mapping; 422 validation or missing default contact; 429 {\"success\":false,\"message\":\"Too many requests.\"}.\n\nThis route does not call the AI chatbot and does not send anything outbound to Rentman or Flex.",
+                                "description": "Create — V1 Partner Chat Messages.\n\nMethod and path: POST /api/v1/partner/chat/messages\nAuthentication: Same provider API key as the other partner public APIs. Send Authorization: Bearer {{partner_api_key}}. X-API-KEY is also accepted. Legacy keys and keys that include products are authorized. A key that includes only chat is still authorized for chat.\nRate limit: partner-chat, default 60 requests per minute per authenticated company (config chat.partner_rate_limit_per_minute). Unauthenticated calls share an IP bucket.\nController: App\\Http\\Controllers\\Api\\PartnerChatController@store\n\nRequired inputs (from this action's validation rules):\n- external_system — required|string|max:32|Rule::in(config('chat.partner_external_systems', []))\n- external_message_id — required|string|min:1|max:191\n- external_conversation_id — required|string|min:1|max:191\n- body — required|string|min:1|max:2000\n\nOptional inputs (from this action's validation rules):\n- psm_conversation_id — nullable|integer|min:1\n- external_created_at — nullable|date\n\nResponse messages found in this action: Validation error.\n\nReplace {{id}} path segments with ids returned by earlier requests. Sample values are fictional.\n\nInbound chat for Rentman and Flex.\n\nAuthentication: Authorization: Bearer {{partner_api_key}} or header X-API-KEY, the same key used for the other partner public APIs. The key must be active, unexpired, and unrevoked; the company and user must be provider accounts; Open API must be enabled. Legacy keys and keys that include the products scope are authorized. A key that includes only the chat scope can still call this route, and cannot call the product endpoints.\n\nThe sending company is the company on the API key. Body fields such as company_id or sender_user_id are ignored. The sender user is that company's default_contact_id, who must belong to the company and must not be blocked.\n\nConversation mapping is stored per company, external_system, and external_conversation_id. The first message for a thread must include psm_conversation_id for a conversation that includes the authenticated company. Later messages may omit psm_conversation_id. There is no lookup by company name or email.\n\nexternal_system must be rentman or flex (case-insensitive; stored lowercase). body is trimmed and must be 1–2000 characters. external_message_id and external_conversation_id are trimmed and max 191 characters. external_created_at is stored on the link only; unread counts use the PSM message created_at.\n\nIdempotency key: company + external_system + external_message_id.\n- First accept: HTTP 201, message \"Message sent.\", data.id is the new PSM message id. One chat_messages row is created, ChatMessageSent is broadcast as chat.message.sent, and ProcessChatMessageNotificationsJob is queued.\n- Identical retry: HTTP 200, message \"Existing message returned.\", same data.id. No second message, broadcast, or notification.\n- Same id with a different body or external conversation: HTTP 409.\n- external_conversation_id already mapped to another PSM conversation: HTTP 409.\n\nOther errors: 401 missing/invalid/revoked key; 403 expired key, Open API disabled, non-provider account, a key that has neither the products nor the chat scope, or a conversation the company is not in; 404 unknown conversation or missing mapping; 422 validation or missing default contact; 429 {\"success\":false,\"message\":\"Too many requests.\"}.\n\nThis route does not call the AI chatbot and does not send anything outbound to Rentman or Flex.",
                                 "url": {
                                     "raw": "{{base_url}}/api/v1/partner/chat/messages",
                                     "host": [
