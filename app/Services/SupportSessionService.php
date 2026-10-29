@@ -45,7 +45,6 @@ class SupportSessionService
     public function start(User $admin, User $target, Request $request): array
     {
         $this->assertCanStart($admin);
-        $this->assertEligible($admin, $target);
 
         try {
             return DB::transaction(function () use ($admin, $target, $request) {
@@ -352,25 +351,6 @@ class SupportSessionService
                 'forbidden',
                 'You do not have permission to start a support session.',
                 403
-            );
-        }
-    }
-
-    private function assertEligible(User $admin, User $target): void
-    {
-        if ((int) $admin->id === (int) $target->id) {
-            throw new SupportSessionException(
-                'self',
-                'You cannot assume your own identity.',
-                422
-            );
-        }
-
-        if ($target->role === 'super_admin' || (bool) $target->is_blocked) {
-            throw new SupportSessionException(
-                'ineligible',
-                'This account is not eligible for support access.',
-                422
             );
         }
     }

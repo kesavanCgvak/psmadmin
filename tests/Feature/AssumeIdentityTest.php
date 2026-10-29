@@ -134,35 +134,35 @@ class AssumeIdentityTest extends TestCase
             ->assertUnauthorized();
     }
 
-    public function test_administrator_cannot_assume_their_own_identity(): void
+    public function test_any_existing_user_can_be_assumed(): void
     {
         $admin = $this->createPlatformAdmin();
-
-        $this->beginSupportSession($admin, $admin)
-            ->assertStatus(422)
-            ->assertJsonPath('message', 'You cannot assume your own identity.');
-    }
-
-    public function test_missing_and_ineligible_users_are_rejected(): void
-    {
-        $admin = $this->createPlatformAdmin();
-        $blocked = $this->createMarketplaceUser(
-            Company::create(['name' => 'Blocked Co '.uniqid(), 'account_type' => 'user'])
-        );
+        $company = Company::create(['name' => 'Blocked Co '.uniqid(), 'account_type' => 'user']);
+        $blocked = $this->createMarketplaceUser($company);
         $blocked->forceFill(['is_blocked' => true])->save();
+        $companyAdmin = $this->createCompanyAdmin($company);
         $otherAdmin = $this->createPlatformAdmin();
 
         $this->actingAs($admin)
             ->postJson(route('admin.users.assume-identity', 999999999))
             ->assertNotFound();
 
+        $this->beginSupportSession($admin, $admin)
+            ->assertOk()
+            ->assertJsonPath('data.assumed_user.id', $admin->id);
+
         $this->beginSupportSession($admin, $blocked)
-            ->assertStatus(422)
-            ->assertJsonPath('message', 'This account is not eligible for support access.');
+            ->assertOk()
+            ->assertJsonPath('data.assumed_user.id', $blocked->id);
+
+        $this->beginSupportSession($admin, $companyAdmin)
+            ->assertOk()
+            ->assertJsonPath('data.assumed_user.id', $companyAdmin->id)
+            ->assertJsonPath('data.assumed_user.is_admin', 1);
 
         $this->beginSupportSession($admin, $otherAdmin)
-            ->assertStatus(422)
-            ->assertJsonPath('message', 'This account is not eligible for support access.');
+            ->assertOk()
+            ->assertJsonPath('data.assumed_user.id', $otherAdmin->id);
     }
 
     public function test_support_token_is_not_an_unrestricted_user_credential(): void

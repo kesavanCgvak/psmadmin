@@ -19,7 +19,7 @@ use Illuminate\Http\Request;
  *       administrator_id.
  *       company stays the company name. company_profile is additive and has no secrets.
  *   401 unauthenticated, 403 insufficient permission, 404 unknown user,
- *   422 own identity or ineligible account, 409 conflicting session, 429 rate limit.
+ *   409 conflicting session, 429 rate limit.
  *
  * Current state (support credential):
  *   GET /api/support-sessions/current

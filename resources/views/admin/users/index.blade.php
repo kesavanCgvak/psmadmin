@@ -124,7 +124,7 @@
                                             <a href="{{ route('admin.users.edit', $user) }}" class="btn btn-warning btn-sm">
                                                 <i class="fas fa-edit"></i>
                                             </a>
-                                            @if(auth()->user()?->role === 'super_admin' && auth()->id() !== $user->id && $user->role !== 'super_admin' && ! $user->is_blocked)
+                                            @if(auth()->user()?->role === 'super_admin')
                                                 <button type="button"
                                                         class="btn btn-secondary btn-sm js-assume-identity"
                                                         title="Assume Identity"
@@ -170,6 +170,7 @@
                         <p id="assumeIdentityPrompt" class="mb-2"></p>
                         <p class="text-muted mb-0">This starts a read-only support session. It cannot change the user's data. The marketplace opens in a separate window, and the support credential is not put in the address.</p>
                         <div id="assumeIdentityAlert" class="alert mt-3 mb-0" style="display: none;" role="alert"></div>
+                        <pre id="assumeIdentityDebug" class="small text-muted mt-3 mb-0" style="white-space: pre-wrap;"></pre>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
@@ -829,28 +830,70 @@
             var assumeCsrf = @json(csrf_token());
             var assumeFrontendOrigin = @json($frontendOrigin);
             var assumeIdentityUrl = @json($assumeIdentityUrl);
-            var assumeReturnUrl = @json(request()->getSchemeAndHttpHost().'/admin/users');
             var assumeWindow = null;
             var assumeGrant = null;
+            var assumeReadyNonce = null;
+            var assumeGrantPosts = 0;
 
             function clearAssumeGrant() {
                 assumeGrant = null;
             }
 
-            window.addEventListener('message', function (event) {
-                if (!assumeFrontendOrigin || event.origin !== assumeFrontendOrigin) return;
-                if (!assumeWindow || event.source !== assumeWindow) return;
-                var data = event.data || {};
-                if (data.type !== 'psm-support-ready' || typeof data.nonce !== 'string') return;
-                if (!assumeGrant || typeof assumeGrant.token !== 'string') return;
+            function assumeReturnUrl() {
+                return window.location.origin + '/admin/users';
+            }
+
+            function renderAssumeDebug(note) {
+                var lines = [
+                    'Marketplace: ' + assumeIdentityUrl,
+                    'Expected popup origin: ' + assumeFrontendOrigin,
+                    'Return address: ' + assumeReturnUrl(),
+                    'Ready messages: ' + (assumeReadyNonce ? 'received' : 'none yet'),
+                    'Grant posts: ' + assumeGrantPosts,
+                    'Session: ' + (assumeSessionId || '(not started)')
+                ];
+                if (note) {
+                    lines.push(note);
+                }
+                $('#assumeIdentityDebug').text(lines.join('\n'));
+            }
+
+            function deliverGrant() {
+                if (!assumeWindow || assumeWindow.closed || !assumeReadyNonce || !assumeGrant || typeof assumeGrant.token !== 'string') {
+                    return;
+                }
+                var sessionId = Number(assumeGrant.sessionId);
+                if (!Number.isInteger(sessionId) || sessionId < 1) {
+                    renderAssumeDebug('Session id from the server was not usable.');
+                    return;
+                }
                 assumeWindow.postMessage({
                     type: 'psm-support-grant',
-                    nonce: data.nonce,
+                    nonce: assumeReadyNonce,
                     access_token: assumeGrant.token,
-                    session_id: assumeGrant.sessionId,
-                    return_url: assumeReturnUrl
+                    session_id: sessionId,
+                    return_url: assumeReturnUrl()
                 }, assumeFrontendOrigin);
-                clearAssumeGrant();
+                assumeGrantPosts += 1;
+                renderAssumeDebug('Grant posted to the marketplace window.');
+            }
+
+            window.addEventListener('message', function (event) {
+                var data = event.data || {};
+                if (data.type !== 'psm-support-ready' || typeof data.nonce !== 'string') return;
+                if (!assumeFrontendOrigin || event.origin !== assumeFrontendOrigin) {
+                    renderAssumeDebug('Ready message came from ' + event.origin + ', expected ' + assumeFrontendOrigin + '.');
+                    return;
+                }
+                if (!assumeWindow || event.source !== assumeWindow) {
+                    renderAssumeDebug('Ready message did not come from the marketplace window.');
+                    return;
+                }
+                assumeReadyNonce = data.nonce;
+                deliverGrant();
+                if (!assumeGrant) {
+                    renderAssumeDebug('Marketplace is ready. Waiting for the support session response.');
+                }
             });
 
             $(document).on('click', '.js-assume-identity', function () {
@@ -889,6 +932,9 @@
                 }
                 assumeWindow = popup;
                 clearAssumeGrant();
+                assumeReadyNonce = null;
+                assumeGrantPosts = 0;
+                renderAssumeDebug('Waiting for the marketplace page.');
                 var button = $(this);
                 button.prop('disabled', true);
                 $.ajax({
@@ -906,6 +952,9 @@
                         assumeSessionId = response.data ? response.data.session_id : null;
                         if (typeof token === 'string' && assumeSessionId) {
                             assumeGrant = { token: token, sessionId: assumeSessionId };
+                            deliverGrant();
+                        } else {
+                            renderAssumeDebug('The server response did not include a session credential.');
                         }
                         $('#assumeIdentityAlert')
                             .removeClass('alert-danger')
