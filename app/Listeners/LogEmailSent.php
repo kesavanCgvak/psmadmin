@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Models\EmailLog;
 use Illuminate\Mail\Events\MessageSent;
+use Illuminate\Support\Facades\Log;
 
 class LogEmailSent
 {
@@ -17,7 +18,7 @@ class LogEmailSent
             $message = $event->message;
             $headers = $message->getHeaders();
 
-            if (!$headers->has(EmailLog::LOG_ID_HEADER)) {
+            if (! $headers->has(EmailLog::LOG_ID_HEADER)) {
                 return;
             }
 
@@ -27,10 +28,10 @@ class LogEmailSent
                 : null;
 
             if ($logId && $log = EmailLog::find($logId)) {
-                $log->update(['status' => EmailLog::STATUS_SENT]);
+                $log->recordSubmittedToTransport();
             }
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('Email log (sent) failed', [
+            Log::error('Email log (sent) failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);

@@ -144,10 +144,11 @@
                                 <td>
                                     {{ $log->created_at?->format('M d, Y H:i') }}
                                 </td>
-                                <td>
+                                <td class="text-nowrap">
                                     <a href="{{ route('admin.email-logs.show', $log) }}" class="btn btn-info btn-sm" title="View Details">
                                         <i class="fas fa-eye"></i>
                                     </a>
+                                    @include('admin.email-logs.partials.retry-action', ['emailLog' => $log, 'showLabel' => false])
                                 </td>
                             </tr>
                         @empty
@@ -186,4 +187,5 @@
             @endif
         });
     </script>
+    @include('admin.email-logs.partials.retry-script')
 @stop

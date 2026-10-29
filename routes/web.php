@@ -34,10 +34,10 @@ use App\Http\Controllers\Admin\RentalSoftwareCompanyLogoController;
 use App\Http\Controllers\Admin\RentalSoftwareManagementController;
 use App\Http\Controllers\Admin\SmsLogController;
 use App\Http\Controllers\Admin\StateProvinceController;
-use App\Http\Controllers\Admin\SupportSessionController;
 use App\Http\Controllers\Admin\SubCategoryController;
 use App\Http\Controllers\Admin\SubscriptionManagementController;
 use App\Http\Controllers\Admin\SupplyJobController;
+use App\Http\Controllers\Admin\SupportSessionController;
 use App\Http\Controllers\Admin\TermsAndConditionsController;
 use App\Http\Controllers\Admin\TrialIncentiveManagementController;
 use App\Http\Controllers\Admin\UserAuthEventController;
@@ -373,9 +373,11 @@ Route::middleware(['auth', 'verified', 'admin.access'])->prefix('admin')->name('
     Route::get('/email-templates/{emailTemplate}/preview', [EmailTemplateController::class, 'preview'])
         ->name('email-templates.preview');
 
-    // Email Logs (read-only)
+    // Email Logs
     Route::get('/email-logs', [EmailLogController::class, 'index'])
         ->name('email-logs.index');
+    Route::post('/email-logs/{emailLog}/retry', [EmailLogController::class, 'retry'])
+        ->name('email-logs.retry');
     Route::get('/email-logs/{emailLog}', [EmailLogController::class, 'show'])
         ->name('email-logs.show');
 

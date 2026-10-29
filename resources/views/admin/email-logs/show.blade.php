@@ -11,6 +11,20 @@
 @stop
 
 @section('content')
+    @if(session('success'))
+        <div class="alert alert-success alert-dismissible fade show">
+            <button type="button" class="close" data-dismiss="alert">&times;</button>
+            <i class="icon fas fa-check"></i> {{ session('success') }}
+        </div>
+    @endif
+
+    @if(session('error'))
+        <div class="alert alert-danger alert-dismissible fade show">
+            <button type="button" class="close" data-dismiss="alert">&times;</button>
+            <i class="icon fas fa-ban"></i> {{ session('error') }}
+        </div>
+    @endif
+
     <div class="row">
         <div class="col-md-8">
             <div class="card card-primary">
@@ -74,20 +88,72 @@
 
                         <dt class="col-sm-4">Updated At</dt>
                         <dd class="col-sm-8">{{ $emailLog->updated_at?->format('M d, Y H:i:s') }}</dd>
+
+                        <dt class="col-sm-4">Retry Attempts</dt>
+                        <dd class="col-sm-8">{{ $emailLog->retryCount() }}</dd>
+
+                        @if($emailLog->retryMeta()['last_attempt_at'])
+                            <dt class="col-sm-4">Last Retry At</dt>
+                            <dd class="col-sm-8">{{ \Illuminate\Support\Carbon::parse($emailLog->retryMeta()['last_attempt_at'])->format('M d, Y H:i:s') }}</dd>
+                        @endif
                     </dl>
                 </div>
             </div>
 
-            @if($emailLog->payload_snapshot && count($emailLog->payload_snapshot) > 0)
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">Payload Snapshot</h3>
-                    </div>
-                    <div class="card-body">
-                        <pre class="mb-0" style="max-height: 300px; overflow: auto; background: #f8f9fa; padding: 15px; border-radius: 4px;">{{ json_encode($emailLog->payload_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
-                    </div>
+            @php
+                $snapshot = $emailLog->payload_snapshot ?? [];
+                $attachmentNames = collect($snapshot['attachments'] ?? [])->pluck('filename')->filter()->values();
+            @endphp
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Retry Content</h3>
                 </div>
-            @endif
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">Available to resend</dt>
+                        <dd class="col-sm-8">
+                            @if($emailLog->hasStoredContent() && empty($snapshot['attachments_incomplete']))
+                                Yes
+                            @else
+                                No
+                            @endif
+                        </dd>
+
+                        @if(!empty($snapshot['cc']))
+                            <dt class="col-sm-4">Cc</dt>
+                            <dd class="col-sm-8">{{ implode(', ', $snapshot['cc']) }}</dd>
+                        @endif
+
+                        @if(!empty($snapshot['bcc']))
+                            <dt class="col-sm-4">Bcc</dt>
+                            <dd class="col-sm-8">{{ implode(', ', $snapshot['bcc']) }}</dd>
+                        @endif
+
+                        @if(!empty($snapshot['reply_to']))
+                            <dt class="col-sm-4">Reply-To</dt>
+                            <dd class="col-sm-8">{{ implode(', ', $snapshot['reply_to']) }}</dd>
+                        @endif
+
+                        @if($attachmentNames->isNotEmpty())
+                            <dt class="col-sm-4">Attachments</dt>
+                            <dd class="col-sm-8">{{ $attachmentNames->implode(', ') }}</dd>
+                        @endif
+
+                        @if(!empty($snapshot['content_omit_reason']))
+                            <dt class="col-sm-4">Content note</dt>
+                            <dd class="col-sm-8">{{ $snapshot['content_omit_reason'] }}</dd>
+                        @endif
+
+                        @if(!empty($snapshot['attachments_incomplete']))
+                            <dt class="col-sm-4">Attachment note</dt>
+                            <dd class="col-sm-8">An attachment could not be stored, so this email cannot be resent in full.</dd>
+                        @endif
+                    </dl>
+                    <p class="text-muted mb-0 mt-3">
+                        Message content is stored so a pending or failed email can be resent. The body is not shown here.
+                    </p>
+                </div>
+            </div>
         </div>
 
         <div class="col-md-4">
@@ -130,7 +196,8 @@
 
             <div class="card">
                 <div class="card-body">
-                    <a href="{{ route('admin.email-logs.index') }}" class="btn btn-default btn-block">
+                    @include('admin.email-logs.partials.retry-action', ['emailLog' => $emailLog, 'showLabel' => true])
+                    <a href="{{ route('admin.email-logs.index') }}" class="btn btn-default btn-block mt-2">
                         <i class="fas fa-arrow-left"></i> Back to List
                     </a>
                 </div>
@@ -141,4 +208,5 @@
 
 @section('js')
     @include('partials.responsive-js')
+    @include('admin.email-logs.partials.retry-script')
 @stop

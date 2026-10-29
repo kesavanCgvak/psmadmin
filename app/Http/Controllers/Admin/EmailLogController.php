@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\EmailLog;
+use App\Services\EmailLogRetryService;
 use Illuminate\Http\Request;
 
 class EmailLogController extends Controller
@@ -60,5 +61,28 @@ class EmailLogController extends Controller
         $emailLog->load('relatedUser.profile', 'relatedUser.company');
 
         return view('admin.email-logs.show', compact('emailLog'));
+    }
+
+    /**
+     * Resend a pending or failed email log.
+     * Sent logs are rejected. The mail transport, not this action, marks the log as sent.
+     */
+    public function retry(Request $request, EmailLog $emailLog, EmailLogRetryService $retryService)
+    {
+        $result = $retryService->retry($emailLog);
+        $emailLog->refresh();
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => $result['success'],
+                'message' => $result['message'],
+                'status' => $emailLog->status,
+                'retry_count' => $emailLog->retryCount(),
+            ], $result['status_code']);
+        }
+
+        return redirect()
+            ->back()
+            ->with($result['success'] ? 'success' : 'error', $result['message']);
     }
 }
