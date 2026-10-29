@@ -43,6 +43,12 @@ class EmailLog extends Model
 
     public const TYPE_PSM_PRODUCT_SUBMISSION = 'PSM Product Submission';
 
+    public const HISTORICAL_RETRY_MESSAGE = 'This email was logged before its message was stored. The subject and recipient are not enough to reproduce the original message. No message was sent.';
+
+    public const SENSITIVE_RETRY_MESSAGE = 'This email contained a password or a one-time link, so the original message was not kept. Send a new email from the account or password-reset flow. No message was sent.';
+
+    public const SENSITIVE_OMIT_REASON = 'This email contained a password or a one-time link, so the message body was not stored.';
+
     /**
      * Header name used to pass email log ID between MessageSending and MessageSent events.
      */
@@ -127,6 +133,63 @@ class EmailLog extends Model
         }
 
         return false;
+    }
+
+    /**
+     * True when the saved snapshot can reproduce this message without guessing a template.
+     */
+    public function hasRetryablePayload(): bool
+    {
+        $snapshot = $this->payload_snapshot ?? [];
+
+        if (! empty($snapshot['attachments_incomplete']) || ! empty($snapshot['sensitive'])) {
+            return false;
+        }
+
+        return $this->hasStoredContent() || $this->canReconstructFromSnapshot();
+    }
+
+    public function canReconstructFromSnapshot(): bool
+    {
+        $snapshot = $this->payload_snapshot ?? [];
+
+        if (! empty($snapshot['sensitive']) || ! empty($snapshot['attachments_incomplete'])) {
+            return false;
+        }
+
+        $template = $snapshot['template'] ?? null;
+
+        return is_string($template)
+            && $template !== ''
+            && is_array($snapshot['data'] ?? null);
+    }
+
+    public function permanentRetryBlockReason(): ?string
+    {
+        if ($this->hasRetryablePayload()) {
+            return null;
+        }
+
+        $snapshot = $this->payload_snapshot ?? [];
+
+        if (! empty($snapshot['sensitive'])) {
+            return self::SENSITIVE_RETRY_MESSAGE;
+        }
+
+        if (! empty($snapshot['attachments_incomplete'])) {
+            return 'This email cannot be retried because an attachment could not be stored with the log.';
+        }
+
+        if (! empty($snapshot['content_omit_reason']) && is_string($snapshot['content_omit_reason'])) {
+            return $snapshot['content_omit_reason'];
+        }
+
+        return self::HISTORICAL_RETRY_MESSAGE;
+    }
+
+    public function retryBlockReason(): ?string
+    {
+        return $this->temporaryRetryBlockReason() ?? $this->permanentRetryBlockReason();
     }
 
     /**

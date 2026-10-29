@@ -78,6 +78,7 @@ class EmailLogController extends Controller
                 'message' => $result['message'],
                 'status' => $emailLog->status,
                 'retry_count' => $emailLog->retryCount(),
+                'alternative' => $result['alternative'] ?? null,
             ], $result['status_code']);
         }
 

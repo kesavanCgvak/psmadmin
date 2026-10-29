@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Models\EmailLog;
 use App\Models\User;
 use App\Models\UserProfile;
+use App\Support\EmailLogContext;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Facades\Log;
 
@@ -164,27 +165,41 @@ class LogEmailSending
     private function buildSnapshot($message, ?array $existing): array
     {
         $existing = $existing ?? [];
+        $context = EmailLogContext::current();
         $html = $this->normalizeBody(method_exists($message, 'getHtmlBody') ? $message->getHtmlBody() : null);
         $text = $this->normalizeBody(method_exists($message, 'getTextBody') ? $message->getTextBody() : null);
+        $subject = method_exists($message, 'getSubject') ? $message->getSubject() : null;
+        $sensitive = (bool) ($context['sensitive'] ?? false)
+            || EmailLogContext::looksSensitive($subject, $html, $text)
+            || (! empty($existing['sensitive']) && $html === null && $text === null);
 
         $snapshot = [
+            'template' => $context['template'] ?? ($existing['template'] ?? null),
+            'data' => $context['data'] ?? ($existing['data'] ?? []),
+            'sensitive' => $sensitive,
             'to' => $this->extractAddresses(method_exists($message, 'getTo') ? $message->getTo() : null),
             'cc' => $this->extractAddresses(method_exists($message, 'getCc') ? $message->getCc() : null),
             'bcc' => $this->extractAddresses(method_exists($message, 'getBcc') ? $message->getBcc() : null),
             'reply_to' => $this->extractAddresses(method_exists($message, 'getReplyTo') ? $message->getReplyTo() : null),
-            'html' => $html,
-            'text' => $text,
+            'html' => $sensitive ? null : $html,
+            'text' => $sensitive ? null : $text,
             'attachments' => [],
         ];
 
-        $bodyTooLarge = ($html !== null && strlen($html) > self::MAX_BODY_BYTES)
-            || ($text !== null && strlen($text) > self::MAX_BODY_BYTES);
+        if ($sensitive) {
+            $snapshot['content_omit_reason'] = EmailLog::SENSITIVE_OMIT_REASON;
+        }
+
+        $bodyTooLarge = ! $sensitive && (
+            ($html !== null && strlen($html) > self::MAX_BODY_BYTES)
+            || ($text !== null && strlen($text) > self::MAX_BODY_BYTES)
+        );
 
         if ($bodyTooLarge) {
             $snapshot['html'] = null;
             $snapshot['text'] = null;
             $snapshot['content_omit_reason'] = 'Message body exceeded the storage limit and was not kept for retry.';
-        } elseif ($html === null && $text === null) {
+        } elseif (! $sensitive && $html === null && $text === null) {
             $snapshot['html'] = $existing['html'] ?? null;
             $snapshot['text'] = $existing['text'] ?? null;
             if (isset($existing['content_omit_reason'])) {
@@ -192,17 +207,21 @@ class LogEmailSending
             }
         }
 
-        $attachments = $this->extractAttachments($message);
-        if ($attachments['incomplete']) {
+        if ($sensitive) {
             $snapshot['attachments'] = [];
-            $snapshot['attachments_incomplete'] = true;
-        } elseif ($attachments['items'] === [] && ! empty($existing['attachments']) && $html === null && $text === null) {
-            $snapshot['attachments'] = $existing['attachments'];
-            if (! empty($existing['attachments_incomplete'])) {
-                $snapshot['attachments_incomplete'] = true;
-            }
         } else {
-            $snapshot['attachments'] = $attachments['items'];
+            $attachments = $this->extractAttachments($message);
+            if ($attachments['incomplete']) {
+                $snapshot['attachments'] = [];
+                $snapshot['attachments_incomplete'] = true;
+            } elseif ($attachments['items'] === [] && ! empty($existing['attachments']) && $html === null && $text === null) {
+                $snapshot['attachments'] = $existing['attachments'];
+                if (! empty($existing['attachments_incomplete'])) {
+                    $snapshot['attachments_incomplete'] = true;
+                }
+            } else {
+                $snapshot['attachments'] = $attachments['items'];
+            }
         }
 
         if (isset($existing['retry']) && is_array($existing['retry'])) {

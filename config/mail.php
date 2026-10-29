@@ -173,4 +173,17 @@ return [
     */
     'logo_url' => env('EMAIL_LOGO_URL', null),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Admin email-log retries
+    |--------------------------------------------------------------------------
+    | After the host rejects mail for the hourly limit, manual retries pause
+    | for this many seconds. Retries stay one at a time. There is no automatic
+    | resend loop.
+    |
+    */
+    'retry' => [
+        'rate_limit_cooldown_seconds' => (int) env('EMAIL_RETRY_RATE_LIMIT_COOLDOWN', 900),
+    ],
+
 ];

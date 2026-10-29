@@ -1,6 +1,6 @@
 @if($emailLog->acceptsRetryAction())
     @php
-        $retryBlockReason = $emailLog->temporaryRetryBlockReason();
+        $retryBlockReason = $emailLog->retryBlockReason();
     @endphp
     @if($retryBlockReason)
         <button type="button" class="btn btn-warning btn-sm {{ !empty($showLabel) ? 'btn-block' : '' }}" disabled title="{{ $retryBlockReason }}">

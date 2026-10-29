@@ -111,13 +111,12 @@
                 <div class="card-body">
                     <dl class="row mb-0">
                         <dt class="col-sm-4">Available to resend</dt>
-                        <dd class="col-sm-8">
-                            @if($emailLog->hasStoredContent() && empty($snapshot['attachments_incomplete']))
-                                Yes
-                            @else
-                                No
-                            @endif
-                        </dd>
+                        <dd class="col-sm-8">{{ $emailLog->hasRetryablePayload() ? 'Yes' : 'No' }}</dd>
+
+                        @if(!empty($snapshot['template']))
+                            <dt class="col-sm-4">Template</dt>
+                            <dd class="col-sm-8"><code>{{ $snapshot['template'] }}</code></dd>
+                        @endif
 
                         @if(!empty($snapshot['cc']))
                             <dt class="col-sm-4">Cc</dt>
@@ -149,9 +148,18 @@
                             <dd class="col-sm-8">An attachment could not be stored, so this email cannot be resent in full.</dd>
                         @endif
                     </dl>
-                    <p class="text-muted mb-0 mt-3">
-                        Message content is stored so a pending or failed email can be resent. The body is not shown here.
-                    </p>
+                    @if($emailLog->acceptsRetryAction() && $emailLog->retryBlockReason())
+                        <p class="text-muted mb-0 mt-3">{{ $emailLog->retryBlockReason() }}</p>
+                    @elseif($emailLog->hasRetryablePayload())
+                        <p class="text-muted mb-0 mt-3">
+                            The stored message can be submitted to the mail transport again. That does not confirm the recipient received it. The body is not shown here.
+                        </p>
+                    @endif
+                    @if($emailLog->acceptsRetryAction() && $emailLog->related_user_id && ! $emailLog->hasRetryablePayload())
+                        <a href="{{ route('admin.users.show', $emailLog->related_user_id) }}" class="btn btn-default btn-sm mt-3">
+                            View related user
+                        </a>
+                    @endif
                 </div>
             </div>
         </div>
