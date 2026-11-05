@@ -70,6 +70,7 @@ class LogEmailSending
                     'mail_class' => $mailClass ?: null,
                     'payload_snapshot' => $this->buildSnapshot($message, null),
                     'related_user_id' => $relatedUserId,
+                    'reference_id' => $this->extractReferenceId($message),
                 ]);
             }
 
@@ -133,6 +134,18 @@ class LogEmailSending
         }
 
         return $result;
+    }
+
+    private function extractReferenceId($message): ?int
+    {
+        $value = $this->extractHeaderValue($message, EmailLog::REFERENCE_ID_HEADER);
+        if ($value === null || ! ctype_digit($value)) {
+            return null;
+        }
+
+        $id = (int) $value;
+
+        return $id > 0 ? $id : null;
     }
 
     private function extractMailClass($message): ?string

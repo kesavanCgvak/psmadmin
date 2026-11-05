@@ -159,21 +159,11 @@ Common paths:
 
 ---
 
-### Method 3: Using wget or curl
+### Method 3: Do not call cron.php over HTTP
 
-If PHP CLI doesn't work, use HTTP request:
+`https://your-domain/cron.php` returns **404**. The web root is `public/`, and `cron.php` is in the Laravel project root, next to `artisan`. There is no `public/cron.php` and no `/cron.php` route. `wget` or `curl` to that URL never starts the scheduler.
 
-```bash
-wget -q -O - https://yourdomain.com/cron.php > /dev/null 2>&1
-```
-
-OR
-
-```bash
-curl -s https://yourdomain.com/cron.php > /dev/null 2>&1
-```
-
-**Note:** This requires `cron.php` to be accessible via web (in `public/` folder or with proper routing).
+Use the PHP 8.3+ CLI binary on the file path instead. Do not move `cron.php` into `public/`.
 
 ---
 
@@ -191,11 +181,16 @@ chmod 644 cron.php
 
 ## Testing the Script
 
-### Test 1: Run via Browser
+### Test 1: Run with PHP CLI
 
-1. Upload `cron.php` to your project root
-2. Access via browser: `https://yourdomain.com/cron.php`
-3. Should see output (or blank if no tasks due)
+Opening `https://yourdomain.com/cron.php` in a browser returns 404. Run the file directly:
+
+```bash
+php -v
+php /absolute/path/to/psmadmin/cron.php
+```
+
+Then read `storage/logs/queue-scheduler-debug.log`. Lines are prefixed with `[QUEUE_SCHEDULER_DEBUG]`. A 404 with no new line in that file means PHP never started `cron.php`.
 
 ### Test 2: Run via SSH (if available)
 
@@ -247,8 +242,8 @@ Upload `cron.php` to your Laravel project root (same folder as `artisan`, `compo
 ### Step 4: Verify
 
 - Check cron logs in cPanel
-- Check Laravel logs: `storage/logs/laravel.log`
-- Test manually by accessing `cron.php` via browser
+- Check `storage/logs/queue-scheduler-debug.log` and `storage/logs/laravel.log`
+- Test with `php /absolute/path/to/cron.php`, not a browser URL
 
 ---
 

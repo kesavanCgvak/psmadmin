@@ -14,6 +14,10 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Throwable;
 
+/**
+ * Legacy fan-out for notification rows already stored in the queue.
+ * New chat messages send offline email during the request instead of dispatching this job.
+ */
 class ProcessChatMessageNotificationsJob implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;

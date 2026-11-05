@@ -19,3 +19,12 @@ Schedule::command('email-logs:mark-stale-failed --minutes=60')->hourly();
 
 // Reconcile provider inventory trial incentives (safety net for missed hooks)
 Schedule::command('subscriptions:evaluate-trial-incentives')->daily();
+
+// Shared hosting cannot keep a daemon alive. The existing once-a-minute cron
+// (cron.php -> schedule:run) drains the database queue, then exits.
+// Job-level $tries still override --tries. --max-time stops a long run.
+Schedule::command(
+    'queue:work --queue=default --stop-when-empty --tries=3 --max-time=50'
+)
+    ->everyMinute()
+    ->withoutOverlapping();

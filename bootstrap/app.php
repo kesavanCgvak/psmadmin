@@ -10,7 +10,9 @@ use App\Support\ChatLog;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tymon\JWTAuth\Exceptions\JWTException;
 use Tymon\JWTAuth\Exceptions\TokenExpiredException;
 use Tymon\JWTAuth\Exceptions\TokenInvalidException;
@@ -44,6 +46,26 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Temporary: Http 404s are not reported, so this render hook is what
+        // records a browser or wget request for /cron.php. Returning null keeps
+        // the normal 404 response. public/cron.php does not exist, so the
+        // front controller receives the URL and matches no route.
+        $exceptions->renderable(function (NotFoundHttpException $e, $request) {
+            $uri = $request->getRequestUri();
+            if (! str_contains($uri, 'cron.php')) {
+                return null;
+            }
+
+            Log::warning('[QUEUE_SCHEDULER_DEBUG] http_404', [
+                'status' => $e->getStatusCode(),
+                'path' => $request->path(),
+                'method' => $request->method(),
+                'note' => 'cron.php is outside public/. Run it with the PHP CLI, not an HTTP URL.',
+            ]);
+
+            return null;
+        });
+
         $exceptions->reportable(function (AccessDeniedHttpException $e) {
             $request = request();
             if ($request->is('api/broadcasting/auth')) {

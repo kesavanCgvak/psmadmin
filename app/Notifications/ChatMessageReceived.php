@@ -25,8 +25,8 @@ class ChatMessageReceived extends Notification
 
     /**
      * Browser/desktop notifications are delivered by the frontend Notification API
-     * using the `chat.message.sent` Reverb payload. Offline email is sent by
-     * SendChatEmailNotificationJob; this class remains the payload/mail shape.
+     * using the `chat.message.sent` Reverb payload. Offline email is sent
+     * directly by ChatNotificationService; this class remains the mail shape.
      *
      * @return list<string>
      */
@@ -49,6 +49,7 @@ class ChatMessageReceived extends Notification
             preview: Str::limit(trim((string) $this->message->message), 80),
             conversationUrl: ChatUrls::conversation((int) $this->conversation->id),
             conversationId: (int) $this->conversation->id,
+            messageId: (int) $this->message->id,
         );
     }
 

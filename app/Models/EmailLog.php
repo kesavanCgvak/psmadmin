@@ -43,6 +43,8 @@ class EmailLog extends Model
 
     public const TYPE_PSM_PRODUCT_SUBMISSION = 'PSM Product Submission';
 
+    public const TYPE_CHAT_NOTIFICATION = 'Chat Notification';
+
     public const HISTORICAL_RETRY_MESSAGE = 'This email was logged before its message was stored. The subject and recipient are not enough to reproduce the original message. No message was sent.';
 
     public const SENSITIVE_RETRY_MESSAGE = 'This email contained a password or a one-time link, so the original message was not kept. Send a new email from the account or password-reset flow. No message was sent.';
@@ -57,6 +59,8 @@ class EmailLog extends Model
     public const EMAIL_TYPE_HEADER = 'X-Email-Type';
 
     public const MAIL_CLASS_HEADER = 'X-Mail-Class';
+
+    public const REFERENCE_ID_HEADER = 'X-Email-Reference-Id';
 
     public function relatedUser(): BelongsTo
     {
@@ -275,6 +279,7 @@ class EmailLog extends Model
             $shortName = class_basename($mailClass);
             $classMap = [
                 'PsmProductSubmitted' => self::TYPE_PSM_PRODUCT_SUBMISSION,
+                'ChatMessageReceivedMail' => self::TYPE_CHAT_NOTIFICATION,
             ];
 
             return $classMap[$shortName] ?? $shortName;

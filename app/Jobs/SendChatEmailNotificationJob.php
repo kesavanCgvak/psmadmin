@@ -2,19 +2,15 @@
 
 namespace App\Jobs;
 
-use App\Mail\ChatMessageReceivedMail;
 use App\Models\ChatNotificationLog;
-use App\Models\User;
-use App\Support\ChatIdentity;
+use App\Services\ChatNotificationService;
 use App\Support\ChatLog;
-use App\Support\ChatUrls;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -38,60 +34,9 @@ class SendChatEmailNotificationJob implements ShouldBeUnique, ShouldQueue
         return 'chat-email-log-'.$this->notificationLogId;
     }
 
-    public function handle(): void
+    public function handle(ChatNotificationService $notifications): void
     {
-        $log = ChatNotificationLog::query()->find($this->notificationLogId);
-        if (! $log || $log->channel !== ChatNotificationLog::CHANNEL_EMAIL) {
-            return;
-        }
-
-        if ($log->isTerminal()) {
-            return;
-        }
-
-        $recipient = User::query()->with('profile')->find($log->user_id);
-        $message = $log->message()->withTrashed()->first();
-        $conversation = $log->conversation()->with(['companyA', 'companyB'])->first();
-        $sender = $message?->sender()->with('profile')->first();
-
-        if (! $recipient || ! $message || ! $conversation || ! $sender || $message->trashed()) {
-            $this->mark($log, ChatNotificationLog::STATUS_SKIPPED, 'missing_related_records');
-
-            return;
-        }
-
-        if ((int) $recipient->id === (int) $sender->id) {
-            $this->mark($log, ChatNotificationLog::STATUS_SKIPPED, 'self');
-
-            return;
-        }
-
-        if (! $conversation->hasCompanyParticipant($recipient)) {
-            $this->mark($log, ChatNotificationLog::STATUS_SKIPPED, 'not_participant');
-
-            return;
-        }
-
-        $email = trim((string) ($recipient->preferred_email ?: $recipient->email ?: ''));
-        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $this->mark($log, ChatNotificationLog::STATUS_SKIPPED, 'no_email');
-
-            return;
-        }
-
-        $senderCompanyName = $this->companyName($conversation, (int) $message->sender_company_id);
-        $preview = Str::limit(trim((string) $message->message), 80);
-
-        Mail::to($email)->send(new ChatMessageReceivedMail(
-            recipientName: ChatIdentity::displayName($recipient),
-            senderName: ChatIdentity::displayName($sender),
-            senderCompanyName: $senderCompanyName ?: 'a company',
-            preview: $preview,
-            conversationUrl: ChatUrls::conversation((int) $conversation->id),
-            conversationId: (int) $conversation->id,
-        ));
-
-        $this->mark($log, ChatNotificationLog::STATUS_SENT);
+        $notifications->deliverEmailNotification($this->notificationLogId);
     }
 
     public function failed(?Throwable $exception = null): void
@@ -114,18 +59,5 @@ class SendChatEmailNotificationJob implements ShouldBeUnique, ShouldQueue
             'error_message' => $error,
             'processed_at' => now(),
         ])->save();
-    }
-
-    private function companyName($conversation, int $companyId): ?string
-    {
-        if ((int) $conversation->company_a_id === $companyId) {
-            return $conversation->companyA?->name;
-        }
-
-        if ((int) $conversation->company_b_id === $companyId) {
-            return $conversation->companyB?->name;
-        }
-
-        return null;
     }
 }

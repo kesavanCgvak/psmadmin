@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Mail\ChatMessageReceivedMail;
 use App\Models\EmailLog;
 use App\Notifications\PsmProductSubmitted;
 use Tests\TestCase;
@@ -21,6 +22,14 @@ class EmailLogTypeTest extends TestCase
         $this->assertSame(
             EmailLog::TYPE_PSM_PRODUCT_SUBMISSION,
             EmailLog::inferEmailType(null, PsmProductSubmitted::class)
+        );
+    }
+
+    public function test_chat_notification_type_is_inferred_from_the_mailable(): void
+    {
+        $this->assertSame(
+            EmailLog::TYPE_CHAT_NOTIFICATION,
+            EmailLog::inferEmailType(null, ChatMessageReceivedMail::class)
         );
     }
 }

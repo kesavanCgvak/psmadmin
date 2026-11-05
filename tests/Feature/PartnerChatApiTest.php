@@ -8,6 +8,7 @@ use App\Models\ChatConversation;
 use App\Models\ChatExternalConversation;
 use App\Models\ChatExternalMessage;
 use App\Models\ChatMessage;
+use App\Models\ChatNotificationLog;
 use App\Models\Company;
 use App\Models\ProviderApiKey;
 use App\Models\User;
@@ -21,6 +22,7 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -41,6 +43,7 @@ class PartnerChatApiTest extends TestCase
             'chat.partner_rate_limit_per_minute' => 60,
         ]);
         Bus::fake([ProcessChatMessageNotificationsJob::class]);
+        Mail::fake();
     }
 
     protected function tearDown(): void
@@ -101,11 +104,15 @@ class PartnerChatApiTest extends TestCase
                 && $event->recipientUserIds === [(int) $renter->id];
         });
 
-        Bus::assertDispatched(ProcessChatMessageNotificationsJob::class, function (ProcessChatMessageNotificationsJob $job) use ($providerUser, $conversation, $message) {
-            return $job->senderUserId === (int) $providerUser->id
-                && $job->conversationId === (int) $conversation->id
-                && $job->messageId === (int) $message->id;
-        });
+        Bus::assertNotDispatched(ProcessChatMessageNotificationsJob::class);
+        $this->assertTrue(
+            ChatNotificationLog::query()
+                ->where('user_id', $renter->id)
+                ->where('message_id', $message->id)
+                ->where('conversation_id', $conversation->id)
+                ->where('channel', ChatNotificationLog::CHANNEL_EMAIL)
+                ->exists()
+        );
 
         $this->withToken($this->tokenFor($renter))
             ->getJson('/api/chat/conversations')
@@ -342,7 +349,8 @@ class PartnerChatApiTest extends TestCase
         $this->assertSame(1, ChatMessage::query()->count());
         $this->assertSame(1, ChatExternalMessage::query()->count());
         Event::assertDispatchedTimes(ChatMessageSent::class, 1);
-        Bus::assertDispatchedTimes(ProcessChatMessageNotificationsJob::class, 1);
+        Bus::assertNotDispatched(ProcessChatMessageNotificationsJob::class);
+        $this->assertSame(1, ChatNotificationLog::query()->where('channel', ChatNotificationLog::CHANNEL_EMAIL)->count());
     }
 
     public function test_reused_external_message_id_with_a_different_body_or_conversation_conflicts(): void
@@ -383,7 +391,8 @@ class PartnerChatApiTest extends TestCase
             (int) ChatExternalConversation::query()->where('company_id', $providerCompany->id)->value('conversation_id')
         );
         Event::assertDispatchedTimes(ChatMessageSent::class, 1);
-        Bus::assertDispatchedTimes(ProcessChatMessageNotificationsJob::class, 1);
+        Bus::assertNotDispatched(ProcessChatMessageNotificationsJob::class);
+        $this->assertSame(1, ChatNotificationLog::query()->where('channel', ChatNotificationLog::CHANNEL_EMAIL)->count());
     }
 
     /**
@@ -884,7 +893,8 @@ class PartnerChatApiTest extends TestCase
         $this->assertSame('2026-10-12 09:30:00', $conversation->fresh()->updated_at?->format('Y-m-d H:i:s'));
         $this->assertSame(1, ChatMessage::query()->count());
         Event::assertDispatchedTimes(ChatMessageSent::class, 1);
-        Bus::assertDispatchedTimes(ProcessChatMessageNotificationsJob::class, 1);
+        Bus::assertNotDispatched(ProcessChatMessageNotificationsJob::class);
+        $this->assertSame(1, ChatNotificationLog::query()->where('channel', ChatNotificationLog::CHANNEL_EMAIL)->count());
     }
 
     public function test_retry_of_a_deleted_message_does_not_create_a_replacement(): void

@@ -13,6 +13,9 @@ use App\Models\ChatMessage;
 use App\Models\ChatNotificationLog;
 use App\Services\ChatNotificationService;
 use App\Support\ChatUrls;
+use Illuminate\Broadcasting\BroadcastException;
+use Illuminate\Contracts\Broadcasting\Broadcaster;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
@@ -64,9 +67,14 @@ class ChatPhase4Test extends TestCase
         $this->assertSame(0, ChatNotificationLog::query()->where('status', ChatNotificationLog::STATUS_SENT)->count());
     }
 
-    public function test_offline_user_is_queued_email_when_enabled(): void
+    public function test_offline_user_receives_direct_email_when_enabled(): void
     {
-        Queue::fake([SendChatEmailNotificationJob::class, SendChatSmsNotificationJob::class]);
+        Mail::fake();
+        Queue::fake([
+            ProcessChatMessageNotificationsJob::class,
+            SendChatEmailNotificationJob::class,
+            SendChatSmsNotificationJob::class,
+        ]);
 
         [$userA] = $this->createCompanyUsers('Company A', 'user', ['Alice A']);
         [$user1, $companyB] = $this->createCompanyUsers('Company B', 'provider', ['User 1']);
@@ -79,14 +87,48 @@ class ChatPhase4Test extends TestCase
             ])
             ->assertCreated();
 
-        Queue::assertPushed(SendChatEmailNotificationJob::class);
+        Queue::assertNotPushed(ProcessChatMessageNotificationsJob::class);
+        Queue::assertNotPushed(SendChatEmailNotificationJob::class);
         Queue::assertNotPushed(SendChatSmsNotificationJob::class);
-        $this->assertTrue(
+        Mail::assertSent(ChatMessageReceivedMail::class, fn (ChatMessageReceivedMail $mail) => $mail->hasTo($user1->email));
+        $this->assertSame(
+            ChatNotificationLog::STATUS_SENT,
             ChatNotificationLog::query()
                 ->where('user_id', $user1->id)
                 ->where('channel', ChatNotificationLog::CHANNEL_EMAIL)
-                ->where('status', ChatNotificationLog::STATUS_PENDING)
-                ->exists()
+                ->value('status')
+        );
+    }
+
+    public function test_offline_user_receives_email_when_reverb_broadcast_throws(): void
+    {
+        Mail::fake();
+        $this->broadcastFailuresThrow(new BroadcastException('Pusher error: Reverb connection refused.'));
+
+        [$userA] = $this->createCompanyUsers('Company A', 'user', ['Alice A']);
+        [$user1, $companyB] = $this->createCompanyUsers('Company B', 'provider', ['User 1']);
+        $this->setLastSeen($user1, null);
+        $this->setChatNotificationPrefs($user1, ['email_notifications_enabled' => true]);
+        $conversationId = $this->openConversation($userA, $companyB->id);
+
+        $this->withToken($this->tokenFor($userA))
+            ->postJson("/api/chat/conversations/{$conversationId}/messages", [
+                'message' => 'Offline email must still send',
+            ])
+            ->assertCreated();
+
+        $this->assertGreaterThan(0, (int) $this->app->make('chat.test.broadcast_attempts'));
+        $this->assertSame(1, ChatMessage::query()->count());
+        Mail::assertSent(ChatMessageReceivedMail::class, function (ChatMessageReceivedMail $mail) use ($user1) {
+            return $mail->hasTo($user1->email)
+                && $mail->preview === 'Offline email must still send';
+        });
+        $this->assertSame(
+            ChatNotificationLog::STATUS_SENT,
+            ChatNotificationLog::query()
+                ->where('user_id', $user1->id)
+                ->where('channel', ChatNotificationLog::CHANNEL_EMAIL)
+                ->value('status')
         );
     }
 
@@ -518,6 +560,41 @@ class ChatPhase4Test extends TestCase
         $this->assertStringContainsString('Company A', $captured);
         $this->assertStringNotContainsString('12345', $captured);
         $this->assertStringNotContainsString('Secret quote', $captured);
+    }
+
+    private function broadcastFailuresThrow(BroadcastException $exception): void
+    {
+        $this->app->instance('chat.test.broadcast_attempts', 0);
+        config([
+            'broadcasting.default' => 'failing-reverb',
+            'broadcasting.connections.failing-reverb' => [
+                'driver' => 'failing-reverb',
+            ],
+        ]);
+
+        Broadcast::extend('failing-reverb', function () use ($exception) {
+            return new class($exception) implements Broadcaster
+            {
+                public function __construct(private BroadcastException $exception) {}
+
+                public function auth($request) {}
+
+                public function validAuthenticationResponse($request, $result) {}
+
+                public function broadcast(array $channels, $event, array $payload = [])
+                {
+                    app()->instance(
+                        'chat.test.broadcast_attempts',
+                        (int) app('chat.test.broadcast_attempts') + 1
+                    );
+
+                    throw $this->exception;
+                }
+            };
+        });
+
+        Broadcast::purge('failing-reverb');
+        Broadcast::forgetDrivers();
     }
 
     /**

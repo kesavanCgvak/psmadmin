@@ -6,7 +6,6 @@ use App\Events\ChatMessageDeleted;
 use App\Events\ChatMessageSent;
 use App\Events\ChatMessagesRead;
 use App\Events\ChatUserTyping;
-use App\Jobs\ProcessChatMessageNotificationsJob;
 use App\Models\ChatConversation;
 use App\Models\ChatConversationUserState;
 use App\Models\ChatMessage;
@@ -294,16 +293,22 @@ class ChatService
             defaultContactUserId: $defaultContactUserId,
         );
         $event->dontBroadcastToCurrentUser();
-        event($event);
 
         try {
-            ProcessChatMessageNotificationsJob::dispatch(
-                (int) $chatMessage->id,
-                (int) $conversation->id,
-                (int) $sender->id,
-            );
+            event($event);
         } catch (Throwable $e) {
-            ChatLog::error('Failed to queue chat notifications', [
+            ChatLog::broadcastFailed('chat.message.sent', $e, [
+                'conversation_id' => $conversation->id,
+                'message_id' => $chatMessage->id,
+                'sender_user_id' => $sender->id,
+                'sender_company_id' => $senderCompanyId,
+            ]);
+        }
+
+        try {
+            app(ChatNotificationService::class)->processMessage($chatMessage, $conversation, $sender);
+        } catch (Throwable $e) {
+            ChatLog::error('Failed to process chat notifications', [
                 'message_id' => $chatMessage->id,
                 'conversation_id' => $conversation->id,
                 'sender_user_id' => $sender->id,

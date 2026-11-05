@@ -3,23 +3,32 @@
 namespace App\Services;
 
 use App\Contracts\SmsProvider;
-use App\Jobs\SendChatEmailNotificationJob;
 use App\Jobs\SendChatSmsNotificationJob;
+use App\Mail\ChatMessageReceivedMail;
 use App\Models\ChatConversation;
 use App\Models\ChatMessage;
 use App\Models\ChatNotificationLog;
 use App\Models\ChatUserSetting;
+use App\Models\EmailLog;
 use App\Models\User;
+use App\Support\ChatIdentity;
 use App\Support\ChatLog;
+use App\Support\ChatUrls;
+use App\Support\EmailLogContext;
 use App\Support\UserPresence;
 use Illuminate\Database\QueryException;
+use Illuminate\Mail\SentMessage;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+use Illuminate\Support\Testing\Fakes\MailFake;
 use Throwable;
 
 class ChatNotificationService
 {
     /**
      * Fan out offline email/SMS for a persisted company-to-company message.
+     * Email is sent during this call. SMS remains a queued job.
      * Recipients are always derived from the conversation on the backend.
      */
     public function processMessage(ChatMessage $message, ChatConversation $conversation, User $sender): void
@@ -164,24 +173,238 @@ class ChatNotificationService
             ChatNotificationLog::STATUS_PENDING
         );
 
-        if ($log === null || $log->isTerminal()) {
+        if ($log === null || $log->isTerminal() || $log->status === ChatNotificationLog::STATUS_FAILED) {
             return;
         }
 
-        if ($log->status === ChatNotificationLog::STATUS_FAILED) {
+        $this->transmitEmail($log, $message, $conversation, $sender, $recipient);
+    }
+
+    /**
+     * Send one previously claimed email notification.
+     * Used by leftover queued jobs. New messages call this path inline.
+     */
+    public function deliverEmailNotification(int $notificationLogId): void
+    {
+        $log = ChatNotificationLog::query()->find($notificationLogId);
+        if (! $log || $log->channel !== ChatNotificationLog::CHANNEL_EMAIL) {
             return;
         }
+
+        if ($log->isTerminal() || $log->status === ChatNotificationLog::STATUS_FAILED) {
+            return;
+        }
+
+        $recipient = User::query()->with('profile')->find($log->user_id);
+        $message = $log->message()->withTrashed()->first();
+        $conversation = $log->conversation()->with(['companyA', 'companyB'])->first();
+        $sender = $message?->sender()->with('profile')->first();
+
+        if (! $recipient || ! $message || ! $conversation || ! $sender || $message->trashed()) {
+            $this->mark($log, ChatNotificationLog::STATUS_SKIPPED, 'missing_related_records');
+
+            return;
+        }
+
+        if ((int) $recipient->id === (int) $sender->id) {
+            $this->mark($log, ChatNotificationLog::STATUS_SKIPPED, 'self');
+
+            return;
+        }
+
+        if (! $conversation->hasCompanyParticipant($recipient)) {
+            $this->mark($log, ChatNotificationLog::STATUS_SKIPPED, 'not_participant');
+
+            return;
+        }
+
+        if ($this->recipientEmail($recipient) === null) {
+            $this->mark($log, ChatNotificationLog::STATUS_SKIPPED, 'no_email');
+
+            return;
+        }
+
+        $this->transmitEmail($log, $message, $conversation, $sender, $recipient);
+    }
+
+    private function transmitEmail(
+        ChatNotificationLog $log,
+        ChatMessage $message,
+        ChatConversation $conversation,
+        User $sender,
+        User $recipient
+    ): void {
+        $email = $this->recipientEmail($recipient);
+        if ($email === null) {
+            $this->mark($log, ChatNotificationLog::STATUS_SKIPPED, 'no_email');
+
+            return;
+        }
+
+        $senderName = ChatIdentity::displayName($sender);
+        $senderCompanyName = $this->companyName($conversation, (int) $message->sender_company_id) ?: 'a company';
+        $preview = Str::limit(trim((string) $message->message), 80);
+        $subject = sprintf('New message from %s at %s', $senderName, $senderCompanyName);
+
+        $mailable = new ChatMessageReceivedMail(
+            recipientName: ChatIdentity::displayName($recipient),
+            senderName: $senderName,
+            senderCompanyName: $senderCompanyName,
+            preview: $preview,
+            conversationUrl: ChatUrls::conversation((int) $conversation->id),
+            conversationId: (int) $conversation->id,
+            messageId: (int) $message->id,
+        );
 
         try {
-            SendChatEmailNotificationJob::dispatch((int) $log->id);
+            EmailLogContext::begin('chat_message_received', [
+                'conversation_id' => (int) $conversation->id,
+                'message_id' => (int) $message->id,
+                'recipient_user_id' => (int) $recipient->id,
+            ]);
+
+            $result = Mail::to($email)->send($mailable);
+            $accepted = $result instanceof SentMessage || Mail::getFacadeRoot() instanceof MailFake;
+
+            if (! $accepted) {
+                $reason = 'The mail transport did not accept the message.';
+                $this->recordChatEmailFailure($email, $subject, $reason, $recipient, $message);
+                $this->mark($log, ChatNotificationLog::STATUS_FAILED, $reason);
+                ChatLog::error('Chat email notification was not accepted', [
+                    'notification_log_id' => $log->id,
+                    'message_id' => $message->id,
+                    'conversation_id' => $conversation->id,
+                    'recipient_user_id' => $recipient->id,
+                ]);
+
+                return;
+            }
+
+            $this->confirmEmailLogAccepted($email, $subject, $message);
+            $this->mark($log, ChatNotificationLog::STATUS_SENT);
         } catch (Throwable $e) {
-            ChatLog::error('Chat email notification dispatch failed', [
+            $reason = Str::limit($e->getMessage(), 500);
+            $this->recordChatEmailFailure($email, $subject, $e->getMessage(), $recipient, $message);
+            $this->mark($log, ChatNotificationLog::STATUS_FAILED, $reason);
+            ChatLog::error('Chat email notification failed', [
                 'notification_log_id' => $log->id,
                 'message_id' => $message->id,
+                'conversation_id' => $conversation->id,
                 'recipient_user_id' => $recipient->id,
                 'exception' => $e->getMessage(),
             ]);
+        } finally {
+            EmailLogContext::clear();
         }
+    }
+
+    private function confirmEmailLogAccepted(string $toEmail, string $subject, ChatMessage $message): void
+    {
+        try {
+            $existing = $this->recentChatEmailLog($toEmail, $subject, (int) $message->id);
+            if (! $existing || $existing->status !== EmailLog::STATUS_PENDING) {
+                return;
+            }
+
+            if (! $existing->reference_id) {
+                $existing->reference_id = $message->id;
+            }
+
+            $existing->recordSubmittedToTransport();
+        } catch (Throwable $e) {
+            ChatLog::warning('Chat email log could not be marked sent', [
+                'message_id' => $message->id,
+                'to_email' => $toEmail,
+                'exception' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function recordChatEmailFailure(
+        string $toEmail,
+        string $subject,
+        string $reason,
+        User $recipient,
+        ChatMessage $message
+    ): void {
+        $reason = trim($reason);
+        if ($reason === '') {
+            $reason = 'The mail transport rejected the message.';
+        }
+
+        try {
+            $existing = $this->recentChatEmailLog($toEmail, $subject, (int) $message->id);
+
+            if ($existing && (int) $existing->reference_id === (int) $message->id) {
+                if ($existing->status !== EmailLog::STATUS_SENT) {
+                    $existing->recordTransportFailure($reason);
+                }
+
+                return;
+            }
+
+            if ($existing && $existing->status === EmailLog::STATUS_PENDING && ! $existing->reference_id) {
+                $existing->reference_id = $message->id;
+                $existing->recordTransportFailure($reason);
+
+                return;
+            }
+
+            EmailLog::create([
+                'from_email' => config('mail.from.address'),
+                'to_email' => $toEmail,
+                'subject' => $subject,
+                'email_type' => EmailLog::TYPE_CHAT_NOTIFICATION,
+                'status' => EmailLog::STATUS_FAILED,
+                'failure_reason' => mb_substr($reason, 0, 2000),
+                'related_user_id' => $recipient->id,
+                'reference_id' => $message->id,
+                'mail_class' => ChatMessageReceivedMail::class,
+                'payload_snapshot' => [
+                    'template' => 'chat_message_received',
+                    'data' => [
+                        'conversation_id' => (int) $message->conversation_id,
+                        'message_id' => (int) $message->id,
+                        'recipient_user_id' => (int) $recipient->id,
+                    ],
+                    'sensitive' => false,
+                    'to' => [$toEmail],
+                    'cc' => [],
+                    'bcc' => [],
+                    'reply_to' => [],
+                    'html' => null,
+                    'text' => null,
+                    'attachments' => [],
+                ],
+            ]);
+        } catch (Throwable $e) {
+            ChatLog::error('Chat email log could not be marked failed', [
+                'message_id' => $message->id,
+                'to_email' => $toEmail,
+                'exception' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function recentChatEmailLog(string $toEmail, string $subject, int $messageId): ?EmailLog
+    {
+        $byReference = EmailLog::query()
+            ->where('to_email', $toEmail)
+            ->where('reference_id', $messageId)
+            ->where('mail_class', ChatMessageReceivedMail::class)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($byReference) {
+            return $byReference;
+        }
+
+        return EmailLog::query()
+            ->where('to_email', $toEmail)
+            ->where('subject', $subject)
+            ->where('created_at', '>=', now()->subSeconds(15))
+            ->orderByDesc('id')
+            ->first();
     }
 
     private function queueSmsIfNeeded(
@@ -347,5 +570,27 @@ class ChatNotificationService
         }
 
         return $log;
+    }
+
+    private function mark(ChatNotificationLog $log, string $status, ?string $error = null): void
+    {
+        $log->forceFill([
+            'status' => $status,
+            'error_message' => $error,
+            'processed_at' => now(),
+        ])->save();
+    }
+
+    private function companyName(ChatConversation $conversation, int $companyId): ?string
+    {
+        if ((int) $conversation->company_a_id === $companyId) {
+            return $conversation->companyA?->name;
+        }
+
+        if ((int) $conversation->company_b_id === $companyId) {
+            return $conversation->companyB?->name;
+        }
+
+        return null;
     }
 }
