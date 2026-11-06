@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Helpers\EmailHelper;
 use App\Http\Controllers\Controller;
-use App\Models\SupportRequest;
-use App\Models\IssueType;
 use App\Models\ContactSales;
+use App\Models\IssueType;
+use App\Models\SupportRequest;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
@@ -23,10 +24,10 @@ class SupportRequestController extends Controller
             // Authenticate user via JWT
             $user = JWTAuth::parseToken()->authenticate();
 
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'User not authenticated'
+                    'message' => 'User not authenticated',
                 ], 401);
             }
 
@@ -41,16 +42,16 @@ class SupportRequestController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
             // Verify issue type is active
             $issueType = IssueType::findOrFail($request->issue_type_id);
-            if (!$issueType->is_active) {
+            if (! $issueType->is_active) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Selected issue type is not available'
+                    'message' => 'Selected issue type is not available',
                 ], 422);
             }
 
@@ -95,25 +96,49 @@ class SupportRequestController extends Controller
             // Get support inbox email from config or env
             $supportEmail = config('mail.support_inbox', env('SUPPORT_INBOX_EMAIL', config('mail.from.address')));
 
-            // Send email to support inbox
+            // Send email to support inbox.
+            // The SMTP server rejects user domains such as gmail.com as the From address,
+            // so the message is sent from the application mailbox and replies go to the user.
             try {
+                $replyToEmail = trim((string) ($user->email ?: $user->preferred_email ?: $request->email));
+                $replyToName = trim((string) ($profile?->full_name ?: $user->username ?: ''));
+                $fromAddress = trim((string) config('mail.from.address'));
+                $fromName = trim((string) config('mail.from.name'));
+
                 Log::info('Sending support request email', [
                     'support_email' => $supportEmail,
                     'subject' => $subject,
                     'email' => $request->email,
-                    'name' => $profile->full_name,
+                    'name' => $replyToName,
+                    'from' => $fromAddress,
                 ]);
 
-                \App\Helpers\EmailHelper::send('support-request', $emailData, function ($message) use ($supportEmail, $subject, $request, $profile) {
+                $sent = EmailHelper::send('support-request', $emailData, function ($message) use ($supportEmail, $subject, $replyToEmail, $replyToName, $fromAddress, $fromName) {
                     $message->to($supportEmail)
-                        ->subject('New Support Request: ' . $subject)
-                        ->from($request->email, $profile->full_name);
+                        ->subject('New Support Request: '.$subject);
+
+                    if ($fromAddress !== '') {
+                        $message->from($fromAddress, $fromName !== '' ? $fromName : null);
+                    }
+
+                    if ($replyToEmail !== '') {
+                        $replyToName !== ''
+                            ? $message->replyTo($replyToEmail, $replyToName)
+                            : $message->replyTo($replyToEmail);
+                    }
                 });
 
-                Log::info('Support request email sent', [
-                    'support_request_id' => $supportRequest->id,
-                    'support_email' => $supportEmail,
-                ]);
+                if ($sent) {
+                    Log::info('Support request email sent', [
+                        'support_request_id' => $supportRequest->id,
+                        'support_email' => $supportEmail,
+                    ]);
+                } else {
+                    Log::error('Failed to send support request email', [
+                        'support_request_id' => $supportRequest->id,
+                        'support_email' => $supportEmail,
+                    ]);
+                }
             } catch (\Exception $e) {
                 // Log email error but don't fail the request
                 Log::error('Failed to send support request email', [
@@ -129,24 +154,24 @@ class SupportRequestController extends Controller
                     'id' => $supportRequest->id,
                     'status' => $supportRequest->status,
                     'created_at' => $supportRequest->created_at->toISOString(),
-                ]
+                ],
             ], 201);
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        } catch (ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Issue type not found'
+                'message' => 'Issue type not found',
             ], 404);
 
         } catch (\Throwable $e) {
             Log::error('Failed to submit support request', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Unable to submit support request. Please try again later.'
+                'message' => 'Unable to submit support request. Please try again later.',
             ], 500);
         }
     }
@@ -170,7 +195,7 @@ class SupportRequestController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
@@ -208,11 +233,11 @@ class SupportRequestController extends Controller
                 ]);
 
                 // Get sales inbox email from config or env
-            $salesEmail = config('mail.sales_inbox', env('SALES_INBOX_EMAIL', config('mail.from.address')));
+                $salesEmail = config('mail.sales_inbox', env('SALES_INBOX_EMAIL', config('mail.from.address')));
 
-                \App\Helpers\EmailHelper::send('contact-sales', $emailData, function ($message) use ($salesEmail, $request) {
+                EmailHelper::send('contact-sales', $emailData, function ($message) use ($salesEmail, $request) {
                     $message->to($salesEmail)
-                        ->subject('New Contact Sales Inquiry from ' . $request->name)
+                        ->subject('New Contact Sales Inquiry from '.$request->name)
                         ->from($request->email, $request->name);
                 });
             } catch (\Exception $e) {
@@ -231,18 +256,18 @@ class SupportRequestController extends Controller
                 'data' => [
                     'id' => $contactSales->id,
                     'submitted_at' => $contactSales->created_at->toISOString(),
-                ]
+                ],
             ], 201);
 
         } catch (\Throwable $e) {
             Log::error('Failed to submit contact sales inquiry', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Unable to submit your inquiry. Please try again later.'
+                'message' => 'Unable to submit your inquiry. Please try again later.',
             ], 500);
         }
     }

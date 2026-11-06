@@ -212,6 +212,8 @@
             </div>
         </div>
     </div>
+
+    @include('admin.email-logs.partials.action-loader')
 @stop
 
 @section('js')

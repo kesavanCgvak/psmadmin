@@ -2,6 +2,7 @@
 
 namespace App\Helpers;
 
+use App\Models\EmailLog;
 use App\Models\EmailTemplate;
 use App\Services\EmailTemplateService;
 use App\Support\EmailLogContext;
@@ -89,9 +90,10 @@ class EmailHelper
                 'error' => $e->getMessage(),
             ]);
 
-            // Only fallback if template doesn't exist in DB
+            // Only fallback if template doesn't exist in DB and the transport
+            // was never reached. A pending log means the message was already rejected.
             $templateInDb = EmailTemplate::where('name', $templateName)->first();
-            if (! $templateInDb) {
+            if (! $templateInDb && ! self::hasPendingLog($templateName)) {
                 try {
                     Mail::send("emails.{$templateName}", $data, $callback);
 
@@ -101,12 +103,49 @@ class EmailHelper
                         'template' => $templateName,
                         'error' => $fallbackError->getMessage(),
                     ]);
+                    self::recordTransportFailure($templateName, $fallbackError->getMessage());
 
                     return false;
                 }
             }
 
+            self::recordTransportFailure($templateName, $e->getMessage());
+
             return false;
+        }
+    }
+
+    /**
+     * The sending listener creates a pending row before the transport runs.
+     * A thrown send leaves that row pending unless it is marked failed here.
+     */
+    private static function hasPendingLog(string $templateName): bool
+    {
+        return self::pendingLog($templateName) !== null;
+    }
+
+    private static function pendingLog(string $templateName): ?EmailLog
+    {
+        return EmailLog::query()
+            ->where('status', EmailLog::STATUS_PENDING)
+            ->where('created_at', '>=', now()->subSeconds(15))
+            ->orderByDesc('id')
+            ->limit(5)
+            ->get()
+            ->first(function (EmailLog $log) use ($templateName) {
+                return ($log->payload_snapshot['template'] ?? null) === $templateName;
+            });
+    }
+
+    private static function recordTransportFailure(string $templateName, string $reason): void
+    {
+        try {
+            self::pendingLog($templateName)?->recordTransportFailure($reason);
+        } catch (\Throwable $e) {
+            Log::error('Failed to record email transport failure', [
+                'template' => $templateName,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }
