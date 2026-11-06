@@ -424,6 +424,27 @@ class EmailLogRetryTest extends TestCase
         $this->assertCount(0, $this->transportMessages());
     }
 
+    public function test_email_log_pages_include_the_full_page_action_loader(): void
+    {
+        $admin = $this->admin();
+        $log = $this->logWithContent(EmailLog::STATUS_FAILED);
+
+        $index = $this->actingAs($admin)->get(route('admin.email-logs.index'));
+        $index->assertOk();
+        $index->assertSee('id="emailLogActionLoader"', false);
+        $index->assertSee('Processing your request...', false);
+        $index->assertSee('emailLogActionLoader.show()', false);
+        $index->assertSee('js-email-retry-form', false);
+        $index->assertDontSee('bulk-delete', false);
+
+        $show = $this->actingAs($admin)->get(route('admin.email-logs.show', $log));
+        $show->assertOk();
+        $show->assertSee('id="emailLogActionLoader"', false);
+        $show->assertSee('Processing your request...', false);
+        $show->assertSee('if (!window.confirm(', false);
+        $show->assertSee('emailLogActionLoader.show()', false);
+    }
+
     public function test_form_retry_refreshes_the_log_page_with_a_success_notification(): void
     {
         $admin = $this->admin();
