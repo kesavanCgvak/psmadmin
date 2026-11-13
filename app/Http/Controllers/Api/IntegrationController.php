@@ -8,16 +8,14 @@ use App\Models\CompanyIntegration;
 use App\Services\Integrations\CompanyIntegrationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
 class IntegrationController extends Controller
 {
-    public function __construct(private readonly CompanyIntegrationService $integrationService)
-    {
-    }
+    public function __construct(private readonly CompanyIntegrationService $integrationService) {}
 
     /**
      * Store or update API credentials for an integration.
@@ -30,7 +28,7 @@ class IntegrationController extends Controller
             $user = JWTAuth::parseToken()->authenticate();
             $companyId = $user->company_id ?? null;
 
-            if (!$companyId) {
+            if (! $companyId) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Company not found for this user.',
@@ -38,7 +36,7 @@ class IntegrationController extends Controller
             }
 
             $normalizedType = strtolower((string) $request->input('integration_type'));
-            if ($normalizedType === 'rentman' && !$request->filled('api_key') && $request->filled('auth_token')) {
+            if ($normalizedType === 'rentman' && ! $request->filled('api_key') && $request->filled('auth_token')) {
                 $request->merge(['api_key' => $request->input('auth_token')]);
             }
             $request->merge(['integration_type' => $normalizedType]);
@@ -61,7 +59,10 @@ class IntegrationController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Integration credentials saved successfully.',
-                'data' => $this->formatIntegrationResponse($integration),
+                'data' => $this->formatIntegrationResponse(
+                    $integration,
+                    $this->integrationService->validatedHireHopAccount()
+                ),
             ], 200);
 
         } catch (IntegrationValidationException $e) {
@@ -75,6 +76,7 @@ class IntegrationController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Unable to save integration credentials.',
@@ -93,7 +95,7 @@ class IntegrationController extends Controller
             $user = JWTAuth::parseToken()->authenticate();
             $companyId = $user->company_id ?? null;
 
-            if (!$companyId) {
+            if (! $companyId) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Company not found for this user.',
@@ -104,8 +106,9 @@ class IntegrationController extends Controller
                 ->where('integration_type', $integration_type)
                 ->first();
 
-            if (!$integration) {
+            if (! $integration) {
                 $usesApiKey = $this->integrationService->usesApiKey($integration_type);
+
                 return response()->json([
                     'success' => true,
                     'data' => [
@@ -130,6 +133,7 @@ class IntegrationController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Unable to fetch integration configuration.',
@@ -149,7 +153,7 @@ class IntegrationController extends Controller
             $user = JWTAuth::parseToken()->authenticate();
             $authCompanyId = $user->company_id ?? null;
 
-            if (!$authCompanyId) {
+            if (! $authCompanyId) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Company not found for this user.',
@@ -218,23 +222,29 @@ class IntegrationController extends Controller
             return str_repeat('*', $length);
         }
 
-        return str_repeat('*', $length - 4) . substr($value, -4);
+        return str_repeat('*', $length - 4).substr($value, -4);
     }
 
-    private function formatIntegrationResponse(CompanyIntegration $integration): array
+    private function formatIntegrationResponse(CompanyIntegration $integration, ?array $hireHopAccount = null): array
     {
         $usesApiKey = $this->integrationService->usesApiKey($integration->integration_type);
 
-        return [
+        $payload = [
             'integration_type' => $integration->integration_type,
             'api_base_url' => $integration->api_base_url,
             'connected' => $integration->isConnected(),
-            'has_api_key' => $usesApiKey ? !empty($integration->api_key) : null,
+            'has_api_key' => $usesApiKey ? ! empty($integration->api_key) : null,
             'api_key_masked' => $usesApiKey
                 ? $this->maskSecretKeepingLastFour((string) $integration->api_key)
                 : null,
             'last_fetched_at' => $integration->last_fetched_at?->toIso8601String(),
             'last_synced_at' => $integration->last_synced_at?->toIso8601String(),
         ];
+
+        if ($hireHopAccount !== null) {
+            $payload['hirehop_account'] = $hireHopAccount;
+        }
+
+        return $payload;
     }
 }

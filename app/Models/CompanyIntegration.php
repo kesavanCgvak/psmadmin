@@ -9,9 +9,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CompanyIntegration extends Model
 {
-    use SoftDeletes, Auditable, MaintainsActiveUniqueKeys {
+    use Auditable, MaintainsActiveUniqueKeys, SoftDeletes {
         MaintainsActiveUniqueKeys::runSoftDelete insteadof SoftDeletes;
     }
+
     protected $fillable = [
         'company_id',
         'integration_type',
@@ -76,18 +77,18 @@ class CompanyIntegration extends Model
 
     /**
      * Check if the integration has valid credentials.
-     * Flex requires api_key + api_base_url; Rentman requires api_key.
+     * Flex requires api_key + api_base_url; Rentman and HireHop require api_key.
      */
     public function isConnected(): bool
     {
-        if (in_array($this->integration_type, ['flex', 'rentman'], true)) {
+        if (in_array($this->integration_type, ['flex', 'rentman', 'hirehop'], true)) {
             if ($this->integration_type === 'flex') {
-                return !empty($this->api_key) && !empty($this->api_base_url);
+                return ! empty($this->api_key) && ! empty($this->api_base_url);
             }
 
-            return !empty($this->api_key);
+            return ! empty($this->api_key);
         }
 
-        return !empty($this->client_id) && !empty($this->client_secret);
+        return ! empty($this->client_id) && ! empty($this->client_secret);
     }
 }
