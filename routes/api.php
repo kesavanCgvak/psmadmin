@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\CurrencyController;
 use App\Http\Controllers\Api\DateFormatController;
 use App\Http\Controllers\Api\EquipmentController;
 use App\Http\Controllers\Api\FlexInventoryController;
+use App\Http\Controllers\Api\HireHopInventoryController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\GeoController;
 use App\Http\Controllers\Api\ImportController;
@@ -308,6 +309,14 @@ Route::middleware(['jwt.verify'])->prefix('flex')->group(function () {
     Route::get('/import/check', [FlexInventoryController::class, 'checkImport']);
     Route::post('/import', [FlexInventoryController::class, 'import']);
     Route::post('/link-inventory', [FlexInventoryController::class, 'linkInventory']);
+});
+
+// HireHop hire-stock import. Reads GET /modules/stock/asset_assign_list.php.
+Route::middleware(['jwt.verify'])->prefix('hirehop')->group(function () {
+    Route::get('/search', [HireHopInventoryController::class, 'search']);
+    Route::get('/import/check', [HireHopInventoryController::class, 'checkImport']);
+    Route::post('/import', [HireHopInventoryController::class, 'import']);
+    Route::post('/link-inventory', [HireHopInventoryController::class, 'linkInventory']);
 });
 
 Route::middleware(['jwt.verify'])->prefix('company-inventory')->group(function () {

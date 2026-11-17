@@ -18,14 +18,16 @@ trait MaintainsActiveUniqueKeys
 
     public function syncActiveUniqueKeys(): void
     {
-        if (!$this->activeUniqueKeysAvailable()) {
+        $columns = $this->presentActiveUniqueKeyColumns();
+        if ($columns === []) {
             return;
         }
 
         $release = $this->exists && method_exists($this, 'trashed') && $this->trashed();
+        $map = $this->activeUniqueKeyMap();
 
-        foreach ($this->activeUniqueKeyMap() as $column => $value) {
-            $this->setAttribute($column, $release ? null : $value);
+        foreach ($columns as $column) {
+            $this->setAttribute($column, $release ? null : ($map[$column] ?? null));
         }
     }
 
@@ -34,11 +36,7 @@ trait MaintainsActiveUniqueKeys
      */
     public function releasedUniqueKeyColumns(): array
     {
-        if (!$this->activeUniqueKeysAvailable()) {
-            return [];
-        }
-
-        return array_keys($this->activeUniqueKeyMap());
+        return $this->presentActiveUniqueKeyColumns();
     }
 
     /**
@@ -79,25 +77,33 @@ trait MaintainsActiveUniqueKeys
         return mb_substr((string) $companyId.':'.$externalId, 0, 191);
     }
 
-    private function activeUniqueKeysAvailable(): bool
+    /**
+     * Columns from the key map that exist on this table. Schemas that predate a
+     * vendor key keep working until that column is migrated.
+     *
+     * @return list<string>
+     */
+    private function presentActiveUniqueKeyColumns(): array
     {
-        $columns = array_keys($this->activeUniqueKeyMap());
-        $column = $columns[0] ?? null;
-        if ($column === null) {
-            return false;
-        }
-
         $table = $this->getTable();
+        $wanted = array_keys($this->activeUniqueKeyMap());
 
         if (app()->environment('testing')) {
-            return Schema::hasColumn($table, $column);
+            return array_values(array_filter(
+                $wanted,
+                fn (string $column): bool => Schema::hasColumn($table, $column)
+            ));
         }
 
         static $ready = [];
-        if (!array_key_exists($table, $ready)) {
-            $ready[$table] = Schema::hasColumn($table, $column);
+        $cacheKey = $table.'|'.implode(',', $wanted);
+        if (!array_key_exists($cacheKey, $ready)) {
+            $ready[$cacheKey] = array_values(array_filter(
+                $wanted,
+                fn (string $column): bool => Schema::hasColumn($table, $column)
+            ));
         }
 
-        return $ready[$table];
+        return $ready[$cacheKey];
     }
 }

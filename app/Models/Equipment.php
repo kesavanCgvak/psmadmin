@@ -26,6 +26,7 @@ class Equipment extends Model
         'company_id',
         'flex_resource_id',
         'rentman_equipment_id',
+        'hirehop_stock_id',
         'height',
         'width',
         'length',
@@ -51,6 +52,7 @@ class Equipment extends Model
     protected $hidden = [
         'active_rentman_key',
         'active_flex_key',
+        'active_hirehop_key',
     ];
 
     /**
@@ -61,6 +63,7 @@ class Equipment extends Model
         return [
             'active_rentman_key' => $this->composeActiveKey($this->company_id, $this->rentman_equipment_id),
             'active_flex_key' => $this->composeActiveKey($this->company_id, $this->flex_resource_id),
+            'active_hirehop_key' => $this->composeActiveKey($this->company_id, $this->hirehop_stock_id),
         ];
     }
 

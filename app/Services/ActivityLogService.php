@@ -46,6 +46,7 @@ class ActivityLogService
         'integration_type',
         'rentman_equipment_id',
         'flex_resource_id',
+        'hirehop_stock_id',
         'software_code',
         'quantity',
     ];
@@ -308,6 +309,7 @@ class ActivityLogService
             'deleted_at',
             'active_rentman_key',
             'active_flex_key',
+            'active_hirehop_key',
             'active_integration_key',
         ];
 

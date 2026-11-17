@@ -470,6 +470,7 @@ final class CompanyInventorySpecs
             ] : null,
             'flex_resource_id' => $equipment->flex_resource_id,
             'rentman_equipment_id' => $equipment->rentman_equipment_id,
+            'hirehop_stock_id' => $equipment->hirehop_stock_id,
             'software_code' => $equipment->software_code,
             'quantity' => $equipment->quantity,
             'price' => $rentalPrice,
