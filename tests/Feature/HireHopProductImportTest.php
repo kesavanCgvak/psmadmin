@@ -112,6 +112,148 @@ class HireHopProductImportTest extends TestCase
         });
     }
 
+    public function test_listing_keeps_a_documented_main_id(): void
+    {
+        [$user] = $this->connect();
+        $this->fakeCatalogue([$this->row(3, '100m CAT6 cable')], 1, 10);
+
+        $this->withToken(JWTAuth::fromUser($user))
+            ->getJson('/api/hirehop/search')
+            ->assertOk()
+            ->assertJsonPath('data.0.hirehop_stock_id', '3')
+            ->assertJsonPath('data.0.name', '100m CAT6 cable')
+            ->assertJsonPath('pagination.total_records', 10)
+            ->assertJsonCount(1, 'data');
+    }
+
+    public function test_listing_uses_id_when_main_id_is_absent(): void
+    {
+        [$user] = $this->connect();
+        $this->fakeCatalogue([
+            $this->liveRow(3, '100m CAT6 cable'),
+            $this->liveRow(8, 'Apogee AE-5 Speaker'),
+        ], 1, 10);
+
+        $response = $this->withToken(JWTAuth::fromUser($user))->getJson('/api/hirehop/search');
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('pagination.page', 1)
+            ->assertJsonPath('pagination.total_pages', 1)
+            ->assertJsonPath('pagination.total_records', 10)
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.hirehop_stock_id', '3')
+            ->assertJsonPath('data.0.name', '100m CAT6 cable')
+            ->assertJsonPath('data.0.part_number', null)
+            ->assertJsonPath('data.0.barcode', null)
+            ->assertJsonPath('data.1.hirehop_stock_id', '8')
+            ->assertJsonPath('data.1.name', 'Apogee AE-5 Speaker');
+    }
+
+    public function test_listing_prefers_main_id_when_both_identifiers_are_present(): void
+    {
+        [$user] = $this->connect();
+        $row = $this->row(3, '100m CAT6 cable');
+        $row['ID'] = 99;
+        $this->fakeCatalogue([$row], 1, 1);
+
+        $this->withToken(JWTAuth::fromUser($user))
+            ->getJson('/api/hirehop/search')
+            ->assertOk()
+            ->assertJsonPath('data.0.hirehop_stock_id', '3')
+            ->assertJsonCount(1, 'data');
+    }
+
+    public function test_listing_skips_rows_without_a_numeric_id(): void
+    {
+        [$user] = $this->connect();
+        $invalidMainId = $this->liveRow(9, 'Ignored Because Main Id Wins');
+        $invalidMainId['MAIN_ID'] = 'abc';
+        $this->fakeCatalogue([
+            ['TITLE' => 'No id'],
+            ['ID' => 'nope', 'TITLE' => 'Not numeric'],
+            ['ID' => null, 'TITLE' => 'Null id'],
+            ['MAIN_ID' => '', 'ID' => 6, 'TITLE' => 'Empty main id is present'],
+            $invalidMainId,
+            $this->liveRow(4, 'Kept Speaker'),
+        ], 1, 6);
+
+        $response = $this->withToken(JWTAuth::fromUser($user))->getJson('/api/hirehop/search');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.hirehop_stock_id', '4')
+            ->assertJsonPath('data.0.name', 'Kept Speaker')
+            ->assertJsonPath('pagination.total_records', 6);
+    }
+
+    public function test_title_search_returns_products_identified_by_id(): void
+    {
+        [$user] = $this->connect();
+        Http::preventStrayRequests();
+        Http::fake(function (Request $request) {
+            $query = $this->queryOf($request);
+            $filter = json_decode((string) ($query['pq_filter'] ?? ''), true);
+            $value = (string) ($filter['data'][0]['value'] ?? '');
+            $rows = [
+                $this->liveRow(8, 'Apogee AE-5 Speaker'),
+                $this->liveRow(3, '100m CAT6 cable'),
+            ];
+            $selected = array_values(array_filter(
+                $rows,
+                fn (array $row): bool => ($filter['data'][0]['dataIndx'] ?? null) === 'TITLE'
+                    && str_contains((string) $row['TITLE'], $value)
+            ));
+
+            return Http::response($this->payload($selected, 1, 1, count($selected)), 200);
+        });
+
+        $this->withToken(JWTAuth::fromUser($user))
+            ->getJson('/api/hirehop/search?keyword=Apogee')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.hirehop_stock_id', '8')
+            ->assertJsonPath('data.0.name', 'Apogee AE-5 Speaker')
+            ->assertJsonPath('pagination.total_records', 1);
+
+        $this->assertHireHopRequest(function (array $query): bool {
+            $filter = json_decode((string) ($query['pq_filter'] ?? ''), true);
+
+            return ($filter['data'][0]['dataIndx'] ?? null) === 'TITLE'
+                && ($filter['data'][0]['value'] ?? null) === 'Apogee';
+        });
+    }
+
+    public function test_import_stores_the_live_id(): void
+    {
+        [$user, $company] = $this->connect();
+        $this->fakeCatalogue([$this->liveRow(8, 'Apogee AE-5 Speaker')]);
+
+        $imported = $this->withToken(JWTAuth::fromUser($user))->postJson('/api/hirehop/import', [
+            'hirehop_stock_id' => '8',
+            'quantity' => 2,
+        ]);
+
+        $imported->assertCreated()->assertJsonPath('hirehop_stock_id', '8');
+        $this->assertSame('8', (string) Equipment::query()->findOrFail($imported->json('inventory_id'))->hirehop_stock_id);
+        $this->assertSame(['MAIN_ID', 'ID'], $this->stockFilterIndexes());
+    }
+
+    public function test_link_stores_the_live_id(): void
+    {
+        [$user, $company] = $this->connect();
+        $inventory = $this->inventory($user, $company, 'Speaker');
+        $this->fakeCatalogue([$this->liveRow(8, 'Apogee AE-5 Speaker')]);
+
+        $this->withToken(JWTAuth::fromUser($user))->postJson('/api/hirehop/link-inventory', [
+            'inventory_id' => $inventory->id,
+            'hirehop_stock_id' => '8',
+        ])->assertOk()->assertJsonPath('hirehop_stock_id', '8');
+
+        $this->assertSame('8', (string) $inventory->fresh()->hirehop_stock_id);
+        $this->assertSame(['MAIN_ID', 'ID'], $this->stockFilterIndexes());
+    }
+
     public function test_short_keyword_is_rejected_without_calling_hirehop(): void
     {
         [$user] = $this->connect();
@@ -654,11 +796,12 @@ class HireHopProductImportTest extends TestCase
             $query = $this->queryOf($request);
             $filter = json_decode((string) ($query['pq_filter'] ?? ''), true);
             $selected = $rows;
-            if (($filter['data'][0]['dataIndx'] ?? null) === 'MAIN_ID') {
+            $index = $filter['data'][0]['dataIndx'] ?? null;
+            if ($index === 'MAIN_ID' || $index === 'ID') {
                 $wanted = (string) $filter['data'][0]['value'];
                 $selected = array_values(array_filter(
                     $rows,
-                    fn (array $row): bool => (string) $row['MAIN_ID'] === $wanted
+                    fn (array $row): bool => array_key_exists($index, $row) && (string) $row[$index] === $wanted
                 ));
             }
 
@@ -700,6 +843,23 @@ class HireHopProductImportTest extends TestCase
             'BARCODE' => $barcode,
             'STATUS' => 0,
             'CUSTOM_FIELDS' => ['secret' => self::TOKEN],
+        ];
+    }
+
+    /**
+     * Shape returned by the live asset_assign_list endpoint: ID, and no MAIN_ID.
+     *
+     * @return array<string, mixed>
+     */
+    private function liveRow(int $id, string $title): array
+    {
+        return [
+            'ID' => $id,
+            'TITLE' => $title,
+            'PART_NUMBER' => null,
+            'STATUS' => 0,
+            'BARCODE' => null,
+            'CUSTOM_FIELDS' => null,
         ];
     }
 
@@ -789,6 +949,20 @@ class HireHopProductImportTest extends TestCase
         });
 
         return $logged;
+    }
+
+    /**
+     * @return list<string|null>
+     */
+    private function stockFilterIndexes(): array
+    {
+        $indexes = [];
+        foreach (Http::recorded() as [$request]) {
+            $filter = json_decode((string) ($this->queryOf($request)['pq_filter'] ?? ''), true);
+            $indexes[] = $filter['data'][0]['dataIndx'] ?? null;
+        }
+
+        return $indexes;
     }
 
     private function assertTokenIsAbsent(\ArrayObject $logged): void

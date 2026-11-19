@@ -15,8 +15,9 @@ use Illuminate\Support\Facades\Log;
  * HireHop hire-stock reads for one company.
  *
  * Uses GET /modules/stock/asset_assign_list.php (filter=rental). The deprecated
- * /modules/stock/list.php endpoint is not called. Each rental row is identified
- * by MAIN_ID.
+ * /modules/stock/list.php endpoint is not called. The documented row id is
+ * MAIN_ID. Live responses identify the same row with ID, and MAIN_ID wins
+ * when both are present.
  */
 class HireHopService
 {
@@ -137,8 +138,13 @@ class HireHopService
     }
 
     /**
-     * One rental product by MAIN_ID. Returns null when that id is not in the
-     * filtered page. Does not walk the catalogue.
+     * One rental product by its stock id. Returns null when that id is not in
+     * the filtered page. Does not walk the catalogue.
+     *
+     * asset_assign_list documents MAIN_ID and does not list the pq_filter
+     * indexes it accepts. The documented filter is tried first. Live rows use
+     * ID and a strict MAIN_ID filter excludes them, so ID is tried only when
+     * the first page has no match.
      *
      * @return array<string, mixed>|null
      */
@@ -159,23 +165,23 @@ class HireHopService
             (int) config('hirehop.list_rows_min', 20),
             (int) config('hirehop.list_rows_default', 20)
         );
-        $payload = $this->get([
+        $query = [
             'filter' => 'rental',
             'del' => '0',
             'page' => 1,
             'rows' => $rows,
-            'pq_filter' => $this->pqFilter('MAIN_ID', $this->filterValue($stockId)),
-        ]);
+        ];
 
-        $match = null;
-        foreach ($this->productsFromPayload($payload) as $product) {
-            $this->storeCache($this->cacheKey('item', [$product['hirehop_stock_id']]), $product);
-            if ($product['hirehop_stock_id'] === $stockId) {
-                $match = $product;
-            }
+        $match = $this->matchStockOnPage($this->get($query + [
+            'pq_filter' => $this->pqFilter('MAIN_ID', $this->filterValue($stockId)),
+        ]), $stockId);
+        if ($match !== null) {
+            return $match;
         }
 
-        return $match;
+        return $this->matchStockOnPage($this->get($query + [
+            'pq_filter' => $this->pqFilter('ID', $this->filterValue($stockId)),
+        ]), $stockId);
     }
 
     public static function canonicalStockId(mixed $value): ?string
@@ -433,7 +439,7 @@ class HireHopService
                 continue;
             }
 
-            $id = self::canonicalStockId($row['MAIN_ID'] ?? null);
+            $id = self::canonicalStockId($row['MAIN_ID'] ?? $row['ID'] ?? null);
             if ($id === null) {
                 continue;
             }
@@ -455,6 +461,23 @@ class HireHopService
         }
 
         return $products;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>|null
+     */
+    private function matchStockOnPage(array $payload, string $stockId): ?array
+    {
+        $match = null;
+        foreach ($this->productsFromPayload($payload) as $product) {
+            $this->storeCache($this->cacheKey('item', [$product['hirehop_stock_id']]), $product);
+            if ($product['hirehop_stock_id'] === $stockId) {
+                $match = $product;
+            }
+        }
+
+        return $match;
     }
 
     private function text(mixed $value): ?string

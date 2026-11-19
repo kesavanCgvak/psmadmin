@@ -16,7 +16,8 @@ return [
 
     /*
     | Supported hire-stock list. /modules/stock/list.php is deprecated and is
-    | not called. Rows are rental products identified by MAIN_ID.
+    | not called. The documented row id is MAIN_ID. Live rows may send ID
+    | instead, and MAIN_ID is preferred when both are present.
     */
     'stock_list_path' => '/modules/stock/asset_assign_list.php',
 
