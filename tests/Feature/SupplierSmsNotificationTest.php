@@ -330,6 +330,88 @@ class SupplierSmsNotificationTest extends TestCase
         $this->assertStringNotContainsString('SendSupplierSmsJob', $service);
     }
 
+    public function test_twilio_21610_is_marked_permanently_failed(): void
+    {
+        $sms = $this->mockSms();
+        $sms->shouldReceive('sendSms')->once()->andReturn($this->unsubscribedResponse());
+
+        $scenario = $this->scenario('2026-11-22', '+16155551234');
+        SupplierSmsNotifier::notifyIfNeeded($scenario['supply'], $scenario['rental'], $scenario['renter']);
+
+        $log = SmsLog::query()->first();
+        $this->assertSame(SmsLog::STATUS_FAILED, $log->status);
+        $this->assertTrue($log->isRecipientUnsubscribed());
+        $this->assertSame(1, $log->attempts);
+        $this->assertStringContainsString('Permanent: '.SmsLog::FAILURE_RECIPIENT_UNSUBSCRIBED, $log->error_message);
+    }
+
+    public function test_twilio_21610_is_not_retried(): void
+    {
+        $this->useDatabaseQueue();
+        $sms = $this->mockSms();
+        $sms->shouldReceive('sendSms')->once()->andReturn($this->unsubscribedResponse());
+
+        $scenario = $this->scenario('2026-11-22', '+16155551234');
+        $this->assertTrue(SupplierSmsNotifier::notifyIfNeeded(
+            $scenario['supply'],
+            $scenario['rental'],
+            $scenario['renter']
+        ));
+        $this->assertSame(1, DB::table('jobs')->count());
+
+        $this->artisan('queue:work', ['--once' => true, '--queue' => 'default', '--tries' => 3]);
+
+        $this->assertSame(0, DB::table('jobs')->count());
+        $this->assertSame(SmsLog::STATUS_FAILED, SmsLog::query()->value('status'));
+        $this->assertSame(1, SmsLog::query()->value('attempts'));
+    }
+
+    public function test_twilio_21610_stores_the_error_code_and_message(): void
+    {
+        $sms = $this->mockSms();
+        $sms->shouldReceive('sendSms')->once()->andReturn($this->unsubscribedResponse());
+
+        $scenario = $this->scenario('2026-11-22', '+16155551234');
+        SupplierSmsNotifier::notifyIfNeeded($scenario['supply'], $scenario['rental'], $scenario['renter']);
+
+        $log = SmsLog::query()->first();
+        $this->assertSame(21610, $log->provider_response['body']['code'] ?? null);
+        $this->assertSame('Attempt to send to unsubscribed recipient', $log->provider_response['body']['message'] ?? null);
+        $this->assertStringContainsString('Twilio 21610: Attempt to send to unsubscribed recipient', $log->error_message);
+    }
+
+    public function test_scheduled_command_does_not_retry_an_unsubscribed_recipient(): void
+    {
+        $sms = $this->mockSms();
+        $sms->shouldReceive('sendSms')->once()->andReturn($this->unsubscribedResponse());
+
+        $scenario = $this->scenario('2026-11-22', '+16155551234');
+        SupplierSmsNotifier::notifyIfNeeded($scenario['supply'], $scenario['rental'], $scenario['renter']);
+
+        $this->artisan('sms:send-eligible-supplier-notifications')->assertSuccessful();
+        $this->artisan('sms:send-eligible-supplier-notifications')->assertSuccessful();
+
+        $this->assertSame(1, SmsLog::query()->count());
+        $this->assertTrue(SmsLog::query()->first()->isRecipientUnsubscribed());
+    }
+
+    public function test_admin_sms_log_shows_the_unsubscribed_failure_reason(): void
+    {
+        $sms = $this->mockSms();
+        $sms->shouldReceive('sendSms')->once()->andReturn($this->unsubscribedResponse());
+
+        $scenario = $this->scenario('2026-11-22', '+16155551234');
+        SupplierSmsNotifier::notifyIfNeeded($scenario['supply'], $scenario['rental'], $scenario['renter']);
+
+        $html = view('admin.sms-logs.partials.unsubscribed', [
+            'smsLog' => SmsLog::query()->first(),
+        ])->render();
+
+        $this->assertStringContainsString('Failure reason: Recipient unsubscribed', $html);
+        $this->assertStringContainsString('Twilio error code: 21610', $html);
+        $this->assertStringContainsString('Twilio error message: Attempt to send to unsubscribed recipient', $html);
+    }
+
     public function test_scheduler_registers_the_supplier_sms_command(): void
     {
         $event = collect(app(Schedule::class)->events())
@@ -426,6 +508,24 @@ class SupplierSmsNotificationTest extends TestCase
         $this->app->instance(SmsProvider::class, $sms);
 
         return $sms;
+    }
+
+    /**
+     * @return array{success: bool, error: string, response: array{status: int, body: array{code: int, message: string, status: int}}}
+     */
+    private function unsubscribedResponse(): array
+    {
+        $body = [
+            'code' => 21610,
+            'message' => 'Attempt to send to unsubscribed recipient',
+            'status' => 400,
+        ];
+
+        return [
+            'success' => false,
+            'error' => json_encode($body),
+            'response' => ['status' => 400, 'body' => $body],
+        ];
     }
 
     /**

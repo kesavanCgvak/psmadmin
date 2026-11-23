@@ -56,6 +56,11 @@ class SmsLog extends Model
 
     public const SKIP_MOBILE_INVALID = 'Skipped: supplier mobile number is invalid.';
 
+    /** Stored on the existing failed status. The sms_logs enum has no separate permanently_failed value. */
+    public const FAILURE_RECIPIENT_UNSUBSCRIBED = 'recipient_unsubscribed';
+
+    public const TWILIO_UNSUBSCRIBED_CODE = 21610;
+
     public function isSkip(): bool
     {
         return $this->status === self::STATUS_FAILED
@@ -67,6 +72,24 @@ class SmsLog extends Model
     {
         return is_string($this->error_message)
             && str_starts_with($this->error_message, self::SKIP_OUTSIDE_WINDOW);
+    }
+
+    public function isRecipientUnsubscribed(): bool
+    {
+        return $this->status === self::STATUS_FAILED
+            && is_string($this->error_message)
+            && str_contains($this->error_message, self::FAILURE_RECIPIENT_UNSUBSCRIBED);
+    }
+
+    public static function unsubscribedFailureMessage(string $twilioMessage): string
+    {
+        $twilioMessage = trim($twilioMessage);
+        if ($twilioMessage === '') {
+            $twilioMessage = 'Attempt to send to unsubscribed recipient';
+        }
+
+        return 'Permanent: '.self::FAILURE_RECIPIENT_UNSUBSCRIBED
+            .'. Twilio '.self::TWILIO_UNSUBSCRIBED_CODE.': '.$twilioMessage;
     }
 
     /**

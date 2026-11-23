@@ -123,7 +123,9 @@ class SendSupplierSmsJob implements ShouldQueue
         }
 
         $error = $smsLogger->sanitizeError($result['error'] ?? 'Unknown') ?? 'Unknown';
-        $permanent = $this->isPermanentFailure($result);
+        $twilioError = $this->twilioError($result);
+        $unsubscribed = $twilioError['code'] === SmsLog::TWILIO_UNSUBSCRIBED_CODE;
+        $permanent = $unsubscribed || $this->isPermanentFailure($twilioError, $error);
         $final = $permanent || $this->attempts() >= $this->tries();
 
         Log::error('SendSupplierSmsJob: SMS send failed.', [
@@ -137,9 +139,16 @@ class SendSupplierSmsJob implements ShouldQueue
         ]);
 
         if ($final) {
+            $failureMessage = $error;
+            if ($unsubscribed) {
+                $failureMessage = SmsLog::unsubscribedFailureMessage($twilioError['message']);
+            } elseif ($permanent) {
+                $failureMessage = 'Permanent: '.$error;
+            }
+
             $smsLogger->markFailed(
                 $smsLog,
-                ($permanent ? 'Permanent: ' : '').$error,
+                $failureMessage,
                 $result['response'] ?? null,
                 $this->attempts()
             );
@@ -236,19 +245,57 @@ class SendSupplierSmsJob implements ShouldQueue
     }
 
     /**
-     * @param  array<string, mixed>  $result
+     * @param  array{code: int, message: string}  $twilioError
      */
-    private function isPermanentFailure(array $result): bool
+    private function isPermanentFailure(array $twilioError, string $error): bool
     {
-        $error = (string) ($result['error'] ?? '');
-
         if (str_contains($error, 'Invalid mobile number') || str_contains($error, 'not configured')) {
             return true;
         }
 
-        $body = is_array($result['response'] ?? null) ? ($result['response']['body'] ?? null) : null;
-        $code = is_array($body) ? (int) ($body['code'] ?? 0) : 0;
+        return in_array($twilioError['code'], self::PERMANENT_TWILIO_CODES, true);
+    }
 
-        return in_array($code, self::PERMANENT_TWILIO_CODES, true);
+    /**
+     * Read Twilio's error code from a decoded body or from the raw response string.
+     *
+     * @param  array<string, mixed>  $result
+     * @return array{code: int, message: string}
+     */
+    private function twilioError(array $result): array
+    {
+        $response = $result['response'] ?? null;
+        $candidates = [];
+
+        if (is_array($response)) {
+            $candidates[] = $response['body'] ?? null;
+            $candidates[] = $response;
+        }
+
+        $candidates[] = $result['error'] ?? null;
+
+        foreach ($candidates as $candidate) {
+            $decoded = $this->decodeTwilioPayload($candidate);
+            if ($decoded !== null && isset($decoded['code'])) {
+                return [
+                    'code' => (int) $decoded['code'],
+                    'message' => (string) ($decoded['message'] ?? ''),
+                ];
+            }
+        }
+
+        return ['code' => 0, 'message' => ''];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function decodeTwilioPayload(mixed $payload): ?array
+    {
+        if (is_string($payload)) {
+            $payload = json_decode($payload, true);
+        }
+
+        return is_array($payload) ? $payload : null;
     }
 }

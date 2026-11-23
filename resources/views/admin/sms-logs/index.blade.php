@@ -181,6 +181,7 @@
                                     @if($log->error_message)
                                         <div><small title="{{ $log->error_message }}">{{ Str::limit($log->error_message, 80) }}</small></div>
                                     @endif
+                                    @include('admin.sms-logs.partials.unsubscribed', ['smsLog' => $log])
                                 </td>
                                 <td>{{ $log->related_type ?? '-' }}</td>
                                 <td>{{ $log->related_id ?? '-' }}</td>
