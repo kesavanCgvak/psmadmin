@@ -42,8 +42,11 @@ return [
     ],
 
     // Active SMS provider used for supplier notifications: 'twilio' or 'textmagic'.
+    // lock_wait_seconds bounds how long a scheduler and a rental request will wait
+    // on the same supply job before giving up. The next scheduled run can retry.
     'sms' => [
         'driver' => env('SMS_DRIVER', 'twilio'),
+        'lock_wait_seconds' => (int) env('SMS_LOCK_WAIT_SECONDS', 5),
     ],
 
     'twilio' => [

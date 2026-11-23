@@ -59,7 +59,7 @@
                         @if($smsLog->error_message)
                             <dt class="col-sm-4">Error Message</dt>
                             <dd class="col-sm-8">
-                                <div class="alert alert-danger mb-0 py-2">{{ $smsLog->error_message }}</div>
+                                <div class="alert {{ str_starts_with($smsLog->error_message, 'Skipped:') ? 'alert-warning' : 'alert-danger' }} mb-0 py-2">{{ $smsLog->error_message }}</div>
                             </dd>
                         @endif
 

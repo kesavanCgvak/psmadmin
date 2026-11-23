@@ -20,6 +20,13 @@ Schedule::command('email-logs:mark-stale-failed --minutes=60')->hourly();
 // Reconcile provider inventory trial incentives (safety net for missed hooks)
 Schedule::command('subscriptions:evaluate-trial-incentives')->daily();
 
+// Supplier SMS becomes eligible on the day the rental start date enters the
+// 0–7 day window. 00:15 UTC, after the other midnight tasks. The overlap
+// lock expires after 10 minutes so a crashed run does not block the next day.
+Schedule::command('sms:send-eligible-supplier-notifications')
+    ->dailyAt('00:15')
+    ->withoutOverlapping(10);
+
 // Shared hosting cannot keep a daemon alive. The existing once-a-minute cron
 // (cron.php -> schedule:run) drains the database queue, then exits.
 // Job-level $tries still override --tries. --max-time stops a long run.

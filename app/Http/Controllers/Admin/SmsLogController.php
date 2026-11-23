@@ -57,7 +57,8 @@ class SmsLogController extends Controller
                     ->orWhere('phone_number', 'like', "%{$search}%")
                     ->orWhere('provider_message_id', 'like', "%{$search}%")
                     ->orWhere('related_id', 'like', "%{$search}%")
-                    ->orWhere('message', 'like', "%{$search}%");
+                    ->orWhere('message', 'like', "%{$search}%")
+                    ->orWhere('error_message', 'like', "%{$search}%");
             });
         }
 

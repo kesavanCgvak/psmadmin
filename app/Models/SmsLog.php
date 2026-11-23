@@ -42,6 +42,33 @@ class SmsLog extends Model
     public const SENT_BY_USER = 'User';
     public const SENT_BY_ADMIN = 'Admin';
 
+    public const RELATED_RENTAL_REQUEST = 'Rental Request';
+
+    public const SKIP_OUTSIDE_WINDOW = 'Skipped: rental start date is more than 7 days away.';
+
+    public const SKIP_PAST = 'Skipped: rental start date is in the past.';
+
+    public const SKIP_COMPANY_MISSING = 'Skipped: supplier company is missing.';
+
+    public const SKIP_CONTACT_MISSING = 'Skipped: supplier contact is missing.';
+
+    public const SKIP_MOBILE_MISSING = 'Skipped: supplier mobile number is missing.';
+
+    public const SKIP_MOBILE_INVALID = 'Skipped: supplier mobile number is invalid.';
+
+    public function isSkip(): bool
+    {
+        return $this->status === self::STATUS_FAILED
+            && is_string($this->error_message)
+            && str_starts_with($this->error_message, 'Skipped:');
+    }
+
+    public function isOutsideWindowSkip(): bool
+    {
+        return is_string($this->error_message)
+            && str_starts_with($this->error_message, self::SKIP_OUTSIDE_WINDOW);
+    }
+
     /**
      * All possible delivery statuses (for filter dropdowns / validation).
      *

@@ -295,8 +295,9 @@ php artisan supply-jobs:send-renter-rating-reminders
 ## Schedule Timing
 
 - **Scheduler runs:** Every minute (via cron)
-- **Commands execute:** Once per day (at 00:00 server time)
+- **Commands execute:** Once per day (at 00:00 server time, supplier SMS at 00:15)
 - **Reminder logic:** Commands check daily if reminders are due based on days elapsed
+- **Supplier SMS:** `sms:send-eligible-supplier-notifications` sends when a rental start date is inside the next 7 days. Keep a single `QUEUE_CONNECTION=database` so the same cron can retry failed Twilio calls via `queue:work`.
 
 **Example:**
 - Job completed on Jan 1
