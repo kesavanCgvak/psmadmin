@@ -22,6 +22,14 @@ class AiProviderException extends RuntimeException
 
     public const CATEGORY_UNKNOWN = 'unknown_error';
 
+    public const CATEGORY_OUTPUT_TOKEN_LIMIT = 'output_token_limit';
+
+    public const CATEGORY_REFUSAL = 'model_refusal';
+
+    public const CATEGORY_CONTENT_FILTER = 'content_filter';
+
+    public const CATEGORY_EMPTY_RESPONSE = 'empty_response';
+
     public function __construct(
         string $message,
         public readonly string $category,

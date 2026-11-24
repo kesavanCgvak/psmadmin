@@ -38,6 +38,8 @@ return [
         'initial_backoff_seconds' => (float) env('AI_RATE_LIMIT_INITIAL_BACKOFF', 1),
         'max_backoff_seconds' => (float) env('AI_RATE_LIMIT_MAX_BACKOFF', 60),
         'max_output_tokens' => (int) env('AI_MAX_OUTPUT_TOKENS', 512),
+        // Used only after finish_reason=length. The first request keeps max_output_tokens.
+        'max_output_token_retry_limit' => (int) env('AI_MAX_OUTPUT_TOKEN_RETRY_LIMIT', 2048),
     ],
 
     /*
