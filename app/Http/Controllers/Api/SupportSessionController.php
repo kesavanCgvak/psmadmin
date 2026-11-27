@@ -14,10 +14,13 @@ use Illuminate\Http\Request;
  * Start (super admin web session):
  *   POST /admin/users/{user}/assume-identity
  *   200 data: session_id, read_only, status, expires_at, expires_in,
- *       token_type, access_token, assumed_user (id, username, name, company,
- *       account_type, company_id, is_admin, role, company_profile),
- *       administrator_id.
- *       company stays the company name. company_profile is additive and has no secrets.
+ *       handshake_expires_at, token_type, access_token, assumed_user (id,
+ *       username, name, company, account_type, company_id, is_admin, role,
+ *       company_profile), administrator_id.
+ *       status is "pending" until the marketplace calls the API with the
+ *       credential, then "active". handshake_expires_at is set only while
+ *       the session is pending. company stays the company name.
+ *       company_profile is additive and has no secrets.
  *   401 unauthenticated, 403 insufficient permission, 404 unknown user,
  *   409 conflicting session, 429 rate limit.
  *

@@ -13,9 +13,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
+use Tymon\JWTAuth\Contracts\Providers\Storage as JwtStorage;
 use Tymon\JWTAuth\Exceptions\JWTException;
+use Tymon\JWTAuth\Exceptions\TokenBlacklistedException;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Tymon\JWTAuth\Payload;
+use Tymon\JWTAuth\Token;
 
 class SupportSessionService
 {
@@ -34,6 +37,17 @@ class SupportSessionService
         return $ttl;
     }
 
+    public function handshakeSeconds(): int
+    {
+        $seconds = (int) config('support_session.handshake_seconds', 90);
+
+        if ($seconds < 15 || $seconds > 180) {
+            return 90;
+        }
+
+        return $seconds;
+    }
+
     public function isPlatformAdministrator(?User $user): bool
     {
         return $user !== null && $user->role === 'super_admin';
@@ -47,17 +61,38 @@ class SupportSessionService
         $this->assertCanStart($admin);
 
         try {
-            return DB::transaction(function () use ($admin, $target, $request) {
-                User::query()->whereKey($target->id)->lockForUpdate()->first();
-
-                $conflict = SupportSession::query()
-                    ->where('assumed_user_id', $target->id)
-                    ->where('status', SupportSession::STATUS_ACTIVE)
-                    ->where('expires_at', '>', now())
+            $result = DB::transaction(function () use ($admin, $target, $request) {
+                $open = SupportSession::query()
+                    ->where(function ($query) use ($admin, $target) {
+                        $query->where('assumed_user_id', $target->id)
+                            ->orWhere('admin_user_id', $admin->id);
+                    })
+                    ->whereIn('status', [SupportSession::STATUS_ACTIVE, SupportSession::STATUS_PENDING])
+                    ->orderBy('id')
                     ->lockForUpdate()
-                    ->first();
+                    ->get();
 
-                if ($conflict && (int) $conflict->admin_user_id !== (int) $admin->id) {
+                $superseded = [];
+
+                foreach ($open as $existing) {
+                    if ($this->isStale($existing)) {
+                        $previous = $existing->status;
+                        $this->markEnded($existing, $this->staleReason($existing));
+                        $this->auditEnded($existing, $previous);
+                        $superseded[] = $existing;
+
+                        continue;
+                    }
+
+                    if ((int) $existing->admin_user_id === (int) $admin->id) {
+                        $previous = $existing->status;
+                        $this->markEnded($existing, SupportSession::REASON_SUPERSEDED);
+                        $this->auditEnded($existing, $previous);
+                        $superseded[] = $existing;
+
+                        continue;
+                    }
+
                     throw new SupportSessionException(
                         'conflict',
                         'This user already has an active support session.',
@@ -65,31 +100,10 @@ class SupportSessionService
                     );
                 }
 
-                $ownSessions = SupportSession::query()
-                    ->where('admin_user_id', $admin->id)
-                    ->where('status', SupportSession::STATUS_ACTIVE)
-                    ->lockForUpdate()
-                    ->get();
-
-                foreach ($ownSessions as $existing) {
-                    $this->markEnded($existing, SupportSession::REASON_SUPERSEDED);
-                    $this->audit(
-                        ActivityLog::ACTION_SUPPORT_ENDED,
-                        $existing,
-                        ['status' => SupportSession::STATUS_ACTIVE],
-                        [
-                            'admin_user_id' => $existing->admin_user_id,
-                            'assumed_user_id' => $existing->assumed_user_id,
-                            'status' => $existing->status,
-                            'termination_reason' => $existing->termination_reason,
-                        ]
-                    );
-                }
-
                 $session = new SupportSession([
                     'admin_user_id' => $admin->id,
                     'assumed_user_id' => $target->id,
-                    'status' => SupportSession::STATUS_ACTIVE,
+                    'status' => SupportSession::STATUS_PENDING,
                     'started_at' => now(),
                     'expires_at' => now()->addMinutes($this->ttlMinutes()),
                     'ip_address' => $request->ip(),
@@ -116,10 +130,26 @@ class SupportSessionService
                     ]
                 );
 
-                return ['session' => $session->fresh(), 'token' => $token];
+                return [
+                    'session' => $session->fresh(),
+                    'token' => $token,
+                    'superseded' => $superseded,
+                ];
             });
         } catch (SupportSessionException $e) {
             throw $e;
+        } catch (JWTException $e) {
+            Log::error('Support session credential could not be issued', [
+                'admin_user_id' => $admin->id,
+                'assumed_user_id' => $target->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new SupportSessionException(
+                'token',
+                'Unable to start a support session.',
+                500
+            );
         } catch (QueryException $e) {
             Log::error('Support session could not be stored', [
                 'admin_user_id' => $admin->id,
@@ -133,6 +163,12 @@ class SupportSessionService
                 500
             );
         }
+
+        foreach ($result['superseded'] as $previous) {
+            $this->blacklistSession($previous);
+        }
+
+        return ['session' => $result['session'], 'token' => $result['token']];
     }
 
     public function endForAdministrator(User $admin, SupportSession $session): SupportSession
@@ -153,12 +189,10 @@ class SupportSessionService
             );
         }
 
-        if ($session->status !== SupportSession::STATUS_ACTIVE) {
-            throw new SupportSessionException(
-                'ended',
-                'This support session has already ended.',
-                409
-            );
+        if (! in_array($session->status, [SupportSession::STATUS_ACTIVE, SupportSession::STATUS_PENDING], true)) {
+            $this->blacklistSession($session);
+
+            return $session;
         }
 
         return $this->terminate($session, SupportSession::REASON_ADMIN_ENDED, null);
@@ -166,7 +200,19 @@ class SupportSessionService
 
     public function endForSupportRequest(Request $request): SupportSession
     {
-        $session = $this->authenticate($request);
+        try {
+            $session = $this->authenticate($request);
+        } catch (SupportSessionException $e) {
+            $finished = $this->finishedSessionForToken($request);
+            if ($finished instanceof SupportSession) {
+                $this->blacklistSession($finished);
+
+                return $finished;
+            }
+
+            throw $e;
+        }
+
         if (! $session instanceof SupportSession) {
             throw new SupportSessionException(
                 'not_support',
@@ -218,6 +264,19 @@ class SupportSessionService
 
         try {
             $payload = JWTAuth::setToken($token)->getPayload();
+        } catch (TokenBlacklistedException $e) {
+            $payload = $this->uncheckedPayload($token);
+            JWTAuth::unsetToken();
+
+            if ($payload instanceof Payload && $payload->get(SupportSession::CLAIM_USE) === SupportSession::TOKEN_USE) {
+                throw new SupportSessionException(
+                    'revoked',
+                    'Support session is invalid or has ended.',
+                    401
+                );
+            }
+
+            return null;
         } catch (JWTException $e) {
             JWTAuth::unsetToken();
 
@@ -283,6 +342,9 @@ class SupportSessionService
             'status' => $session->status,
             'expires_at' => $session->expires_at?->toIso8601String(),
             'expires_in' => $ttl,
+            'handshake_expires_at' => $session->status === SupportSession::STATUS_PENDING
+                ? $this->handshakeDeadline($session)?->toIso8601String()
+                : null,
             'assumed_user' => [
                 'id' => $assumed?->id,
                 'username' => $assumed?->username,
@@ -398,8 +460,12 @@ class SupportSessionService
             );
         }
 
-        if ($session->status === SupportSession::STATUS_ACTIVE && $session->expires_at && $session->expires_at->lte(now())) {
-            $this->terminate($session, SupportSession::REASON_EXPIRED, $token);
+        if ($session->status === SupportSession::STATUS_PENDING && ! $this->isStale($session)) {
+            $session = $this->claimActive($session);
+        }
+
+        if ($this->isStale($session)) {
+            $this->terminate($session, $this->staleReason($session), $token);
 
             throw new SupportSessionException(
                 'expired',
@@ -454,7 +520,7 @@ class SupportSessionService
 
         $ended = DB::transaction(function () use ($session, $reason, &$changed) {
             $locked = SupportSession::query()->whereKey($session->id)->lockForUpdate()->first();
-            if (! $locked || $locked->status !== SupportSession::STATUS_ACTIVE) {
+            if (! $locked || ! in_array($locked->status, [SupportSession::STATUS_ACTIVE, SupportSession::STATUS_PENDING], true)) {
                 return $locked ?? $session;
             }
 
@@ -464,25 +530,155 @@ class SupportSessionService
             return $locked->fresh() ?? $locked;
         });
 
+        $this->blacklistSession($ended);
         if ($rawToken) {
             $this->blacklist($rawToken);
         }
 
         if ($changed) {
-            $this->audit(
-                ActivityLog::ACTION_SUPPORT_ENDED,
-                $ended,
-                ['status' => SupportSession::STATUS_ACTIVE],
-                [
-                    'admin_user_id' => $ended->admin_user_id,
-                    'assumed_user_id' => $ended->assumed_user_id,
-                    'status' => $ended->status,
-                    'termination_reason' => $ended->termination_reason,
-                ]
-            );
+            $previous = $session->status;
+            $this->auditEnded($ended, $previous);
         }
 
         return $ended;
+    }
+
+    private function claimActive(SupportSession $session): SupportSession
+    {
+        return DB::transaction(function () use ($session) {
+            $locked = SupportSession::query()->whereKey($session->id)->lockForUpdate()->first();
+            if (! $locked || $locked->status !== SupportSession::STATUS_PENDING || $this->isStale($locked)) {
+                return $locked ?? $session;
+            }
+
+            $locked->status = SupportSession::STATUS_ACTIVE;
+            $locked->save();
+
+            $this->audit(
+                ActivityLog::ACTION_SUPPORT_ACTIVATED,
+                $locked,
+                ['status' => SupportSession::STATUS_PENDING],
+                [
+                    'admin_user_id' => $locked->admin_user_id,
+                    'assumed_user_id' => $locked->assumed_user_id,
+                    'status' => $locked->status,
+                ]
+            );
+
+            return $locked;
+        });
+    }
+
+    private function isStale(SupportSession $session): bool
+    {
+        if (! in_array($session->status, [SupportSession::STATUS_ACTIVE, SupportSession::STATUS_PENDING], true)) {
+            return false;
+        }
+
+        if ($session->expires_at && $session->expires_at->lte(now())) {
+            return true;
+        }
+
+        return $session->status === SupportSession::STATUS_PENDING && $this->handshakeExpired($session);
+    }
+
+    private function staleReason(SupportSession $session): string
+    {
+        if ($session->expires_at && $session->expires_at->lte(now())) {
+            return SupportSession::REASON_EXPIRED;
+        }
+
+        return SupportSession::REASON_HANDSHAKE;
+    }
+
+    private function handshakeExpired(SupportSession $session): bool
+    {
+        $deadline = $this->handshakeDeadline($session);
+
+        return $deadline === null || $deadline->lte(now());
+    }
+
+    private function handshakeDeadline(SupportSession $session): ?Carbon
+    {
+        $started = $session->started_at ?? $session->created_at;
+
+        return $started ? $started->copy()->addSeconds($this->handshakeSeconds()) : null;
+    }
+
+    private function auditEnded(SupportSession $session, string $previousStatus): void
+    {
+        $this->audit(
+            ActivityLog::ACTION_SUPPORT_ENDED,
+            $session,
+            ['status' => $previousStatus],
+            [
+                'admin_user_id' => $session->admin_user_id,
+                'assumed_user_id' => $session->assumed_user_id,
+                'status' => $session->status,
+                'termination_reason' => $session->termination_reason,
+            ]
+        );
+    }
+
+    private function blacklistSession(SupportSession $session): void
+    {
+        $jti = (string) ($session->jti ?? '');
+        if ($jti === '') {
+            return;
+        }
+
+        try {
+            $storage = app(JwtStorage::class);
+            $minutes = max($this->ttlMinutes() + 1, (int) config('jwt.refresh_ttl', 20160));
+            $storage->add($jti, ['valid_until' => 0], $minutes);
+        } catch (Throwable $e) {
+            Log::warning('Support token could not be blacklisted', [
+                'session_id' => $session->id,
+                'error' => $e->getMessage(),
+            ]);
+        } finally {
+            $this->resetJwtState();
+        }
+    }
+
+    private function uncheckedPayload(string $token): ?Payload
+    {
+        try {
+            return app('tymon.jwt.manager')->decode(new Token($token), false);
+        } catch (JWTException $e) {
+            return null;
+        } finally {
+            $this->resetJwtState();
+        }
+    }
+
+    private function finishedSessionForToken(Request $request): ?SupportSession
+    {
+        $token = $request->bearerToken();
+        if (! is_string($token) || $token === '') {
+            return null;
+        }
+
+        $payload = $this->uncheckedPayload($token);
+        $this->resetJwtState();
+        if (! $payload instanceof Payload || $payload->get(SupportSession::CLAIM_USE) !== SupportSession::TOKEN_USE) {
+            return null;
+        }
+
+        $session = SupportSession::query()->whereKey((int) $payload->get(SupportSession::CLAIM_ID))->first();
+        if (! $session || (string) $session->jti !== (string) $payload->get('jti')) {
+            return null;
+        }
+
+        if ((int) $session->assumed_user_id !== (int) $payload->get('sub')) {
+            return null;
+        }
+
+        if (in_array($session->status, [SupportSession::STATUS_ACTIVE, SupportSession::STATUS_PENDING], true) && ! $this->isStale($session)) {
+            return null;
+        }
+
+        return $session;
     }
 
     private function markEnded(SupportSession $session, string $reason): void

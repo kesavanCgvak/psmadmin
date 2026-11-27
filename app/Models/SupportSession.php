@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SupportSession extends Model
 {
+    public const STATUS_PENDING = 'pending';
+
     public const STATUS_ACTIVE = 'active';
 
     public const STATUS_ENDED = 'ended';
@@ -24,6 +26,8 @@ class SupportSession extends Model
     public const REASON_EXPIRED = 'expired';
 
     public const REASON_REVOKED = 'revoked';
+
+    public const REASON_HANDSHAKE = 'handshake_timeout';
 
     public const CLAIM_USE = 'token_use';
 

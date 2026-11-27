@@ -23,6 +23,10 @@ class EnforceSupportSessionRestrictions
         try {
             $session = $this->sessions->authenticate($request);
         } catch (SupportSessionException $e) {
+            if ($this->isSupportEnd($request)) {
+                return $this->endAlreadyClosed($request);
+            }
+
             $this->sessions->clearTokenFactory();
 
             return $this->error($e->getMessage(), $e->status);
@@ -51,6 +55,30 @@ class EnforceSupportSessionRestrictions
         }
 
         return $this->finish($request, $next);
+    }
+
+    private function isSupportEnd(Request $request): bool
+    {
+        return $request->isMethod('POST') && $request->is('api/support-sessions/current/end');
+    }
+
+    private function endAlreadyClosed(Request $request): Response
+    {
+        try {
+            $session = $this->sessions->endForSupportRequest($request);
+        } catch (SupportSessionException $e) {
+            $this->sessions->clearTokenFactory();
+
+            return $this->error($e->getMessage(), $e->status);
+        }
+
+        $this->sessions->clearTokenFactory();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Support session ended.',
+            'data' => $this->sessions->present($session),
+        ]);
     }
 
     private function finish(Request $request, Closure $next): Response

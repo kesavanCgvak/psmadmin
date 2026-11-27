@@ -63,11 +63,20 @@ class AssumeIdentityTest extends TestCase
         $this->assertSame($admin->id, (int) $payload->get(SupportSession::CLAIM_ADMIN));
 
         $session = SupportSession::query()->findOrFail($response->json('data.session_id'));
+        $this->assertSame($session->id, (int) $payload->get(SupportSession::CLAIM_ID));
         $this->assertSame($admin->id, (int) $session->admin_user_id);
         $this->assertSame($user->id, (int) $session->assumed_user_id);
-        $this->assertSame(SupportSession::STATUS_ACTIVE, $session->status);
+        $this->assertSame(SupportSession::STATUS_PENDING, $session->status);
         $this->assertSame((string) $payload->get('jti'), $session->jti);
         $this->assertTrue($session->expires_at->isFuture());
+        $this->assertNotNull($response->json('data.handshake_expires_at'));
+
+        $this->withToken($token)
+            ->getJson('/api/support-sessions/current')
+            ->assertOk()
+            ->assertJsonPath('data.status', SupportSession::STATUS_ACTIVE)
+            ->assertJsonPath('data.session_id', $session->id);
+        $this->assertSame(SupportSession::STATUS_ACTIVE, $session->fresh()->status);
 
         if (Schema::hasTable('activity_logs')) {
             $log = ActivityLog::query()
@@ -78,6 +87,14 @@ class AssumeIdentityTest extends TestCase
             $this->assertNotNull($log);
             $this->assertSame($admin->id, (int) $log->user_id);
             $this->assertStringNotContainsString($token, json_encode($log->new_values));
+
+            $activated = ActivityLog::query()
+                ->where('entity_type', ActivityLog::ENTITY_SUPPORT_SESSION)
+                ->where('entity_id', $session->id)
+                ->where('action', ActivityLog::ACTION_SUPPORT_ACTIVATED)
+                ->first();
+            $this->assertNotNull($activated);
+            $this->assertStringNotContainsString($token, json_encode($activated->new_values));
         }
 
         foreach ($logged as $entry) {
@@ -100,6 +117,9 @@ class AssumeIdentityTest extends TestCase
             ->assertSee('psm-support-ready', false)
             ->assertSee('assume-identity', false)
             ->assertSee('psm-support-grant', false)
+            ->assertSee('assume_handoff=', false)
+            ->assertSee('assumeHandoff', false)
+            ->assertSee('assumeReplyWindow', false)
             ->assertDontSee('access_token=', false);
 
         $this->actingAs($companyAdmin)
@@ -294,7 +314,13 @@ class AssumeIdentityTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.status', SupportSession::STATUS_ENDED);
 
-        JWTAuth::setToken($replacementToken)->getPayload();
+        try {
+            JWTAuth::setToken($replacementToken)->getPayload();
+            $this->fail('A revoked support credential was still accepted.');
+        } catch (\Tymon\JWTAuth\Exceptions\TokenBlacklistedException) {
+            JWTAuth::unsetToken();
+        }
+
         $this->withToken($replacementToken)
             ->getJson('/api/company/info')
             ->assertUnauthorized();
@@ -355,6 +381,111 @@ class AssumeIdentityTest extends TestCase
         $payload = JWTAuth::setToken($response->json('access_token'))->getPayload();
         $this->assertNull($payload->get(SupportSession::CLAIM_USE));
         $this->assertSame($user->id, (int) $payload->get('sub'));
+    }
+
+    public function test_a_new_session_can_be_opened_after_the_previous_one_ends(): void
+    {
+        $admin = $this->createPlatformAdmin();
+        [$user] = $this->createCompanyUser('Repeat Co');
+        $adminToken = JWTAuth::fromUser($admin);
+
+        $first = $this->beginSupportSession($admin, $user);
+        $firstToken = $this->tokenFrom($first);
+        $firstSession = SupportSession::query()->findOrFail($first->json('data.session_id'));
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.support-sessions.end', $firstSession))
+            ->assertOk()
+            ->assertJsonPath('data.status', SupportSession::STATUS_ENDED);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.support-sessions.end', $firstSession))
+            ->assertOk()
+            ->assertJsonPath('data.session_id', $firstSession->id)
+            ->assertJsonPath('data.status', SupportSession::STATUS_ENDED);
+
+        if (Schema::hasTable('activity_logs')) {
+            $this->assertSame(1, ActivityLog::query()
+                ->where('entity_type', ActivityLog::ENTITY_SUPPORT_SESSION)
+                ->where('entity_id', $firstSession->id)
+                ->where('action', ActivityLog::ACTION_SUPPORT_ENDED)
+                ->count());
+        }
+
+        $this->withToken($firstToken)->getJson('/api/support-sessions/current')->assertUnauthorized();
+
+        $second = $this->beginSupportSession($admin, $user)->assertOk();
+        $secondToken = $this->tokenFrom($second);
+        $secondSession = SupportSession::query()->findOrFail($second->json('data.session_id'));
+        $this->assertNotSame($firstSession->id, $secondSession->id);
+        $this->assertNotSame($firstSession->jti, $secondSession->jti);
+        $this->assertSame(SupportSession::STATUS_ENDED, $firstSession->fresh()->status);
+        $this->assertSame(SupportSession::REASON_ADMIN_ENDED, $firstSession->fresh()->termination_reason);
+        $this->assertSame(SupportSession::STATUS_PENDING, $secondSession->status);
+        $this->assertSame($secondSession->id, (int) JWTAuth::setToken($secondToken)->getPayload()->get(SupportSession::CLAIM_ID));
+
+        $this->withToken($secondToken)->getJson('/api/support-sessions/current')->assertOk();
+        $this->actingAs($admin)
+            ->postJson(route('admin.support-sessions.end', $secondSession))
+            ->assertOk();
+
+        $third = $this->beginSupportSession($admin, $user)->assertOk();
+        $this->assertNotSame($secondSession->id, (int) $third->json('data.session_id'));
+        $this->withToken($this->tokenFrom($third))->getJson('/api/company/info')->assertOk();
+
+        $this->withToken($adminToken)->postJson('/api/user/heartbeat')->assertOk();
+        $this->actingAs($admin)->get(route('admin.users.index'))->assertOk();
+    }
+
+    public function test_unused_session_expires_without_blocking_the_next_one(): void
+    {
+        $admin = $this->createPlatformAdmin();
+        [$user] = $this->createCompanyUser('Handshake Co');
+        $started = $this->beginSupportSession($admin, $user);
+        $token = $this->tokenFrom($started);
+        $session = SupportSession::query()->findOrFail($started->json('data.session_id'));
+        $this->assertSame(SupportSession::STATUS_PENDING, $session->status);
+
+        $session->forceFill(['started_at' => now()->subMinutes(5)])->save();
+
+        $this->withToken($token)->getJson('/api/support-sessions/current')->assertUnauthorized();
+        $session->refresh();
+        $this->assertSame(SupportSession::STATUS_ENDED, $session->status);
+        $this->assertSame(SupportSession::REASON_HANDSHAKE, $session->termination_reason);
+        $this->assertNotNull($session->ended_at);
+
+        $replacement = $this->beginSupportSession($admin, $user)->assertOk();
+        $this->assertNotSame($session->id, (int) $replacement->json('data.session_id'));
+        $this->withToken($token)->getJson('/api/support-sessions/current')->assertUnauthorized();
+        $this->withToken($this->tokenFrom($replacement))->getJson('/api/support-sessions/current')->assertOk();
+    }
+
+    public function test_an_activated_session_survives_the_handshake_window(): void
+    {
+        $admin = $this->createPlatformAdmin();
+        [$user] = $this->createCompanyUser('Keep Co');
+        $started = $this->beginSupportSession($admin, $user);
+        $token = $this->tokenFrom($started);
+
+        $this->withToken($token)->getJson('/api/support-sessions/current')->assertOk();
+
+        $session = SupportSession::query()->findOrFail($started->json('data.session_id'));
+        $session->forceFill(['started_at' => now()->subHours(2)])->save();
+
+        $this->withToken($token)
+            ->getJson('/api/support-sessions/current')
+            ->assertOk()
+            ->assertJsonPath('data.status', SupportSession::STATUS_ACTIVE);
+        $this->assertSame(SupportSession::STATUS_ACTIVE, $session->fresh()->status);
+
+        $this->withToken($token)
+            ->postJson('/api/support-sessions/current/end')
+            ->assertOk();
+        $this->withToken($token)
+            ->postJson('/api/support-sessions/current/end')
+            ->assertOk()
+            ->assertJsonPath('data.status', SupportSession::STATUS_ENDED);
+        $this->withToken($token)->getJson('/api/support-sessions/current')->assertUnauthorized();
     }
 
     public function test_support_session_start_is_rate_limited(): void

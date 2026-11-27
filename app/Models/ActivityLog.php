@@ -17,6 +17,8 @@ class ActivityLog extends Model
 
     public const ACTION_SUPPORT_STARTED = 'support_started';
 
+    public const ACTION_SUPPORT_ACTIVATED = 'support_activated';
+
     public const ACTION_SUPPORT_ENDED = 'support_ended';
 
     public const ACTION_SUPPORT_BLOCKED = 'support_blocked';

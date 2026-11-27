@@ -831,12 +831,68 @@
             var assumeFrontendOrigin = @json($frontendOrigin);
             var assumeIdentityUrl = @json($assumeIdentityUrl);
             var assumeWindow = null;
+            var assumeReplyWindow = null;
+            var assumeReplyOrigin = '';
             var assumeGrant = null;
             var assumeReadyNonce = null;
+            var assumeHandoff = null;
             var assumeGrantPosts = 0;
 
             function clearAssumeGrant() {
                 assumeGrant = null;
+            }
+
+            function resetAssumeChannel() {
+                clearAssumeGrant();
+                assumeReadyNonce = null;
+                assumeReplyWindow = null;
+                assumeReplyOrigin = '';
+                assumeHandoff = null;
+                assumeGrantPosts = 0;
+            }
+
+            function closeAssumeWindow() {
+                if (!assumeWindow) {
+                    return;
+                }
+                try {
+                    if (assumeWindow.closed === false) {
+                        assumeWindow.close();
+                    }
+                } catch (e) {}
+                assumeWindow = null;
+            }
+
+            function freshAssumeIdentityUrl() {
+                var stamp = Date.now().toString() + Math.random().toString(16).slice(2);
+                var hashAt = assumeIdentityUrl.indexOf('#');
+                var base = hashAt === -1 ? assumeIdentityUrl : assumeIdentityUrl.slice(0, hashAt);
+                var hash = hashAt === -1 ? '' : assumeIdentityUrl.slice(hashAt);
+                var joiner = base.indexOf('?') === -1 ? '?' : '&';
+                return {
+                    url: base + joiner + 'assume_handoff=' + encodeURIComponent(stamp) + hash,
+                    name: 'psmAssumeIdentity' + stamp,
+                    handoff: stamp
+                };
+            }
+
+            function sameFrontendHost(origin) {
+                if (!assumeFrontendOrigin || !origin || origin === '*') {
+                    return false;
+                }
+                if (origin === assumeFrontendOrigin) {
+                    return true;
+                }
+                try {
+                    var actual = new URL(origin);
+                    var expected = new URL(assumeFrontendOrigin);
+                    if (actual.hostname !== expected.hostname || actual.port !== expected.port) {
+                        return false;
+                    }
+                    return actual.protocol === 'https:' && expected.protocol === 'http:';
+                } catch (e) {
+                    return false;
+                }
             }
 
             function assumeReturnUrl() {
@@ -847,7 +903,9 @@
                 var lines = [
                     'Marketplace: ' + assumeIdentityUrl,
                     'Expected popup origin: ' + assumeFrontendOrigin,
+                    'Reply origin: ' + (assumeReplyOrigin || '(none)'),
                     'Return address: ' + assumeReturnUrl(),
+                    'Handoff: ' + (assumeHandoff || '(none)'),
                     'Ready messages: ' + (assumeReadyNonce ? 'received' : 'none yet'),
                     'Grant posts: ' + assumeGrantPosts,
                     'Session: ' + (assumeSessionId || '(not started)')
@@ -859,21 +917,27 @@
             }
 
             function deliverGrant() {
-                if (!assumeWindow || assumeWindow.closed || !assumeReadyNonce || !assumeGrant || typeof assumeGrant.token !== 'string') {
+                if (!assumeReplyWindow || !assumeReplyOrigin || assumeReplyOrigin === '*' || !assumeReadyNonce || !assumeGrant || typeof assumeGrant.token !== 'string') {
                     return;
                 }
                 var sessionId = Number(assumeGrant.sessionId);
                 if (!Number.isInteger(sessionId) || sessionId < 1) {
-                    renderAssumeDebug('Session id from the server was not usable.');
+                    renderAssumeDebug('Failure: invalid-grant. Session id from the server was not usable.');
                     return;
                 }
-                assumeWindow.postMessage({
-                    type: 'psm-support-grant',
-                    nonce: assumeReadyNonce,
-                    access_token: assumeGrant.token,
-                    session_id: sessionId,
-                    return_url: assumeReturnUrl()
-                }, assumeFrontendOrigin);
+                try {
+                    assumeReplyWindow.postMessage({
+                        type: 'psm-support-grant',
+                        nonce: assumeReadyNonce,
+                        handoff: assumeHandoff,
+                        access_token: assumeGrant.token,
+                        session_id: sessionId,
+                        return_url: assumeReturnUrl()
+                    }, assumeReplyOrigin);
+                } catch (e) {
+                    renderAssumeDebug('Failure: window-unreachable. The support credential could not be posted to the marketplace window.');
+                    return;
+                }
                 assumeGrantPosts += 1;
                 renderAssumeDebug('Grant posted to the marketplace window.');
             }
@@ -881,14 +945,31 @@
             window.addEventListener('message', function (event) {
                 var data = event.data || {};
                 if (data.type !== 'psm-support-ready' || typeof data.nonce !== 'string') return;
-                if (!assumeFrontendOrigin || event.origin !== assumeFrontendOrigin) {
-                    renderAssumeDebug('Ready message came from ' + event.origin + ', expected ' + assumeFrontendOrigin + '.');
+                if (!sameFrontendHost(event.origin)) {
+                    renderAssumeDebug('Failure: origin-mismatch. Ready message came from ' + event.origin + ', expected ' + assumeFrontendOrigin + '.');
                     return;
                 }
-                if (!assumeWindow || event.source !== assumeWindow) {
-                    renderAssumeDebug('Ready message did not come from the marketplace window.');
+                if (!event.source || !assumeHandoff) {
                     return;
                 }
+                var echoed = typeof data.handoff === 'string' ? data.handoff : '';
+                var fromOpenedWindow = false;
+                try {
+                    fromOpenedWindow = !!assumeWindow && event.source === assumeWindow;
+                } catch (e) {
+                    fromOpenedWindow = false;
+                }
+                if (echoed) {
+                    if (echoed !== assumeHandoff) {
+                        renderAssumeDebug('Ignored a ready message for a previous support window.');
+                        return;
+                    }
+                } else if (!fromOpenedWindow) {
+                    renderAssumeDebug('Ignored a ready message that did not match this support window.');
+                    return;
+                }
+                assumeReplyWindow = event.source;
+                assumeReplyOrigin = event.origin;
                 assumeReadyNonce = data.nonce;
                 deliverGrant();
                 if (!assumeGrant) {
@@ -921,8 +1002,14 @@
                         .show();
                     return;
                 }
-                var popup = window.open(assumeIdentityUrl, 'psmAssumeIdentity');
+                var target = freshAssumeIdentityUrl();
+                closeAssumeWindow();
+                resetAssumeChannel();
+                assumeHandoff = target.handoff;
+                var popup = window.open(target.url, target.name);
                 if (!popup) {
+                    assumeHandoff = null;
+                    renderAssumeDebug('Failure: window-creation. The browser blocked the marketplace window.');
                     $('#assumeIdentityAlert')
                         .removeClass('alert-success')
                         .addClass('alert-danger')
@@ -931,9 +1018,6 @@
                     return;
                 }
                 assumeWindow = popup;
-                clearAssumeGrant();
-                assumeReadyNonce = null;
-                assumeGrantPosts = 0;
                 renderAssumeDebug('Waiting for the marketplace page.');
                 var button = $(this);
                 button.prop('disabled', true);
@@ -967,11 +1051,8 @@
                         }
                     },
                     error: function (xhr) {
-                        clearAssumeGrant();
-                        if (assumeWindow) {
-                            assumeWindow.close();
-                            assumeWindow = null;
-                        }
+                        resetAssumeChannel();
+                        closeAssumeWindow();
                         var message = 'Unable to start the support session.';
                         if (xhr.responseJSON && xhr.responseJSON.message) {
                             message = xhr.responseJSON.message;
@@ -1003,6 +1084,11 @@
                     success: function () {
                         clearAssumeGrant();
                         assumeSessionId = null;
+                        assumeReadyNonce = null;
+                        assumeReplyWindow = null;
+                        assumeReplyOrigin = '';
+                        assumeHandoff = null;
+                        closeAssumeWindow();
                         $('#assumeIdentityAlert')
                             .removeClass('alert-danger')
                             .addClass('alert-success')

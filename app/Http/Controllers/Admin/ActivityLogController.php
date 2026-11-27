@@ -69,6 +69,7 @@ class ActivityLogController extends Controller
             ActivityLog::ACTION_DELETED,
             ActivityLog::ACTION_RESTORED,
             ActivityLog::ACTION_SUPPORT_STARTED,
+            ActivityLog::ACTION_SUPPORT_ACTIVATED,
             ActivityLog::ACTION_SUPPORT_ENDED,
             ActivityLog::ACTION_SUPPORT_BLOCKED,
         ];
